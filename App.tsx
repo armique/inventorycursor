@@ -74,7 +74,7 @@ import {
   renameSubcategoryInCatalog,
 } from './utils/categoryRename';
 import { appendPriceHistoryIfChanged, mergeItemAuditFields } from './services/priceHistory';
-import { computeItemProfitBeforeOverhead } from './services/financialAggregation';
+import { withSyncedRealizedProfit } from './services/financialAggregation';
 import { syncContainerBuyTotalsFromComponents } from './services/containerAggregates';
 import { syncContainerSaleMetaToChildren } from './utils/containerSaleCascade';
 import { enforceContainerMembershipInvariants, findEmptyContainerShellIds } from './utils/containerMembershipInvariants';
@@ -367,13 +367,7 @@ function GitHubOAuthCallback() {
 export { DEFAULT_CATEGORIES, HIERARCHY_CATEGORIES } from './services/constants';
 
 function recomputeRealizedProfit(item: InventoryItem, taxMode: TaxMode): InventoryItem {
-  // Keep container-style bookkeeping untouched; their profit is handled separately.
-  if (item.isBundle || item.isPC) return item;
-  if (item.status !== ItemStatus.SOLD && item.status !== ItemStatus.TRADED && item.status !== ItemStatus.GIFTED) return item;
-  if (item.sellPrice == null || Number.isNaN(Number(item.sellPrice))) return { ...item, profit: undefined };
-  if (Number.isNaN(Number(item.buyPrice))) return { ...item, profit: undefined };
-  const profit = computeItemProfitBeforeOverhead(item, taxMode);
-  return { ...item, profit };
+  return withSyncedRealizedProfit(item, taxMode);
 }
 
 function makeActionEntry(action: string, item?: InventoryItem, details?: string, timestampIso?: string): ActionHistoryEntry {
@@ -1402,9 +1396,10 @@ const App: React.FC = () => {
     return () => clearTimeout(t);
   }, [authUser, items.length, isCloudEnabled(), items, categoryFields]);
 
-  // Publish store catalog soon after store-visible items change (long debounce, idle work)
+  // Publish store catalog soon after real local edits (long debounce, idle work)
   useEffect(() => {
     if (!isCloudEnabled() || !authUser) return;
+    if (!hasUnsavedChanges.current) return;
     if (catalogPublishDebounceRef.current) clearTimeout(catalogPublishDebounceRef.current);
     catalogPublishDebounceRef.current = setTimeout(() => {
       catalogPublishDebounceRef.current = null;
@@ -1621,8 +1616,11 @@ const App: React.FC = () => {
       );
     }, LOCAL_PERSIST_DEBOUNCE_MS);
 
-    if (!isCloudEnabled() || !authUser) return;
-    if (!cloudHydratedRef.current) return;
+    if (!isCloudEnabled() || !authUser || !cloudHydratedRef.current || !hasUnsavedChanges.current) {
+      return () => {
+        if (localPersistDebounceRef.current) clearTimeout(localPersistDebounceRef.current);
+      };
+    }
     if (writeDebounceRef.current) clearTimeout(writeDebounceRef.current);
     const delay = resolveCloudFlushDelay(preferredCloudFlushMsRef.current);
     preferredCloudFlushMsRef.current = WRITE_DEBOUNCE_MS;
@@ -1857,7 +1855,9 @@ const App: React.FC = () => {
         itemsToApply.forEach(u => {
           const idx = nextItems.findIndex(i => i.id === u.id);
           const oldItem = idx >= 0 ? nextItems[idx] : undefined;
-          const merged = appendPriceHistoryIfChanged(oldItem, u);
+          const merged = options?.skipPriceHistory
+            ? u
+            : appendPriceHistoryIfChanged(oldItem, u);
           // Preserve store and other fields from old item when update doesn't provide them (e.g. rename in inventory form)
           const final0 =
             oldItem && idx >= 0 && preserveMissingFields ? applyPreservedFields(oldItem, merged) : merged;

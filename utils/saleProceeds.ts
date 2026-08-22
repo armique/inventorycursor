@@ -88,7 +88,15 @@ export function applyManualSellerShipping(item: InventoryItem, amount: number): 
     sellerShippingAmount: paid ? shipping : undefined,
   };
   if (isTrustedEbayProceeds(item.saleProceeds)) return next;
-  const inferred = saleProceedsFromItemFields(next);
+  const base = paid
+    ? next
+    : {
+        ...next,
+        saleProceeds: item.saleProceeds
+          ? { ...item.saleProceeds, shippingLabelEur: null, netPayoutEur: null }
+          : undefined,
+      };
+  const inferred = saleProceedsFromItemFields(base);
   return {
     ...next,
     saleProceeds: {
@@ -257,16 +265,53 @@ export function saleProceedsFromOrder(
     else if (bucket === 'tx') tx += abs;
     else other += abs;
   }
+
   const itemGrossEur = n(line.lineItemCost ?? payout.gross);
-  const buyerTotalEur = n(order.grossTotal ?? payout.gross ?? itemGrossEur);
+  const multi = order.lineItems.length > 1;
+  const fromLines = order.lineItems.reduce((sum, li) => sum + (Number(li.lineItemCost) || 0), 0);
+  // Same share as getLinePayout — never hang the whole order total on one line.
+  const share =
+    multi && fromLines > 0.01 && itemGrossEur != null && itemGrossEur > 0
+      ? itemGrossEur / fromLines
+      : 1;
+
+  if (multi && Math.abs(share - 1) > 1e-9) {
+    tx = roundMoney(tx * share);
+    ads = roundMoney(ads * share);
+    label = roundMoney(label * share);
+    other = roundMoney(other * share);
+  }
+
+  const buyerTotalEur = n(payout.buyerTotal ?? itemGrossEur);
   const buyerShippingEur =
-    buyerTotalEur != null && itemGrossEur != null && buyerTotalEur > itemGrossEur
+    !multi &&
+    buyerTotalEur != null &&
+    itemGrossEur != null &&
+    buyerTotalEur > itemGrossEur + 0.005
       ? roundMoney(buyerTotalEur - itemGrossEur)
-      : n(order.shippingCost);
-  const feeTotal = tx + ads + other;
+      : !multi
+        ? n(order.shippingCost)
+        : null;
+
+  const feeBucketsTotal = tx + ads + label + other;
   const useEstimatedFee = payout.feeEstimated;
-  const transactionFeeEur =
-    n(tx) ?? (!useEstimatedFee && feeTotal <= 0 && payout.fee > 0 && label <= 0 ? n(payout.fee) : null);
+  let transactionFeeEur: number | null = null;
+  let adFeeEur: number | null = null;
+  let otherFeeEur: number | null = null;
+  if (!useEstimatedFee) {
+    if (feeBucketsTotal >= 0.01) {
+      transactionFeeEur = n(tx);
+      adFeeEur = n(ads);
+      otherFeeEur = n(other);
+    } else if (payout.fee > 0) {
+      transactionFeeEur = n(payout.fee);
+    }
+  }
+
+  const orderRefund = sumOrderRefundEur(order);
+  const refundEur =
+    orderRefund >= 0.01 ? n(multi ? orderRefund * share : orderRefund) : null;
+
   return {
     capturedAt: new Date().toISOString(),
     source: order.sources?.includes('hub') ? 'ebay_seller_hub' : 'ebay_order',
@@ -274,10 +319,10 @@ export function saleProceedsFromOrder(
     buyerShippingEur,
     buyerTotalEur,
     transactionFeeEur: useEstimatedFee ? null : transactionFeeEur,
-    adFeeEur: useEstimatedFee ? null : n(ads),
+    adFeeEur: useEstimatedFee ? null : adFeeEur,
     shippingLabelEur: n(label),
-    otherFeeEur: useEstimatedFee ? null : n(other),
-    refundEur: n(sumOrderRefundEur(order)) || null,
+    otherFeeEur: useEstimatedFee ? null : otherFeeEur,
+    refundEur,
     netPayoutEur: payout.netKnown ? n(payout.net) : null,
     feesEstimated: useEstimatedFee,
   };

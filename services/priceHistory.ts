@@ -10,6 +10,7 @@ const BUY_REASON_LABEL: Record<BuyPriceChangeReason, string> = {
   hub_erstattet: 'Erstattet — fees/shipping added to EK',
   refund_capitalize: 'Full refund — order loss capitalized into EK',
   container_resplit: 'PC/bundle cost resplit',
+  bulk_lot_split: 'Bulk lot cost split',
   other: 'Buy price change',
 };
 
@@ -150,6 +151,67 @@ export function listBuyPriceHistory(item: InventoryItem): PriceHistoryEntry[] {
   return (item.priceHistory || []).filter((e) => e.type === 'buy');
 }
 
+/**
+ * Buy-price rows worth showing in the UI.
+ * Bulk lot SMART splits and unlabeled "Buy price change" rows are noise —
+ * a one-time bulk add should not look like the EK was edited.
+ */
+export function isSignificantBuyPriceHistoryEntry(e: PriceHistoryEntry): boolean {
+  if (e.type !== 'buy') return false;
+  if (e.reason === 'restock_loss' || e.reason === 'hub_erstattet' || e.reason === 'refund_capitalize') {
+    return true;
+  }
+  if (e.reason === 'bulk_lot_split' || e.reason === 'container_resplit') return false;
+  const label = (e.reasonLabel || '').trim();
+  if (!label || /^buy price change$/i.test(label)) return false;
+  return true;
+}
+
+export function listSignificantBuyPriceHistory(item: InventoryItem): PriceHistoryEntry[] {
+  return listBuyPriceHistory(item).filter((e) => {
+    if (!isSignificantBuyPriceHistoryEntry(e)) return false;
+    // Bulk lot members: auto "Manual buy price edit" rows are SMART resplit noise.
+    if (
+      item.bulkImportId &&
+      /^manual buy price edit\b/i.test((e.reasonLabel || '').trim()) &&
+      !e.orderId
+    ) {
+      return false;
+    }
+    return true;
+  });
+}
+
+/**
+ * During bulk lot resplit, drop allocation noise from stored history.
+ * Keeps restock / Erstattet documentation only.
+ */
+export function stripBulkAllocationBuyHistory(item: InventoryItem): InventoryItem {
+  const hist = item.priceHistory || [];
+  if (!hist.length) return item;
+  const next = hist.filter((e) => {
+    if (e.type !== 'buy') return true;
+    return (
+      e.reason === 'restock_loss' ||
+      e.reason === 'hub_erstattet' ||
+      e.reason === 'refund_capitalize'
+    );
+  });
+  if (next.length === hist.length) return item;
+  return { ...item, priceHistory: next.length ? next : undefined };
+}
+
+/** @deprecated Prefer stripBulkAllocationBuyHistory for lot members. */
+export function stripInsignificantBuyPriceHistory(item: InventoryItem): InventoryItem {
+  const hist = item.priceHistory || [];
+  if (!hist.length) return item;
+  const next = hist.filter(
+    (e) => e.type !== 'buy' || isSignificantBuyPriceHistoryEntry(e)
+  );
+  if (next.length === hist.length) return item;
+  return { ...item, priceHistory: next.length ? next : undefined };
+}
+
 export type LatestBuyPriceIncrease = {
   delta: number;
   price: number;
@@ -160,9 +222,9 @@ export type LatestBuyPriceIncrease = {
   orderId?: string;
 };
 
-/** Most recent buy-price increase (e.g. restock loss), if any. */
+/** Most recent significant buy-price increase (e.g. restock loss), if any. */
 export function latestBuyPriceIncrease(item: InventoryItem): LatestBuyPriceIncrease | null {
-  const buys = listBuyPriceHistory(item);
+  const buys = listSignificantBuyPriceHistory(item);
   for (let i = buys.length - 1; i >= 0; i--) {
     const e = buys[i];
     const prev = e.previousPrice;

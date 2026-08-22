@@ -10,6 +10,8 @@ import {
   hasRestockBuyPriceBump,
   latestBuyPriceIncrease,
   listBuyPriceHistory,
+  listSignificantBuyPriceHistory,
+  stripBulkAllocationBuyHistory,
 } from '../services/priceHistory';
 import { applyUnsoldRestock } from '../services/saleRevert';
 
@@ -46,6 +48,26 @@ assert.equal(bump.previousPrice, 90);
 // Manual edit still records history without restock badge reason
 const manual = appendPriceHistoryIfChanged(withLoss, { ...withLoss, buyPrice: 100 });
 assert.ok((manual.priceHistory || []).some((e) => e.type === 'buy' && e.reason === 'manual'));
+assert.equal(listSignificantBuyPriceHistory(manual).length, 2);
+
+// Generic / bulk allocation noise is hidden
+const noisy: InventoryItem = {
+  ...base,
+  bulkImportId: 'lot-1',
+  priceHistory: [
+    {
+      date: '2026-01-01',
+      type: 'buy',
+      price: 17.53,
+      previousPrice: 22.46,
+      delta: -4.93,
+      reason: 'other',
+      reasonLabel: 'Buy price change',
+    },
+  ],
+};
+assert.equal(listSignificantBuyPriceHistory(noisy).length, 0);
+assert.equal((stripBulkAllocationBuyHistory(noisy).priceHistory || []).length, 0);
 
 // Restock path with leftover allocation is covered by critical-flows; ensure delta=0 skips history
 const noChange = appendBuyPriceChange(base, {

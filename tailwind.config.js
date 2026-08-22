@@ -4,6 +4,7 @@ export default {
     './index.html',
     './*.{ts,tsx}',
     './components/**/*.{ts,tsx}',
+    './utils/**/*.{ts,tsx}',
     './services/**/*.{ts,tsx}',
     './api/**/*.{ts,tsx}',
     './lib/**/*.{ts,tsx}',

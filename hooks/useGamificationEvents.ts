@@ -1,7 +1,7 @@
 /**
- * Detects the game-event triggers from section 3.1/3.2 by watching the same `items` state every
- * sale flow already funnels through (SaleModal/TradeModal/GiftModal/bulk edit/eBay sync) — no
- * hooks added to those components. A single-item queue keeps at most one toast visible at a time.
+ * Detects money-in/out game events from the shared `items` state every sale flow already
+ * funnels through (SaleModal/TradeModal/GiftModal/bulk edit/eBay sync). Deal closes update
+ * circulation silently — no profit toast. Digest may still surface when proactive events are on.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Expense, InventoryItem, TaxMode } from '../types';
@@ -9,11 +9,13 @@ import { isRealizedDisposal } from '../utils/itemDisposition';
 import { computeItemProfitBeforeOverhead, roundMoney } from '../services/financialAggregation';
 import { localWeekKey } from '../utils/flipCoachMissions';
 import {
+  addToBank,
   applyCirculationCredit,
   applyPurchaseDebit,
   computeMonthNetProfit,
   effectiveBankSplitPct,
   suggestTakeAmount,
+  takeToPocket,
   type GamificationState,
 } from '../utils/gamification';
 
@@ -113,25 +115,15 @@ export function useGamificationEvents({
     if (newlyRealized.length) {
       const monthNetProfit = computeMonthNetProfit(items, expenses, taxMode);
       const bankSplitPct = effectiveBankSplitPct(gamificationRef.current);
-      const events: GamificationEvent[] = [];
       let totalCirculationCredit = 0;
       for (const item of newlyRealized) {
         const profit = roundMoney(computeItemProfitBeforeOverhead(item, taxMode));
-        if (profit <= 0) continue; // celebrate wins only
+        if (profit <= 0) continue; // credit wins only
         const suggestedTake = suggestTakeAmount(profit, bankSplitPct, monthNetProfit);
         const circulationCredit = roundMoney(profit - suggestedTake);
         totalCirculationCredit += circulationCredit;
-        events.push({
-          kind: 'deal-closed',
-          id: `deal-${item.id}-${Date.now()}`,
-          itemName: item.name,
-          profit,
-          suggestedTake,
-          circulationCredit,
-        });
       }
-      if (events.length) setQueue((q) => [...q, ...events]);
-      // The non-bank share is credited automatically — no user choice, per section 4.
+      // Apply bank/circulation silently — no deal-closed toast after Mark Sold.
       if (totalCirculationCredit > 0) {
         const credit = roundMoney(totalCirculationCredit);
         updateGamification((p) => applyCirculationCredit(p, credit));

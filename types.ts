@@ -96,6 +96,8 @@ export type BuyPriceChangeReason =
   | 'hub_erstattet'
   | 'refund_capitalize'
   | 'container_resplit'
+  /** Lot SMART/EQUAL allocation during bulk import — not a real EK edit. */
+  | 'bulk_lot_split'
   | 'other';
 
 /** Single entry in an item's price / sale history. */
@@ -780,6 +782,11 @@ export type ItemUpdateOptions = {
    * would otherwise see them restored by the preserve step.
    */
   skipFieldPreserve?: boolean;
+  /**
+   * Don't auto-append buy/sell/store priceHistory when this update changes prices.
+   * Used for bulk-lot SMART resplits so allocation isn't shown as an EK "change".
+   */
+  skipPriceHistory?: boolean;
   /**
    * Replace the generic "Item updated" action-history row.
    * `detailsByItemId` is used when several items are saved in one call.

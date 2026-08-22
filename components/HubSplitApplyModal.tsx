@@ -13,6 +13,7 @@ const REASON: Record<HubBreakdownReplaceReason, string> = {
   estimated: 'estimated fees',
   missing: 'no breakdown yet',
   differs: 'amounts differ',
+  order_meta: 'missing order info',
 };
 
 const FIELDS: Array<{ key: keyof HubBreakdownSnapshot; label: string }> = [

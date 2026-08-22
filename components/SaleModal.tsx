@@ -1595,6 +1595,17 @@ const SaleModal: React.FC<Props> = ({
                   >
                     {orderIdLookupLoading ? <Loader2 size={10} className="animate-spin" /> : 'Load'}
                   </button>
+                  {ebayOrderId.trim() && buildEbayOrderUrl(ebayOrderId.trim()) ? (
+                    <a
+                      href={buildEbayOrderUrl(ebayOrderId.trim())}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="shrink-0 px-2 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 text-[8px] font-black uppercase hover:bg-blue-100 inline-flex items-center"
+                      title="Open this eBay order — verify fees / breakdown"
+                    >
+                      Open
+                    </a>
+                  ) : null}
                 </div>
               </div>
               {orderIdLookupMessage && (

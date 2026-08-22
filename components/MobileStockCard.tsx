@@ -26,11 +26,13 @@ import { formatEUR } from '../utils/formatMoney';
 import { BuyPriceBumpBadge } from './BuyPriceHistory';
 import { saleColumnSplit, canEditManualSellerShipping, shouldShowSellCellMarketplaceFees } from '../utils/saleProceeds';
 import { SellerShippingEditorDialog } from './SaleProceedsPopover';
+import { SellSplitLedger } from './SellSplitLedger';
 import { getItemUserPhotoCount } from '../utils/imageImport';
 import { computePriceAnalyzer } from '../utils/listingWatch';
 import ItemThumbnail from './ItemThumbnail';
 import { MobileSheetShell } from './MobileBottomSheets';
 import ItemAccessoryToggles from './ItemAccessoryToggles';
+import { resolveComponentPartTone, componentPartPillProps } from '../utils/componentPartTone';
 import { canSplitItem, resolveIdenticalLotQty } from '../utils/splitParts';
 
 export interface MobileStockCardActions {
@@ -67,7 +69,6 @@ export interface MobilePurchaseActions {
 /** Dense phone stock row — fits several items on screen without a tall action strip. */
 export const MobileStockCard: React.FC<{
   item: InventoryItem;
-  profit?: number | null;
   /** Suggested list prices — Klein lower (0% fees), eBay higher (fee-aware). */
   suggestedEbayList?: number | null;
   suggestedKleinList?: number | null;
@@ -88,7 +89,6 @@ export const MobileStockCard: React.FC<{
   purchaseActions?: MobilePurchaseActions;
 }> = ({
   item,
-  profit,
   suggestedEbayList,
   suggestedKleinList,
   suggestedFeePct,
@@ -116,6 +116,8 @@ export const MobileStockCard: React.FC<{
   const canSplit =
     Boolean(actions.onSplitParts) && inStock && canSplitItem(item, item.isPC || item.isBundle ? 1 : 0);
   const lotQty = canSplit ? resolveIdenticalLotQty(item) : null;
+  const partTone = !item.isPC && !item.isBundle ? resolveComponentPartTone(item) : null;
+  const partPill = !item.isPC && !item.isBundle ? componentPartPillProps(item) : null;
 
   const quickBundleLabel = item.isPC
     ? 'Add parts to this PC'
@@ -132,8 +134,10 @@ export const MobileStockCard: React.FC<{
             : item.isBundle
               ? 'border-violet-200 shadow-[inset_3px_0_0_0_#8b5cf6]'
               : selected
-                ? 'border-slate-900 ring-1 ring-slate-900/10'
-                : 'border-slate-100'
+                ? `border-slate-900 ring-1 ring-slate-900/10 ${partTone ? partTone.rowAccentClass : ''}`
+                : partTone
+                  ? `border-slate-100 ${partTone.rowAccentClass}`
+                  : 'border-slate-100'
         }`}
       >
         <div className="flex gap-2 items-center">
@@ -179,88 +183,89 @@ export const MobileStockCard: React.FC<{
               <p className="font-bold text-[13px] leading-tight text-slate-900 line-clamp-1">
                 {item.name}
               </p>
-              <p className="mt-0.5 text-[11px] font-semibold text-slate-500 truncate">
-                {(item.isPC || item.isBundle) && (
-                  <span className={item.isPC ? 'text-indigo-600' : 'text-violet-600'}>
-                    {item.isPC ? 'PC · ' : 'Bundle · '}
-                  </span>
-                )}
-                €{formatEUR(item.buyPrice)}
-                <BuyPriceBumpBadge item={item} />
-                {item.sellPrice != null ? (
+              {(() => {
+                const split = item.sellPrice != null ? saleColumnSplit(item, { refundFallbackEur }) : null;
+                return (
                   <>
-                    {' · '}
-                    {onSaveShipping && canEditManualSellerShipping(item) ? (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setShippingOpen(true);
-                        }}
-                        className="underline decoration-dotted decoration-sky-400 underline-offset-2 text-slate-800"
-                      >
-                        €{formatEUR(saleColumnSplit(item, { refundFallbackEur })?.totalEur ?? item.sellPrice)}
-                      </button>
-                    ) : (
-                      `€${formatEUR(saleColumnSplit(item, { refundFallbackEur })?.totalEur ?? item.sellPrice)}`
-                    )}
-                  </>
-                ) : null}
-                {(() => {
-                  const split = saleColumnSplit(item, { refundFallbackEur });
-                  if (!split) return null;
-                  const showFeeLines = shouldShowSellCellMarketplaceFees(item, showPriceBreakdown);
-                  return (
-                    <>
-                      {showFeeLines && split.adFeeEur >= 0.01 ? (
-                        <span className="text-orange-600"> · −€{formatEUR(split.adFeeEur)} ads</span>
-                      ) : null}
-                      {showFeeLines && split.ebayFeeEur >= 0.01 ? (
-                        <span className="text-orange-600"> · −€{formatEUR(split.ebayFeeEur)} eBay</span>
-                      ) : null}
-                      {split.shippingEur >= 0.01 ? (
-                        <span className="text-sky-700"> · −€{formatEUR(split.shippingEur)} ship</span>
-                      ) : null}
-                      {split.refundEur >= 0.01 ? (
-                        <span className="text-rose-600"> · −€{formatEUR(split.refundEur)} refund</span>
-                      ) : null}
-                      {profit != null ? (
-                        <span className={profit >= 0 ? 'text-emerald-600' : 'text-rose-600'}>
-                          {' '}
-                          · {profit >= 0 ? '+' : '−'}€{formatEUR(Math.abs(profit))} profit
+                    <p className="mt-0.5 text-[11px] font-semibold text-slate-500 truncate flex items-center gap-1.5">
+                      {(item.isPC || item.isBundle) && (
+                        <span className={item.isPC ? 'text-indigo-600' : 'text-violet-600'}>
+                          {item.isPC ? 'PC · ' : 'Bundle · '}
+                        </span>
+                      )}
+                      {partPill ? (
+                        <span
+                          className={partPill.className}
+                          title={partPill.title}
+                        >
+                          {partPill.label}
                         </span>
                       ) : null}
-                    </>
-                  );
-                })()}
-                {hubSuggestedSplit && onApplyHubSplit ? (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onApplyHubSplit();
-                    }}
-                    className="mt-1 block text-left text-[10px] font-bold text-emerald-800"
-                  >
-                    Hub sell €{formatEUR(hubSuggestedSplit.totalEur)}
-                    {hubSuggestedSplit.adFeeEur >= 0.01
-                      ? ` · −€${formatEUR(hubSuggestedSplit.adFeeEur)} ads`
-                      : ''}
-                    {hubSuggestedSplit.ebayFeeEur >= 0.01
-                      ? ` · −€${formatEUR(hubSuggestedSplit.ebayFeeEur)} eBay`
-                      : ''}
-                    {hubSuggestedSplit.shippingEur >= 0.01
-                      ? ` · −€${formatEUR(hubSuggestedSplit.shippingEur)} ship`
-                      : ''}
-                    {hubSuggestedSplit.refundEur >= 0.01
-                      ? ` · −€${formatEUR(hubSuggestedSplit.refundEur)} refund`
-                      : ''}
-                  </button>
-                ) : null}
-                {item.subCategory || item.category
-                  ? ` · ${item.subCategory || item.category}`
-                  : ''}
-              </p>
+                      €{formatEUR(item.buyPrice)}
+                      <BuyPriceBumpBadge item={item} />
+                      {item.sellPrice != null && !split ? (
+                        <>
+                          {' · '}
+                          {onSaveShipping && canEditManualSellerShipping(item) ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setShippingOpen(true);
+                              }}
+                              className="underline decoration-dotted decoration-slate-400 underline-offset-2 text-slate-800"
+                            >
+                              €{formatEUR(item.sellPrice)}
+                            </button>
+                          ) : (
+                            `€${formatEUR(item.sellPrice)}`
+                          )}
+                        </>
+                      ) : null}
+                      {item.subCategory || item.category
+                        ? ` · ${item.subCategory || item.category}`
+                        : ''}
+                    </p>
+                    {split ? (
+                      <div className="mt-1 flex flex-wrap items-start gap-3">
+                        {onSaveShipping && canEditManualSellerShipping(item) ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setShippingOpen(true);
+                            }}
+                            className="text-left"
+                          >
+                            <SellSplitLedger
+                              split={split}
+                              showFees={shouldShowSellCellMarketplaceFees(item, showPriceBreakdown)}
+                            />
+                          </button>
+                        ) : (
+                          <SellSplitLedger
+                            split={split}
+                            showFees={shouldShowSellCellMarketplaceFees(item, showPriceBreakdown)}
+                          />
+                        )}
+                        {hubSuggestedSplit && onApplyHubSplit ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onApplyHubSplit();
+                            }}
+                            className="text-left opacity-80"
+                            title="Suggested Hub sell cell — tap to review"
+                          >
+                            <SellSplitLedger split={hubSuggestedSplit} showFees />
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </>
+                );
+              })()}
               {item.specs && Object.keys(item.specs).length > 0 && (
                 <p
                   className="mt-0.5 text-[10px] text-slate-500 font-medium leading-snug truncate"

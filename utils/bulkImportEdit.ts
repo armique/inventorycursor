@@ -4,6 +4,7 @@
 
 import type { BulkImportRecord, InventoryItem } from '../types';
 import { syncContainerBuyTotalsFromComponents } from '../services/containerAggregates';
+import { stripBulkAllocationBuyHistory } from '../services/priceHistory';
 import { splitBulkImportCosts, type BulkCostSplitMode } from './bulkImportCostSplit';
 import { getBulkImportMembers, refreshBulkImportLabel } from './bulkImportHistory';
 
@@ -41,12 +42,14 @@ export function applyBulkImportResplit(params: {
 
   const n = members.length;
   const totalNote = `Bulk Import (${n} items). Source total: €${totalCost.toFixed(2)}.`;
-  const memberPatches = members.map((m) => ({
-    ...m,
-    buyPrice: costs[m.id] ?? m.buyPrice,
-    bulkImportId: params.record.id,
-    comment2: totalNote,
-  }));
+  const memberPatches = members.map((m) =>
+    stripBulkAllocationBuyHistory({
+      ...m,
+      buyPrice: costs[m.id] ?? m.buyPrice,
+      bulkImportId: params.record.id,
+      comment2: totalNote,
+    })
+  );
 
   const byId = new Map(params.items.map((i) => [i.id, i]));
   for (const p of memberPatches) byId.set(p.id, p);

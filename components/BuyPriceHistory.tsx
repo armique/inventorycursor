@@ -5,7 +5,7 @@ import { formatEUR } from '../utils/formatMoney';
 import {
   hasRestockBuyPriceBump,
   latestBuyPriceIncrease,
-  listBuyPriceHistory,
+  listSignificantBuyPriceHistory,
 } from '../services/priceHistory';
 
 function formatHistDate(iso: string | undefined): string {
@@ -15,19 +15,17 @@ function formatHistDate(iso: string | undefined): string {
   return `${m[3]}.${m[2]}.${m[1]}`;
 }
 
-/** Chip + expandable list of buy-price changes (esp. restock / Erstattet EK bumps). */
+/** Chip + expandable list of real buy-price changes (restock / Erstattet / labeled edits). */
 const BuyPriceHistory: React.FC<{ item: InventoryItem; compact?: boolean }> = ({ item, compact }) => {
-  const buys = listBuyPriceHistory(item);
+  const buys = listSignificantBuyPriceHistory(item);
   const bump = latestBuyPriceIncrease(item);
   const restockBump = hasRestockBuyPriceBump(item);
   const [open, setOpen] = useState(false);
 
-  if (!buys.length && !bump) return null;
+  if (!buys.length) return null;
 
-  const chipLabel = bump
-    ? restockBump
-      ? `EK +€${formatEUR(bump.delta)}`
-      : `EK was €${formatEUR(bump.previousPrice)}`
+  const chipLabel = restockBump && bump
+    ? `EK +€${formatEUR(bump.delta)}`
     : `EK history · ${buys.length}`;
 
   return (
@@ -61,6 +59,10 @@ const BuyPriceHistory: React.FC<{ item: InventoryItem; compact?: boolean }> = ({
                 : entry.previousPrice != null
                   ? entry.price - entry.previousPrice
                   : null;
+            const isRestock =
+              entry.reason === 'restock_loss' ||
+              entry.reason === 'hub_erstattet' ||
+              entry.reason === 'refund_capitalize';
             return (
               <li
                 key={`${entry.date}-${idx}`}
@@ -69,7 +71,7 @@ const BuyPriceHistory: React.FC<{ item: InventoryItem; compact?: boolean }> = ({
                 <p className="font-black text-slate-900">
                   {formatHistDate(entry.date)}
                   {delta != null && Math.abs(delta) >= 0.01 ? (
-                    <span className={delta > 0 ? 'text-amber-800' : 'text-emerald-800'}>
+                    <span className={isRestock && delta > 0 ? 'text-amber-800' : 'text-slate-600'}>
                       {' '}
                       · {delta > 0 ? '+' : '−'}€{formatEUR(Math.abs(delta))}
                     </span>
@@ -80,7 +82,7 @@ const BuyPriceHistory: React.FC<{ item: InventoryItem; compact?: boolean }> = ({
                     ? `€${formatEUR(entry.previousPrice)} → €${formatEUR(entry.price)}`
                     : `€${formatEUR(entry.price)}`}
                 </p>
-                <p className="text-amber-900 font-bold">
+                <p className={isRestock ? 'text-amber-900 font-bold' : 'text-slate-600 font-semibold'}>
                   {entry.reasonLabel ||
                     (entry.reason === 'restock_loss'
                       ? 'Unsold / return — loss added to EK'

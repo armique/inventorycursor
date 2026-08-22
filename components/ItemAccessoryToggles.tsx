@@ -31,7 +31,7 @@ interface Props {
   dense?: boolean;
   /** Extra-tight icon chips (Listing Studio / mobile). */
   mini?: boolean;
-  /** Show OVP / IO labels next to the icon (inventory under-title row). */
+  /** Show OVP / IO labels next to the icon (forms / toolbars). Inventory uses icons only. */
   labeled?: boolean;
 }
 
@@ -75,6 +75,8 @@ const ItemAccessoryToggles: React.FC<Props> = ({ item, children, onPatch, dense,
   const timerRef = useRef<number | null>(null);
   const onPatchRef = useRef(onPatch);
   onPatchRef.current = onPatch;
+  const itemRef = useRef(item);
+  itemRef.current = item;
 
   const effective = draft ? { ...item, ...draft } : item;
 
@@ -97,10 +99,15 @@ const ItemAccessoryToggles: React.FC<Props> = ({ item, children, onPatch, dense,
         timerRef.current = null;
       }
       const pending = pendingRef.current;
-      if (Object.keys(pending).length) {
-        pendingRef.current = {};
-        onPatchRef.current(pending);
-      }
+      pendingRef.current = {};
+      const keys = Object.keys(pending) as (keyof InventoryItem)[];
+      if (!keys.length) return;
+      // Virtualized rows unmount constantly while scrolling — never flush a no-op
+      // patch that would mark inventory dirty and push to the cloud.
+      const current = itemRef.current;
+      const changed = keys.some((k) => current[k] !== pending[k]);
+      if (!changed) return;
+      onPatchRef.current(pending);
     };
   }, []);
 
@@ -110,7 +117,12 @@ const ItemAccessoryToggles: React.FC<Props> = ({ item, children, onPatch, dense,
       timerRef.current = null;
       const pending = pendingRef.current;
       pendingRef.current = {};
-      if (Object.keys(pending).length) onPatchRef.current(pending);
+      const keys = Object.keys(pending) as (keyof InventoryItem)[];
+      if (!keys.length) return;
+      const current = itemRef.current;
+      const changed = keys.some((k) => current[k] !== pending[k]);
+      if (!changed) return;
+      onPatchRef.current(pending);
     }, FLUSH_MS);
   };
 
@@ -120,6 +132,8 @@ const ItemAccessoryToggles: React.FC<Props> = ({ item, children, onPatch, dense,
     pendingRef.current = { ...pendingRef.current, ...patch };
     flushSoon();
   };
+
+  if (!ids.length) return null;
 
   return (
     <div

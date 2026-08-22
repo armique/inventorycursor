@@ -21,7 +21,7 @@ import {
   AlertTriangle,
   Lightbulb
 } from 'lucide-react';
-import { InventoryItem, ItemStatus } from '../types';
+import { InventoryItem, ItemStatus, type ProofAttachment } from '../types';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { resolveTradeIncomingCategory } from '../utils/itemCategoryDetect';
 import { searchAllHardware, HardwareMetadata } from '../services/hardwareDB';
@@ -32,6 +32,7 @@ import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
 import { pickSpecsAiNameVendorUpdates } from '../utils/applySpecsAiResult';
 import { buildCostOrigin } from '../utils/costOrigin';
 import ItemThumbnail, { CategoryIconBox } from './ItemThumbnail';
+import ProofAttachmentsPanel from './ProofAttachmentsPanel';
 
 function localDatetimeInputValue(d = new Date()): string {
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -67,6 +68,10 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose, categoryFields = {
   /** Local datetime for acquired items and sell date on the traded-out line (same instant). */
   const [tradeAcquiredAt, setTradeAcquiredAt] = useState(() => localDatetimeInputValue());
   const [tradeNote, setTradeNote] = useState('');
+  /** Sell/purchase Nachweise for this deal — saved on the traded-out item (+ copied to incoming). */
+  const [tradeProofs, setTradeProofs] = useState<ProofAttachment[]>(() =>
+    Array.isArray(item.proofAttachments) ? [...item.proofAttachments] : []
+  );
   const [incomingItems, setIncomingItems] = useState<IncomingItemDraft[]>([]);
   const [parseSpecsBeforeConfirm, setParseSpecsBeforeConfirm] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -353,8 +358,15 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose, categoryFields = {
 
     const noteSuffix = tradeNote ? `\n\n[Trade Context]: ${tradeNote}` : '';
     const tradeDate = toLocalCalendarDateKey(tradeAcquiredAt) || tradeAcquiredAt.slice(0, 10);
-
     const tradeTs = Date.now();
+    const purchaseProofs: ProofAttachment[] | undefined = tradeProofs.length
+      ? tradeProofs.map((p) => ({
+          ...p,
+          id: `trade-in-${tradeTs}-${p.id}`,
+          note: p.note || `Trade purchase · from ${item.name}`,
+        }))
+      : undefined;
+
     const newInventoryItems: InventoryItem[] = drafts.map((draft, idx) => {
       const { category, subCategory } = resolveTradeIncomingCategory(draft.name, {
         hardwareDbType: draft.hardwareDbType,
@@ -381,6 +393,7 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose, categoryFields = {
         vendor: draft.parsedVendor || 'Trade',
         tradedFromId: item.id,
         ...(draft.specs && Object.keys(draft.specs).length > 0 ? { specs: draft.specs } : {}),
+        ...(purchaseProofs ? { proofAttachments: purchaseProofs } : {}),
         costOrigin: buildCostOrigin({
           kind: 'trade_in',
           addedAs: `Trade in from ${item.name}`,
@@ -408,7 +421,8 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose, categoryFields = {
       tradedForIds: newIds,
       cashOnTop: netCash,
       paymentType: 'Trade',
-      comment2: (item.comment2 || '') + noteSuffix
+      comment2: (item.comment2 || '') + noteSuffix,
+      ...(tradeProofs.length ? { proofAttachments: tradeProofs } : {}),
     };
 
     onSave(updatedOriginal, newInventoryItems);
@@ -754,6 +768,21 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose, categoryFields = {
                   </form>
                </div>
             </div>
+          </div>
+
+          {/* Proof of the deal — same Nachweise as inventory items; kept below the exchange columns */}
+          <div className="mt-6 pt-5 border-t border-slate-100">
+            <ProofAttachmentsPanel
+              recordId={item.id}
+              attachments={tradeProofs}
+              record={item as unknown as Record<string, unknown>}
+              onChange={setTradeProofs}
+              className="border-violet-100 bg-violet-50/50 shadow-none"
+            />
+            <p className="mt-2 text-[10px] font-semibold text-slate-400 leading-snug">
+              Chat / payment screenshots for this trade. Saved on the item you give away; a copy is also attached to
+              each incoming item as purchase proof.
+            </p>
           </div>
         </div>
 

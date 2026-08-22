@@ -11,8 +11,9 @@ import {
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo, BulkImportRecord } from '../types';
 import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
-import { computeSoldTabMargin, getChildren, getItemDisplayShippingAmount, getSoldContainerDisplayTotals, POCKET_PROFIT_TAX_MODE, shouldHideContainerChildInList, containerOrChildMatchesSearch, shouldSurfaceSoldContainerPartInList, itemMatchesActiveInventoryTab, soldContainerPartDispositionDate, matchesInventoryCategoryPin, inventorySubcategoryAliasesMatch } from '../services/financialAggregation';
+import { computeSoldTabMargin, getChildren, getItemDisplayShippingAmount, getSoldContainerDisplayTotals, healRealizedProfitsFromSaleProceeds, POCKET_PROFIT_TAX_MODE, shouldHideContainerChildInList, containerOrChildMatchesSearch, shouldSurfaceSoldContainerPartInList, itemMatchesActiveInventoryTab, soldContainerPartDispositionDate, matchesInventoryCategoryPin, inventorySubcategoryAliasesMatch } from '../services/financialAggregation';
 import { SaleProceedsTrigger } from './SaleProceedsPopover';
+import { SellSplitLedger } from './SellSplitLedger';
 import { saleColumnSplit, saleProceedsFromItemFields, saleProceedsFeeTotal, netPayoutAfterRefund, applyManualSellerShipping, canEditManualSellerShipping, shouldShowSellCellMarketplaceFees, type SaleColumnSplit } from '../utils/saleProceeds';
 import { sumOrderRefundEur } from '../utils/ebayOrderFinancial';
 import { hydrateHubArchiveIndex, loadHubArchiveIndex, findHubArchiveOrderById } from '../services/ebayHubArchiveIndex';
@@ -121,6 +122,7 @@ import { loadEbayOrderIndex } from '../services/ebayOrderIndex';
 import { countOpenEbayOrderLines } from '../utils/ebayOpenOrders';
 import { findMatchingOrdersForItem, type EbayOrderMatch } from '../utils/ebayOrderMatch';
 import { applyEbayOrderMatchToItem } from '../utils/applyEbayOrderMatch';
+import { buildEbayOrderUrl, resolveItemSourceLinks } from '../utils/sourceLinks';
 import ContainerMembershipBadge from './ContainerMembershipBadge';
 import { buildContainerTitle, withRebuiltContainerTitle } from '../utils/buildTitle';
 import { countEqualSplitSoldGroupCandidates } from '../utils/suggestEqualSplitSoldGroups';
@@ -142,7 +144,7 @@ import {
 import { resolveTradeReceivedItems, resolveTradeSourceItem } from '../utils/tradeLinks';
 import { formatPlatformBoughtLabel } from '../utils/purchaseSource';
 import TradeLinkBadge from './TradeLinkBadge';
-import { resolveItemSourceLinks } from '../utils/sourceLinks';
+import { resolveComponentPartTone, componentPartRowAccentClass, componentPartPillProps } from '../utils/componentPartTone';
 import { useInventoryPurchases } from './InventoryPurchasesPanel';
 import {
   isPurchasePreviewId,
@@ -288,8 +290,10 @@ function containerRowClassName(
         ? 'bg-violet-100/50 hover:bg-violet-100/70 shadow-[inset_3px_0_0_0_#7c3aed]'
         : 'bg-violet-50/60 hover:bg-violet-50/95 shadow-[inset_3px_0_0_0_#8b5cf6]'
     );
-  } else if (!isSelected) {
-    parts.push('hover:bg-slate-50/50');
+  } else {
+    const accent = componentPartRowAccentClass(item);
+    if (accent) parts.push(accent);
+    if (!isSelected) parts.push('hover:bg-slate-50/50');
   }
   return parts.join(' ');
 }
@@ -381,13 +385,13 @@ const PRESENCE_COL_WIDTH =
 
 const DEFAULT_WIDTHS: Record<string, number> = {
   select: 36,
-  item: 200,
+  item: 168,
   presence: PRESENCE_COL_WIDTH,
   parseSpecs: 148,
   category: 116,
   status: 82,
   buyPrice: 76,
-  sellPrice: 76,
+  sellPrice: 96,
   suggestedHubSplit: 118,
   storePrice: 84,
   profit: 76,
@@ -419,53 +423,11 @@ const ALL_COLUMNS: { id: ColumnId; label: string }[] = [
 function SellSplitLines({
   split,
   showFees,
-  profitEur,
 }: {
   split: SaleColumnSplit;
   showFees: boolean;
-  profitEur?: number | null;
 }) {
-  return (
-    <>
-      <span className="underline decoration-dotted decoration-slate-300 underline-offset-2 text-slate-900">
-        €{formatEUR(split.totalEur)}
-      </span>
-      {showFees && split.adFeeEur >= 0.01 && (
-        <span className="text-[9px] font-bold text-orange-600 tabular-nums whitespace-nowrap">
-          −€{formatEUR(split.adFeeEur)} ads
-        </span>
-      )}
-      {showFees && split.ebayFeeEur >= 0.01 && (
-        <span className="text-[9px] font-bold text-orange-600 tabular-nums whitespace-nowrap">
-          −€{formatEUR(split.ebayFeeEur)} eBay
-        </span>
-      )}
-      {showFees && split.otherFeeEur >= 0.01 && (
-        <span className="text-[9px] font-bold text-orange-600 tabular-nums whitespace-nowrap">
-          −€{formatEUR(split.otherFeeEur)} fees
-        </span>
-      )}
-      {split.shippingEur >= 0.01 && (
-        <span className="text-[9px] font-bold text-sky-700 tabular-nums whitespace-nowrap">
-          −€{formatEUR(split.shippingEur)} shipping
-        </span>
-      )}
-      {split.refundEur >= 0.01 && (
-        <span className="text-[9px] font-bold text-rose-600 tabular-nums whitespace-nowrap">
-          −€{formatEUR(split.refundEur)} refund
-        </span>
-      )}
-      {profitEur != null && Number.isFinite(profitEur) && (
-        <span
-          className={`text-[9px] font-black tabular-nums whitespace-nowrap ${
-            profitEur >= 0 ? 'text-emerald-600' : 'text-rose-600'
-          }`}
-        >
-          {profitEur >= 0 ? '+' : '−'}€{formatEUR(Math.abs(profitEur))} profit
-        </span>
-      )}
-    </>
-  );
+  return <SellSplitLedger split={split} showFees={showFees} />;
 }
 
 function hubRefundFallbackEur(item: InventoryItem): number {
@@ -650,9 +612,15 @@ function computeAutoColumnWidths(items: InventoryItem[]): Partial<Record<ColumnI
     statusW = Math.max(statusW, measureTextWidth(ctx, String(statusLabel).toUpperCase(), '900 10px Inter, sans-serif', 2.2));
 
     buyPriceW = Math.max(buyPriceW, measureTextWidth(ctx, `€${formatEUR(item.buyPrice)}`, '900 13px Inter, sans-serif'));
+    // K · Pair: buyer + net (+ quiet deduction count) — ~96px is enough.
     sellPriceW = Math.max(
       sellPriceW,
-      measureTextWidth(ctx, item.sellPrice ? `€${formatEUR(item.sellPrice)}` : '-', '700 13px Inter, sans-serif')
+      item.sellPrice
+        ? Math.max(
+            96,
+            measureTextWidth(ctx, `€${formatEUR(item.sellPrice)} net`, '600 11px Inter, sans-serif')
+          )
+        : measureTextWidth(ctx, '-', '700 13px Inter, sans-serif')
     );
     storePriceW = Math.max(
       storePriceW,
@@ -1094,11 +1062,38 @@ const InventoryList: React.FC<Props> = ({
     return new Map(plan.map((row) => [row.itemId, row]));
   }, [items, hubArchiveVersion, splitView, statusFilter]);
 
+  // One-shot heal: Hub-applied rows sometimes kept a stale `profit` while sell-cell net was right.
+  const hubProfitHealDoneRef = useRef(false);
+  useEffect(() => {
+    if (hubProfitHealDoneRef.current) return;
+    if (!items.length) return;
+    const taxMode = businessSettings?.taxMode || POCKET_PROFIT_TAX_MODE;
+    const patches = healRealizedProfitsFromSaleProceeds(items, taxMode);
+    if (!patches.length) {
+      hubProfitHealDoneRef.current = true;
+      return;
+    }
+    hubProfitHealDoneRef.current = true;
+    onUpdate(patches, undefined, {
+      skipUndo: true,
+      skipActionLog: true,
+      skipMembershipSync: true,
+      skipContainerSync: true,
+      flushCloud: true,
+      actionNote: { action: 'Healed sale margins from Hub / fee split' },
+    });
+  }, [items, businessSettings?.taxMode, onUpdate]);
+
   const applyHubSplitPlan = (plan: HubBreakdownReplaceRow[]) => {
     if (!plan.length) return;
     const detailsByItemId: Record<string, string> = {};
     for (const row of plan) detailsByItemId[row.itemId] = hubBreakdownActionDetails(row);
-    onUpdate(hubBreakdownItemsToSave(plan), undefined, {
+    // Stamp pocket margin (net − EK) onto each row; App handleUpdate re-applies taxMode for dashboard.
+    const toSave = hubBreakdownItemsToSave(plan).map((item) => ({
+      ...item,
+      profit: computeSoldTabMargin(item),
+    }));
+    onUpdate(toSave, undefined, {
       skipMembershipSync: true,
       skipContainerSync: true,
       flushCloud: true,
@@ -1465,7 +1460,11 @@ const InventoryList: React.FC<Props> = ({
           mode: 'SMART',
         });
         if (patchedItems.length) {
-          onUpdate(patchedItems, undefined, { flushCloud: true, skipActionLog: true });
+          onUpdate(patchedItems, undefined, {
+            flushCloud: true,
+            skipActionLog: true,
+            skipPriceHistory: true,
+          });
         }
         onUpdateBulkImport(nextRecord);
         setBulkTotalDraft(String(nextRecord.totalCost ?? total));
@@ -1497,7 +1496,11 @@ const InventoryList: React.FC<Props> = ({
           mode: 'SMART',
         });
         if (patchedItems.length) {
-          onUpdate(patchedItems, undefined, { flushCloud: true, skipActionLog: true });
+          onUpdate(patchedItems, undefined, {
+            flushCloud: true,
+            skipActionLog: true,
+            skipPriceHistory: true,
+          });
         }
         onUpdateBulkImport(afterSplit);
       }
@@ -1548,7 +1551,11 @@ const InventoryList: React.FC<Props> = ({
       lockedItemIds: locked.size ? locked : undefined,
     });
     if (patchedItems.length) {
-      onUpdate(patchedItems, undefined, { flushCloud: true, skipActionLog: true });
+      onUpdate(patchedItems, undefined, {
+        flushCloud: true,
+        skipActionLog: true,
+        skipPriceHistory: true,
+      });
     }
     onUpdateBulkImport(afterSplit);
     setBulkNewName('');
@@ -2522,7 +2529,8 @@ const InventoryList: React.FC<Props> = ({
       }
       // Thumb fingerprint: photo *count* alone is not enough (replace/reorder main with same count).
       const thumb = getItemUserPhotoUrls(item)[0] || '';
-      return `${editingCell?.itemId === item.id ? `${editingCell.field}:${editValue}` : ''}|${listingGenId === item.id}|${parsingSingleId === item.id}|${priceSuggestId === item.id}|${(item.isPC || item.isBundle) && collapsedBundles.has(item.id) ? 'col' : 'exp'}|${quickBundleSeed?.id === item.id ? 'qb' : ''}|${activeBgCardItemIds.has(item.id) ? 'bgcard' : ''}|${itemAiCardCounts[item.id] || 0}|${aiCardRegenConfirmId === item.id ? 'confirm' : ''}|lr:${item.saleReady ? 1 : 0}:${(item.marketTitle || '').length}:${(item.marketDescription || '').length}|ph:${getItemUserPhotoCount(item)}:${thumb.slice(-48)}${kidsKey}${kidsEditKey}`;
+      const fin = `fin:${item.sellPrice ?? ''}:${item.profit ?? ''}:${item.feeAmount ?? ''}:${item.saleProceeds?.netPayoutEur ?? ''}:${item.saleProceeds?.buyerTotalEur ?? ''}:${item.saleProceeds?.source ?? ''}:${item.saleProceeds?.refundEur ?? ''}`;
+      return `${editingCell?.itemId === item.id ? `${editingCell.field}:${editValue}` : ''}|${listingGenId === item.id}|${parsingSingleId === item.id}|${priceSuggestId === item.id}|${(item.isPC || item.isBundle) && collapsedBundles.has(item.id) ? 'col' : 'exp'}|${quickBundleSeed?.id === item.id ? 'qb' : ''}|${activeBgCardItemIds.has(item.id) ? 'bgcard' : ''}|${itemAiCardCounts[item.id] || 0}|${aiCardRegenConfirmId === item.id ? 'confirm' : ''}|lr:${item.saleReady ? 1 : 0}:${(item.marketTitle || '').length}:${(item.marketDescription || '').length}|ph:${getItemUserPhotoCount(item)}:${thumb.slice(-48)}|${fin}${kidsKey}${kidsEditKey}`;
     },
     [editingCell, editValue, listingGenId, parsingSingleId, priceSuggestId, collapsedBundles, quickBundleSeed, activeBgCardItemIds, itemAiCardCounts, aiCardRegenConfirmId, items]
   );
@@ -3716,10 +3724,18 @@ const InventoryList: React.FC<Props> = ({
                 <Receipt size={13} strokeWidth={2.25} />
               </button>
 
-              {/* One-click jump to the source chat / order — the whole point of the links. */}
+              {/* One-click jump to the source chat / order — prefer eBay order when linked. */}
               {(() => {
+                const ebayOrderUrl = buildEbayOrderUrl(item.ebayOrderId);
                 const links = resolveItemSourceLinks(item);
-                const primary = links.chat || links.order || links.profile;
+                const primary = ebayOrderUrl
+                  ? {
+                      kind: 'order' as const,
+                      url: ebayOrderUrl,
+                      title: `Open eBay order ${item.ebayOrderId} — verify fees / breakdown`,
+                      label: 'Order',
+                    }
+                  : links.chat || links.order || links.profile;
                 if (!primary) return null;
                 return (
                   <a
@@ -4005,54 +4021,124 @@ const InventoryList: React.FC<Props> = ({
                           {item.name}
                         </p>
                       )}
-                      {!item.parentContainerId && (
-                          <div className="ml-auto flex items-center gap-1.5 shrink-0">
-                            {(item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED) && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  addRecentItemId(item.id);
-                                  setItemToSell(item);
-                                }}
-                                className="h-6 w-6 inline-flex items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-900 transition-colors"
-                                title="Mark Sold"
-                                aria-label={`Mark ${item.name} sold`}
-                              >
-                                <ShoppingBag size={12} strokeWidth={2.25} />
-                              </button>
+                      <div className="ml-auto flex items-center gap-1 shrink-0">
+                            <ItemAccessoryToggles
+                              item={item}
+                              children={isContainerRow ? childItems : undefined}
+                              dense
+                              onPatch={(patch) =>
+                                onUpdate([{ ...item, ...patch }], undefined, {
+                                  skipActionLog: true,
+                                })
+                              }
+                            />
+                            {!item.parentContainerId && (
+                              <>
+                                {(item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED) && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      addRecentItemId(item.id);
+                                      setItemToSell(item);
+                                    }}
+                                    className="h-6 w-6 inline-flex items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-900 transition-colors"
+                                    title="Mark Sold"
+                                    aria-label={`Mark ${item.name} sold`}
+                                  >
+                                    <ShoppingBag size={12} strokeWidth={2.25} />
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setItemToDelete(item);
+                                  }}
+                                  className="h-6 w-6 inline-flex items-center justify-center rounded-md border border-slate-200 bg-white text-slate-400 hover:border-red-300 hover:bg-red-50 hover:text-red-600 transition-colors"
+                                  title="Delete"
+                                  aria-label={`Delete ${item.name}`}
+                                >
+                                  <Trash2 size={12} strokeWidth={2.25} />
+                                </button>
+                              </>
                             )}
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setItemToDelete(item);
-                              }}
-                              className="h-6 w-6 inline-flex items-center justify-center rounded-md border border-slate-200 bg-white text-slate-400 hover:border-red-300 hover:bg-red-50 hover:text-red-600 transition-colors"
-                              title="Delete"
-                              aria-label={`Delete ${item.name}`}
-                            >
-                              <Trash2 size={12} strokeWidth={2.25} />
-                            </button>
                           </div>
-                        )}
                    </div>
+                   {(() => {
+                     const showContainerKinds = isContainerRow;
+                     const showAnalyzer =
+                       (item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED) &&
+                       !item.parentContainerId;
+                     if (!showContainerKinds && !showAnalyzer) return null;
+                     const analyzerChips =
+                       showAnalyzer
+                         ? (() => {
+                             const sugg = suggestedEbayById.get(item.id) || null;
+                             const analyzer = computePriceAnalyzer(item, sugg, items);
+                             if (!analyzer) return null;
+                             const channelBadgeClass = (
+                               channel: 'KA' | 'EB',
+                               action: PriceAnalyzerAction,
+                             ) => {
+                               if (action === 'drop')
+                                 return 'bg-amber-50 text-amber-950 border-amber-300';
+                               if (action === 'raise')
+                                 return 'bg-sky-50 text-sky-950 border-sky-300';
+                               if (channel === 'KA')
+                                 return 'bg-emerald-100 text-emerald-950 border-emerald-400';
+                               return 'bg-orange-100 text-orange-800 border-orange-300';
+                             };
+                             const shortChannelLabel = (ch: {
+                               action: PriceAnalyzerAction;
+                               channel: string;
+                               suggest: number;
+                               live?: number;
+                             }) => {
+                               if (ch.action === 'drop')
+                                 return `↓${ch.channel} €${Math.round(ch.live || 0)}→€${Math.round(ch.suggest)}`;
+                               if (ch.action === 'raise')
+                                 return `↑${ch.channel} €${Math.round(ch.live || 0)}→€${Math.round(ch.suggest)}`;
+                               if (ch.action === 'ok')
+                                 return `OK ${ch.channel} €${Math.round(ch.live || ch.suggest)}`;
+                               return `${ch.channel} €${Math.round(ch.suggest)}`;
+                             };
+                             const saveSuggest = () => {
+                               const fresh =
+                                 resolveSuggestedEbayList(item, items, loadFlipFees(), childItems) ||
+                                 sugg;
+                               if (!fresh) return;
+                               onUpdate(
+                                 [{ ...item, ...suggestionPatchFromPrice(fresh) }],
+                                 undefined,
+                                 { skipActionLog: true }
+                               );
+                               setToast(
+                                 `Saved price target · Day ${fresh.daysHeld ?? analyzer.daysHeld} · ${Math.round((fresh.targetMargin ?? analyzer.targetMarginPct / 100) * 100)}% · KA €${formatEUR(fresh.kleinList)} · EB €${formatEUR(fresh.ebayList)}`
+                               );
+                               setTimeout(() => setToast(null), 2600);
+                             };
+                             return analyzer.channels.map((ch) => (
+                               <button
+                                 key={ch.channel}
+                                 type="button"
+                                 onClick={saveSuggest}
+                                 title={ch.label}
+                                 className={`inline-flex items-center px-1.5 py-0.5 rounded border text-[9px] font-black uppercase tracking-wide tabular-nums ${channelBadgeClass(ch.channel, ch.action)}`}
+                               >
+                                 {shortChannelLabel(ch)}
+                               </button>
+                             ));
+                           })()
+                         : null;
+                     if (!showContainerKinds && !analyzerChips) return null;
+                     return (
                    <div
                      className="flex items-center gap-1 flex-wrap mt-0.5"
+                     data-scroll-defer=""
                      onClick={(e) => e.stopPropagation()}
                    >
-                     <ItemAccessoryToggles
-                       item={item}
-                       children={isContainerRow ? childItems : undefined}
-                       labeled
-                       dense
-                       onPatch={(patch) =>
-                         onUpdate([{ ...item, ...patch }], undefined, {
-                           skipActionLog: true,
-                         })
-                       }
-                     />
-                     {isContainerRow &&
+                     {showContainerKinds &&
                        (['pc', 'bundle', 'mixed'] as const).map((kind) => {
                          const active = getContainerKind(item) === kind;
                          return (
@@ -4078,79 +4164,24 @@ const InventoryList: React.FC<Props> = ({
                            </button>
                          );
                        })}
-                     {(item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED) &&
-                       !item.parentContainerId &&
-                       (() => {
-                         const sugg = suggestedEbayById.get(item.id) || null;
-                         const analyzer = computePriceAnalyzer(item, sugg, items);
-                         if (!analyzer) return null;
-                         const channelBadgeClass = (
-                           channel: 'KA' | 'EB',
-                           action: PriceAnalyzerAction,
-                         ) => {
-                           if (action === 'drop')
-                             return 'bg-amber-50 text-amber-950 border-amber-300';
-                           if (action === 'raise')
-                             return 'bg-sky-50 text-sky-950 border-sky-300';
-                           if (channel === 'KA')
-                             return 'bg-emerald-100 text-emerald-950 border-emerald-400';
-                           return 'bg-orange-100 text-orange-800 border-orange-300';
-                         };
-                         const shortChannelLabel = (ch: {
-                           action: PriceAnalyzerAction;
-                           channel: string;
-                           suggest: number;
-                           live?: number;
-                         }) => {
-                           if (ch.action === 'drop')
-                             return `↓${ch.channel} €${Math.round(ch.live || 0)}→€${Math.round(ch.suggest)}`;
-                           if (ch.action === 'raise')
-                             return `↑${ch.channel} €${Math.round(ch.live || 0)}→€${Math.round(ch.suggest)}`;
-                           if (ch.action === 'ok')
-                             return `OK ${ch.channel} €${Math.round(ch.live || ch.suggest)}`;
-                           return `${ch.channel} €${Math.round(ch.suggest)}`;
-                         };
-                         const saveSuggest = () => {
-                           const fresh =
-                             resolveSuggestedEbayList(item, items, loadFlipFees(), childItems) ||
-                             sugg;
-                           if (!fresh) return;
-                           onUpdate(
-                             [{ ...item, ...suggestionPatchFromPrice(fresh) }],
-                             undefined,
-                             { skipActionLog: true }
-                           );
-                           setToast(
-                             `Saved price target · Day ${fresh.daysHeld ?? analyzer.daysHeld} · ${Math.round((fresh.targetMargin ?? analyzer.targetMarginPct / 100) * 100)}% · KA €${formatEUR(fresh.kleinList)} · EB €${formatEUR(fresh.ebayList)}`
-                           );
-                           setTimeout(() => setToast(null), 2600);
-                         };
-                         return analyzer.channels.map((ch) => (
-                           <button
-                             key={ch.channel}
-                             type="button"
-                             onClick={saveSuggest}
-                             title={ch.label}
-                             className={`inline-flex items-center px-1.5 py-0.5 rounded border text-[9px] font-black uppercase tracking-wide tabular-nums ${channelBadgeClass(ch.channel, ch.action)}`}
-                           >
-                             {shortChannelLabel(ch)}
-                           </button>
-                         ));
-                       })()}
+                     {analyzerChips}
                    </div>
+                     );
+                   })()}
                    {item.status === ItemStatus.SOLD && (() => {
                       const hasBuyerInfo = Boolean(item.customer?.name || item.ebayUsername || item.ebayOrderId);
+                      const ebayOrderUrl = buildEbayOrderUrl(item.ebayOrderId);
                       const openBuyerEditor = (e: React.MouseEvent) => {
                         e.stopPropagation();
                         addRecentItemId(item.id);
                         setItemToEditBuyer(item);
                       };
                       return (
-                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                        <div className="mt-1.5 flex items-center gap-1.5 min-w-0 w-full">
                           <button
                             type="button"
                             onClick={openBuyerEditor}
-                            className={`text-[9px] font-bold flex items-center gap-1 rounded-lg border transition-colors ${
+                            className={`text-[9px] font-bold flex items-center gap-1 rounded-lg border transition-colors min-w-0 flex-1 overflow-hidden ${
                               hasBuyerInfo
                                 ? 'text-slate-600 bg-slate-50 px-2 py-1 border-slate-100 hover:bg-slate-100 hover:border-slate-200'
                                 : 'text-indigo-800 bg-indigo-50 px-2 py-1 border-indigo-200 hover:bg-indigo-100'
@@ -4160,7 +4191,7 @@ const InventoryList: React.FC<Props> = ({
                             {hasBuyerInfo ? (
                               <>
                                 <Info size={10} className="text-slate-400 shrink-0" />
-                                <span className="truncate max-w-[14rem]">
+                                <span className="truncate min-w-0">
                                   {item.customer?.name || 'Buyer'}
                                   {item.ebayUsername ? ` · eBay: ${item.ebayUsername}` : ''}
                                   {item.ebayOrderId ? ` · #${item.ebayOrderId}` : ''}
@@ -4169,15 +4200,27 @@ const InventoryList: React.FC<Props> = ({
                             ) : (
                               <>
                                 <User size={10} className="shrink-0" />
-                                Add eBay order & buyer
+                                <span className="truncate">Add eBay order & buyer</span>
                               </>
                             )}
                           </button>
-                          {!item.ebayOrderId && (
+                          {ebayOrderUrl ? (
+                            <a
+                              href={ebayOrderUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="shrink-0 text-[9px] font-bold text-blue-700 inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100"
+                              title={`Open eBay order ${item.ebayOrderId} — check fees / breakdown`}
+                            >
+                              <ExternalLink size={10} className="shrink-0" />
+                              Open order
+                            </a>
+                          ) : (
                             <button
                               type="button"
                               onClick={(e) => { e.stopPropagation(); openOrderLookupModal(item); }}
-                              className="text-[9px] font-bold text-indigo-600 flex items-center gap-1 px-2 py-1 rounded-lg border border-indigo-100 bg-white hover:bg-indigo-50"
+                              className="shrink-0 text-[9px] font-bold text-indigo-600 inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-indigo-100 bg-white hover:bg-indigo-50"
                               title="Match this sale to a cached eBay order (API backfill or CSV import)"
                             >
                               <Receipt size={10} className="shrink-0" />
@@ -4187,8 +4230,10 @@ const InventoryList: React.FC<Props> = ({
                         </div>
                       );
                    })()}
-                   <SaleCycleHistory item={item} compact />
-                   <BuyPriceHistory item={item} compact />
+                   <div data-scroll-defer="">
+                     <SaleCycleHistory item={item} compact />
+                     <BuyPriceHistory item={item} compact />
+                   </div>
                    {item.status !== ItemStatus.SOLD && isRealizedDisposal(item) && (item.customer?.name || item.giftRecipient || item.ebayUsername || item.ebayOrderId) && (
                       <p
                         className="text-[9px] text-slate-600 font-medium mt-1.5 flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-lg border border-slate-100"
@@ -4286,16 +4331,20 @@ const InventoryList: React.FC<Props> = ({
                             const childProfit = profitForDisplay(liveChild);
                             const isEditingChildName =
                               editingCell?.itemId === liveChild.id && editingCell?.field === 'item';
+                            const childTone = resolveComponentPartTone(liveChild);
                             return (
                             <div
                               key={`${liveChild.id}:${liveChild.name}`}
-                              className={`flex items-center gap-2 py-px px-1 rounded-sm transition-colors w-full min-w-0 ${
+                              className={`flex items-center gap-2 py-px pl-1.5 pr-1 rounded-sm transition-colors w-full min-w-0 border-l-[3px] ${
                                   childHit
                                     ? 'bg-amber-100/80 ring-1 ring-amber-200/80'
                                     : item.isPC
                                       ? 'hover:bg-indigo-100/70'
                                       : 'hover:bg-violet-100/70'
                                 }`}
+                              style={{
+                                borderLeftColor: childTone?.accentHex || (item.isPC ? '#6366f1' : '#8b5cf6'),
+                              }}
                             >
                               {isEditingChildName ? (
                                 <input
@@ -4443,7 +4492,8 @@ const InventoryList: React.FC<Props> = ({
              </div>
           </td>
         );
-      case 'category':
+      case 'category': {
+        const partPill = componentPartPillProps(item);
         return (
           <td key={id} style={style}>
              <div 
@@ -4455,10 +4505,18 @@ const InventoryList: React.FC<Props> = ({
                    {item.category}
                    <Edit2 size={10} className="opacity-0 group-hover/cat:opacity-100 transition-opacity shrink-0"/>
                 </p>
-                {item.subCategory && <p className="text-[9px] font-bold text-slate-400 group-hover/cat:text-blue-400 truncate mt-0.5 pl-0.5">{item.subCategory}</p>}
+                {partPill ? (
+                  <p
+                    className={`mt-0.5 ${partPill.className}`}
+                    title={partPill.title}
+                  >
+                    {partPill.label}
+                  </p>
+                ) : null}
              </div>
           </td>
         );
+      }
       case 'status':
         const isEditingStatus = editingCell?.itemId === item.id && editingCell?.field === 'status';
         const statusLabel =
@@ -4553,10 +4611,6 @@ const InventoryList: React.FC<Props> = ({
             ? getSoldContainerDisplayTotals(item, items, POCKET_PROFIT_TAX_MODE)
             : null;
         const displaySellPrice = soldContainerTotals?.sellPrice ?? item.sellPrice;
-        const sellCellProfit =
-          isSoldOrTradedOnly(item)
-            ? soldContainerTotals?.profit ?? computeSoldTabMargin(item)
-            : null;
         const split = saleColumnSplit(item, {
           displaySellEur: displaySellPrice,
           shippingFallbackEur: getItemDisplayShippingAmount(item, items),
@@ -4603,7 +4657,6 @@ const InventoryList: React.FC<Props> = ({
                   <SellSplitLines
                     split={split}
                     showFees={shouldShowSellCellMarketplaceFees(item, showPriceBreakdown)}
-                    profitEur={sellCellProfit}
                   />
                 ) : (
                   <span className="underline decoration-dotted decoration-slate-300 underline-offset-2 text-slate-900">
@@ -4646,7 +4699,6 @@ const InventoryList: React.FC<Props> = ({
                 <SellSplitLines
                   split={split}
                   showFees
-                  profitEur={computeSoldTabMargin(row.nextItem)}
                 />
               </div>
             ) : (
@@ -6655,7 +6707,6 @@ const InventoryList: React.FC<Props> = ({
               >
               <MobileStockCard
                 item={item}
-                profit={profitForDisplay(item)}
                 suggestedEbayList={suggestedEbayById.get(item.id)?.ebayList}
                 suggestedKleinList={suggestedEbayById.get(item.id)?.kleinList}
                 suggestedFeePct={suggestedEbayById.get(item.id)?.feePct}
@@ -7450,8 +7501,6 @@ const InventoryList: React.FC<Props> = ({
                    if (remainingChildren.length === 0) {
                      // Last part sold — remove empty parent shell from inventory.
                      onUpdate([soldChild], [parent.id]);
-                     setToast(`Sold “${soldChild.name}” · last part · container removed`);
-                     setTimeout(() => setToast(null), 2800);
                    } else {
                      const buyTotal =
                        Math.round(
@@ -7475,10 +7524,6 @@ const InventoryList: React.FC<Props> = ({
                        );
                      }
                      onUpdate([updatedParent, soldChild]);
-                     setToast(
-                       `Sold “${soldChild.name}” · left group · title updated · €${formatEUR(buyTotal)}`
-                     );
-                     setTimeout(() => setToast(null), 2600);
                    }
                  } else {
                    onUpdate([soldChild]);
@@ -7711,7 +7756,7 @@ const InventoryList: React.FC<Props> = ({
 };
 
 /** Below this count, native table scrolling is smoother than virtualized absolute rows. */
-const INVENTORY_VIRTUAL_THRESHOLD = 100;
+const INVENTORY_VIRTUAL_THRESHOLD = 40;
 
 const SalePlatformQuickPickButtons: React.FC<{
   dense?: boolean;
@@ -7783,19 +7828,33 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
 }: InventoryTableBodyProps) {
   const useVirtual = sortedItems.length > INVENTORY_VIRTUAL_THRESHOLD;
 
-  const rowVirtualizer = useVirtualizer({
-    count: sortedItems.length,
-    getScrollElement: () => scrollElement,
-    estimateSize: (index) => {
+  // Precompute once per data/edit change — not on every virtualizer scroll frame.
+  const rowActivityKeyById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const item of sortedItems) {
+      map.set(item.id, getRowActivityKey(item));
+    }
+    return map;
+  }, [sortedItems, getRowActivityKey]);
+
+  const estimateSize = useCallback(
+    (index: number) => {
       const item = sortedItems[index];
       if (!item) return rowHeightEstimate;
       let h = rowHeightEstimate;
-      h += 20;
+      // Extra under-name rows only (OVP/IO live on the title row now — do not pad every row).
+      if (item.isPC || item.isBundle) h += 16;
+      if (
+        (item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED) &&
+        !item.parentContainerId
+      ) {
+        h += 14; // price-analyzer chips
+      }
       if (
         isRealizedDisposal(item) &&
         (item.customer?.name || item.giftRecipient || item.ebayUsername || item.ebayOrderId)
       ) {
-        h += 16;
+        h += 18;
       }
       if ((item.tradedForIds?.length ?? 0) > 0 || item.tradedFromId) {
         h += 22;
@@ -7807,21 +7866,33 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
       }
       return h;
     },
-    overscan: 5,
+    [sortedItems, rowHeightEstimate, collapsedBundles]
+  );
+
+  const rowVirtualizer = useVirtualizer({
+    count: sortedItems.length,
+    getScrollElement: () => scrollElement,
+    estimateSize,
+    // Fixed estimates only — measureElement during scroll causes layout thrash / jumpy feel.
+    overscan: 12,
+    // Keep pointer-events blocked briefly after the last scroll event so inertial
+    // scroll / click-through cannot toggle OVP and trigger a cloud write.
+    isScrollingResetDelay: 280,
     getItemKey: (index) => sortedItems[index]?.id ?? index,
   });
 
+  const itemCount = sortedItems.length;
+  const collapsedSig = useMemo(() => {
+    if (collapsedBundles.size === 0) return '';
+    return Array.from(collapsedBundles).join('\0');
+  }, [collapsedBundles]);
+
   useLayoutEffect(() => {
-    if (!useVirtual || !scrollElement) return;
+    if (!useVirtual) return;
+    // Refresh estimated positions after expand/collapse or list length change — never on scroll.
     rowVirtualizer.measure();
-    const ro = new ResizeObserver(() => {
-      const top = scrollElement.scrollTop;
-      rowVirtualizer.measure();
-      scrollElement.scrollTop = top;
-    });
-    ro.observe(scrollElement);
-    return () => ro.disconnect();
-  }, [scrollElement, useVirtual, sortedItems, rowVirtualizer, collapsedBundles]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useVirtual, itemCount, collapsedSig, rowHeightEstimate]);
 
   if (sortedItems.length === 0) {
     return (
@@ -7849,7 +7920,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
             renderRowCells={renderRowCells}
             itemFlexWidth={itemFlexWidth}
             soakSpacer={soakSpacer}
-            rowActivityKey={getRowActivityKey(item)}
+            rowActivityKey={rowActivityKeyById.get(item.id) ?? ''}
             highlighted={highlightedItemId === item.id}
           />
         ))}
@@ -7866,7 +7937,9 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
       : 0;
 
   return (
-    <tbody className="divide-y divide-slate-50">
+    <tbody
+      className={`divide-y divide-slate-50${rowVirtualizer.isScrolling ? ' inv-is-scrolling' : ''}`}
+    >
       {topSpacer > 0 && (
         <tr aria-hidden="true" className="pointer-events-none border-0">
           <td colSpan={colCount} className="!p-0 !border-0" style={{ height: `${topSpacer}px` }} />
@@ -7883,10 +7956,9 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
             renderRowCells={renderRowCells}
             itemFlexWidth={itemFlexWidth}
             soakSpacer={soakSpacer}
-            rowActivityKey={getRowActivityKey(item)}
+            rowActivityKey={rowActivityKeyById.get(item.id) ?? ''}
             highlighted={highlightedItemId === item.id}
             virtualIndex={virtualRow.index}
-            measureRef={rowVirtualizer.measureElement}
           />
         );
       })}
@@ -7908,20 +7980,19 @@ type InventoryTableRowProps = {
   rowActivityKey: string;
   highlighted?: boolean;
   virtualIndex?: number;
-  measureRef?: (node: Element | null) => void;
   itemFlexWidth?: number | null;
   soakSpacer?: boolean;
 };
 
 const InventoryTableRow = React.memo(
-  function InventoryTableRow({ item, isSelected, renderRowCells, highlighted, virtualIndex, measureRef, itemFlexWidth, soakSpacer }: InventoryTableRowProps) {
+  function InventoryTableRow({ item, isSelected, renderRowCells, highlighted, virtualIndex, itemFlexWidth, soakSpacer }: InventoryTableRowProps) {
     return (
       <tr
-        ref={measureRef}
         data-index={virtualIndex}
         data-inventory-item-id={item.id}
         data-container={isInventoryContainer(item) ? (item.isPC ? 'pc' : 'bundle') : undefined}
         className={containerRowClassName(item, isSelected, Boolean(highlighted))}
+        style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 88px' }}
       >
         {renderRowCells(item, isSelected, itemFlexWidth)}
         {soakSpacer ? <td className="inv-col-soak" aria-hidden /> : null}
@@ -7936,7 +8007,8 @@ const InventoryTableRow = React.memo(
     prev.highlighted === next.highlighted &&
     prev.renderRowCells === next.renderRowCells &&
     prev.itemFlexWidth === next.itemFlexWidth &&
-    prev.soakSpacer === next.soakSpacer
+    prev.soakSpacer === next.soakSpacer &&
+    prev.virtualIndex === next.virtualIndex
 );
 
 type InventoryListTablePaneProps = {
@@ -8046,7 +8118,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
       <div
         ref={attachScrollRef}
         className="flex-1 min-h-0 overflow-x-auto overflow-y-auto custom-scrollbar pb-[4.75rem]"
-        style={{ overflowAnchor: 'none' }}
+        style={{ overflowAnchor: 'none', overscrollBehavior: 'contain' }}
       >
         <table
           className="w-full text-left border-collapse table-fixed"
@@ -8075,7 +8147,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
             {itemLocked ? <col key="soak" /> : null}
           </colgroup>
           <thead className="sticky top-0 z-10 bg-white">
-            <tr className="bg-slate-50/80 border-b border-slate-100 text-[10px] font-black uppercase text-slate-400 tracking-widest backdrop-blur-sm">
+            <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-black uppercase text-slate-400 tracking-widest">
               {visibleColumns.map((colId) => {
                 const rawW = columnWidths[colId] || DEFAULT_WIDTHS[colId];
                 const sortable = !['actions', 'select', 'parseSpecs', 'suggestedHubSplit'].includes(colId);

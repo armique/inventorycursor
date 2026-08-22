@@ -16,12 +16,19 @@ import {
 } from './saleProceeds';
 import { orderHasFeeBreakdown } from '../services/ebayOrderIndex';
 import { sumOrderRefundEur } from './ebayOrderFinancial';
-import { roundMoney, computeItemProfitBeforeOverhead } from '../services/financialAggregation';
+import { roundMoney, computeItemProfitBeforeOverhead, computeSoldTabMargin } from '../services/financialAggregation';
 import { formatEUR } from './formatMoney';
+import { customerFromEbayOrder } from './ebayOrderBuyerData';
+import { shouldCorrectSalePlatformToEbay } from './applyEbayOrderMatch';
 
 const EPS = 0.02;
 
-export type HubBreakdownReplaceReason = 'screenshot' | 'estimated' | 'missing' | 'differs';
+export type HubBreakdownReplaceReason =
+  | 'screenshot'
+  | 'estimated'
+  | 'missing'
+  | 'differs'
+  | 'order_meta';
 
 export type HubBreakdownSnapshot = {
   ads: number;
@@ -49,6 +56,77 @@ function money(n: number | null | undefined): number {
   return n != null && Number.isFinite(n) ? roundMoney(Math.abs(n)) : 0;
 }
 
+function blank(s: string | null | undefined): boolean {
+  return !String(s || '').trim();
+}
+
+function itemHasCustomer(item: InventoryItem): boolean {
+  const c = item.customer;
+  if (!c) return false;
+  return Boolean(
+    String(c.name || '').trim() ||
+      String(c.address || '').trim() ||
+      String(c.email || '').trim() ||
+      String(c.phone || '').trim()
+  );
+}
+
+/** True when Hub has order/buyer fields the sold row is still missing. */
+export function orderMetaNeedsHubFill(
+  item: InventoryItem,
+  order: EbayOrderRecord,
+  line: EbayOrderLineItem
+): boolean {
+  if (blank(item.ebayOrderId) && order.orderId) return true;
+  if (blank(item.ebayOrderLineKey) && order.orderId) return true;
+  if (blank(item.ebayUsername) && order.buyer?.username) return true;
+  if (blank(item.ebaySku) && line.sku) return true;
+  if (blank(item.ebayListingId) && line.listingId) return true;
+  if (blank(item.platformSold) || shouldCorrectSalePlatformToEbay(item)) return true;
+  if (blank(item.paymentType) || shouldCorrectSalePlatformToEbay(item)) return true;
+  if (blank(item.sellDate) && order.creationDate) return true;
+  const hubCustomer = customerFromEbayOrder(order);
+  const hubHasBuyer = Boolean(
+    hubCustomer.name || hubCustomer.address || hubCustomer.email || hubCustomer.phone
+  );
+  if (!itemHasCustomer(item) && hubHasBuyer) return true;
+  return false;
+}
+
+/**
+ * Fill blank order/buyer fields from Hub without clobbering values the user already typed.
+ * Always anchors ebayOrderId / line key to this Hub order when applying a breakdown.
+ */
+export function fillMissingOrderMetaFromHub(
+  item: InventoryItem,
+  order: EbayOrderRecord,
+  line: EbayOrderLineItem
+): InventoryItem {
+  const hubCustomer = customerFromEbayOrder(order);
+  const hubHasBuyer = Boolean(
+    hubCustomer.name || hubCustomer.address || hubCustomer.email || hubCustomer.phone
+  );
+  const fixPlatform = blank(item.platformSold) || shouldCorrectSalePlatformToEbay(item);
+  const paymentType =
+    fixPlatform || blank(item.paymentType) ? 'ebay.de' : item.paymentType;
+
+  return {
+    ...item,
+    ebayOrderId: blank(item.ebayOrderId) ? order.orderId : item.ebayOrderId,
+    ebayOrderLineKey: blank(item.ebayOrderLineKey)
+      ? lineItemClaimKey(order.orderId, line)
+      : item.ebayOrderLineKey,
+    ebayUsername: blank(item.ebayUsername) ? order.buyer?.username || item.ebayUsername : item.ebayUsername,
+    ebaySku: blank(item.ebaySku) ? line.sku || item.ebaySku : item.ebaySku,
+    ebayListingId: blank(item.ebayListingId) ? line.listingId || item.ebayListingId : item.ebayListingId,
+    platformSold: fixPlatform ? 'ebay.de' : item.platformSold,
+    paymentType,
+    customer: !itemHasCustomer(item) && hubHasBuyer ? hubCustomer : item.customer,
+    // Only fill missing sellDate — never rewrite an existing Sold-tab month key.
+    sellDate: blank(item.sellDate) ? order.creationDate || item.sellDate : item.sellDate,
+  };
+}
+
 function snapshot(item: InventoryItem, taxMode?: TaxMode): HubBreakdownSnapshot {
   const split = saleColumnSplit(item);
   const p = saleProceedsFromItemFields(item);
@@ -60,7 +138,9 @@ function snapshot(item: InventoryItem, taxMode?: TaxMode): HubBreakdownSnapshot 
     net: split?.netEur ?? p.netPayoutEur ?? null,
     sell: item.sellPrice ?? null,
     total: split?.totalEur ?? p.buyerTotalEur ?? item.sellPrice ?? null,
-    profit: taxMode ? computeItemProfitBeforeOverhead(item, taxMode) : item.profit ?? null,
+    profit: taxMode === 'SmallBusiness' || !taxMode
+      ? computeSoldTabMargin(item)
+      : computeItemProfitBeforeOverhead(item, taxMode),
     source: p.feesEstimated ? 'estimated' : p.source || 'inferred',
   };
 }
@@ -121,11 +201,14 @@ export function hubBreakdownReplaceReason(
   line: EbayOrderLineItem
 ): HubBreakdownReplaceReason | null {
   const refundEur = sumOrderRefundEur(order);
-  if (!orderHasFeeBreakdown(order) && refundEur < 0.01) return null;
+  const metaGap = orderMetaNeedsHubFill(item, order, line);
+  if (!orderHasFeeBreakdown(order) && refundEur < 0.01) {
+    return metaGap ? 'order_meta' : null;
+  }
   const next = saleProceedsFromOrder(order, line);
   const cur = saleProceedsFromItemFields(item);
   if (!hubHasConcreteFees(next)) {
-    if (refundEur < 0.01) return null;
+    if (refundEur < 0.01) return metaGap ? 'order_meta' : null;
     if (!item.saleProceeds) return 'missing';
     if (Math.abs(money(cur.refundEur) - refundEur) >= EPS) return 'differs';
     const afterNet = netPayoutAfterRefund(
@@ -135,13 +218,13 @@ export function hubBreakdownReplaceReason(
       refundEur
     );
     if (afterNet != null && Math.abs(money(cur.netPayoutEur) - afterNet) >= EPS) return 'differs';
-    return null;
+    return metaGap ? 'order_meta' : null;
   }
   if (!item.saleProceeds) return 'missing';
   if (cur.feesEstimated) return 'estimated';
   if (cur.source === 'ebay_screenshot' || cur.source === 'inferred') return 'screenshot';
   if (cur.source !== 'ebay_seller_hub' || proceedsDiffer(cur, next)) return 'differs';
-  return null;
+  return metaGap ? 'order_meta' : null;
 }
 
 export function buildHubBreakdownReplacePlan(
@@ -176,7 +259,8 @@ export function buildHubBreakdownReplacePlan(
 
 /**
  * Stamp Hub buyer-total + fee split onto an already-sold row.
- * Does not re-mark the sale, nest the item, or rewrite sellDate / membership.
+ * Also fills missing order/buyer fields (username, customer, SKU, platform).
+ * Does not re-mark the sale, nest the item, or rewrite an existing sellDate.
  */
 export function applyHubPayoutBreakdownToSoldItem(
   item: InventoryItem,
@@ -184,13 +268,14 @@ export function applyHubPayoutBreakdownToSoldItem(
   line: EbayOrderLineItem,
   taxMode: TaxMode
 ): InventoryItem {
+  const withMeta = fillMissingOrderMetaFromHub(item, order, line);
   const fromHub = saleProceedsFromOrder(order, line);
-  const current = saleProceedsFromItemFields(item);
+  const current = saleProceedsFromItemFields(withMeta);
   const keepExistingFees = !hubHasConcreteFees(fromHub) && saleProceedsFeeTotal(current) >= 0.01;
   const refundEur = fromHub.refundEur ?? current.refundEur ?? 0;
   const feeSource = keepExistingFees ? current : fromHub;
   const feeTotal = saleProceedsFeeTotal(feeSource);
-  const buyerTotal = fromHub.buyerTotalEur ?? current.buyerTotalEur ?? item.sellPrice ?? 0;
+  const buyerTotal = fromHub.buyerTotalEur ?? current.buyerTotalEur ?? withMeta.sellPrice ?? 0;
   const netPayoutEur = netPayoutAfterRefund(
     buyerTotal,
     feeTotal,
@@ -216,26 +301,32 @@ export function applyHubPayoutBreakdownToSoldItem(
       };
 
   const next: InventoryItem = {
-    ...item,
-    status: item.status === ItemStatus.TRADED ? ItemStatus.TRADED : ItemStatus.SOLD,
-    name: item.name,
-    parentContainerId: item.parentContainerId,
-    componentIds: item.componentIds,
-    isPC: item.isPC,
-    isBundle: item.isBundle,
-    sellDate: item.sellDate,
+    ...withMeta,
+    status: withMeta.status === ItemStatus.TRADED ? ItemStatus.TRADED : ItemStatus.SOLD,
+    name: withMeta.name,
+    parentContainerId: withMeta.parentContainerId,
+    componentIds: withMeta.componentIds,
+    isPC: withMeta.isPC,
+    isBundle: withMeta.isBundle,
+    sellDate: withMeta.sellDate,
     sellPrice: buyerTotal,
-    ebayOrderId: item.ebayOrderId || order.orderId,
-    ebayOrderLineKey: item.ebayOrderLineKey || lineItemClaimKey(order.orderId, line),
+    ebayOrderId: withMeta.ebayOrderId || order.orderId,
+    ebayOrderLineKey: withMeta.ebayOrderLineKey || lineItemClaimKey(order.orderId, line),
     hasFee: feeTotal >= 0.01,
     feeAmount: feeTotal,
-    sellerPaidShipping: feeTotal >= 0.01 ? false : item.sellerPaidShipping,
-    sellerShippingAmount: feeTotal >= 0.01 ? undefined : item.sellerShippingAmount,
+    sellerPaidShipping: feeTotal >= 0.01 ? false : withMeta.sellerPaidShipping,
+    sellerShippingAmount: feeTotal >= 0.01 ? undefined : withMeta.sellerShippingAmount,
     saleProceeds: proceedsHub,
   };
   return {
     ...next,
-    profit: parseFloat(computeItemProfitBeforeOverhead(next, taxMode).toFixed(2)),
+    // Sold-tab margin is always net − EK; taxMode still used for Diff/VAT callers.
+    profit: parseFloat(
+      (taxMode === 'SmallBusiness'
+        ? computeSoldTabMargin(next)
+        : computeItemProfitBeforeOverhead(next, taxMode)
+      ).toFixed(2)
+    ),
   };
 }
 
@@ -247,6 +338,8 @@ export function hubBreakdownItemsToSave(plan: HubBreakdownReplaceRow[]): Invento
 export function hubBreakdownActionDetails(row: HubBreakdownReplaceRow): string {
   const bits = [
     row.orderId,
+    row.nextItem.ebayUsername ? `@${row.nextItem.ebayUsername}` : null,
+    row.nextItem.customer?.name ? `buyer ${row.nextItem.customer.name}` : null,
     row.after.total != null ? `buyer €${formatEUR(row.after.total)}` : null,
     `ads €${formatEUR(row.after.ads)}`,
     `eBay €${formatEUR(row.after.ebay)}`,

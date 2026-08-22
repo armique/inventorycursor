@@ -13,8 +13,8 @@ import {
 } from '../utils/replaceItemSaleProceedsFromHub';
 import { enforceContainerMembershipInvariants, findEmptyContainerShellIds } from '../utils/containerMembershipInvariants';
 import { shouldHideContainerChildInList } from '../services/financialAggregation';
-import { saleColumnSplit } from '../utils/saleProceeds';
-import { computeItemProfitBeforeOverhead } from '../services/financialAggregation';
+import { saleColumnSplit, saleProceedsFromOrder } from '../utils/saleProceeds';
+import { computeItemProfitBeforeOverhead, computeSoldTabMargin, healRealizedProfitsFromSaleProceeds } from '../services/financialAggregation';
 
 function hubEvent(
   orderId: string,
@@ -83,6 +83,10 @@ const screenshotItem: InventoryItem = {
 const alreadyHub: InventoryItem = {
   ...screenshotItem,
   id: 'already-ok',
+  ebayUsername: 'buyer1',
+  ebaySku: 'GPU-1',
+  ebayOrderLineKey: '03-11111-22222::GPU-1',
+  customer: { name: 'buyer1', address: '' },
   saleProceeds: {
     capturedAt: '2026-08-19T00:00:00.000Z',
     source: 'ebay_seller_hub',
@@ -330,5 +334,92 @@ assert.equal(refundOnlyPlan[0].nextItem.saleProceeds?.transactionFeeEur, 3.75);
 assert.equal(refundOnlyPlan[0].nextItem.saleProceeds?.refundEur, 5);
 assert.equal(refundOnlyPlan[0].after.net, 3.02);
 assert.equal(refundOnlyPlan[0].nextItem.profit, -1.98);
+
+// Fees already match Hub, but buyer/username were never typed — still offer Hub cell.
+const metaGapItem: InventoryItem = {
+  ...alreadyHub,
+  id: 'meta-gap',
+  ebayUsername: undefined,
+  customer: undefined,
+  ebaySku: undefined,
+};
+const metaPlan = buildHubBreakdownReplacePlan([metaGapItem], [hubOrder], 'SmallBusiness');
+assert.equal(metaPlan.length, 1);
+assert.equal(metaPlan[0].reason, 'order_meta');
+assert.equal(metaPlan[0].nextItem.ebayUsername, 'buyer1');
+assert.equal(metaPlan[0].nextItem.customer?.name, 'buyer1');
+assert.equal(metaPlan[0].nextItem.ebaySku, 'GPU-1');
+assert.equal(metaPlan[0].nextItem.saleProceeds?.netPayoutEur, 107.73);
+assert.equal(metaPlan[0].nextItem.sellDate, metaGapItem.sellDate);
+
+// Applying Hub fees also backfills blank order fields on a screenshot row.
+assert.equal(shot.nextItem.ebayUsername, 'buyer1');
+assert.equal(shot.nextItem.ebaySku, 'GPU-1');
+assert.equal(shot.nextItem.customer?.name, 'buyer1');
+
+// Margin must equal sell-cell net − EK after Hub apply (and heal stale stored profit).
+{
+  const afterHub = shot.nextItem;
+  const split = saleColumnSplit(afterHub);
+  assert.ok(split?.netEur != null);
+  const expectedMargin = Math.round((split!.netEur! - afterHub.buyPrice) * 100) / 100;
+  assert.equal(computeSoldTabMargin(afterHub), expectedMargin, 'sold margin = net − EK');
+  assert.equal(afterHub.profit, expectedMargin, 'stored profit stamped to pocket margin');
+
+  const stale: InventoryItem = { ...afterHub, profit: 999 };
+  const healed = healRealizedProfitsFromSaleProceeds([stale], 'SmallBusiness');
+  assert.equal(healed.length, 1);
+  assert.equal(healed[0].profit, expectedMargin);
+}
+
+// Multi-line Hub order: Hub sell must use THIS line's share, not the whole order total.
+{
+  const multiOrder: typeof hubOrder = {
+    ...hubOrder,
+    orderId: '03-99999-11111',
+    lineItems: [
+      { sku: 'GPU-1', title: 'GPU A', lineItemCost: 100, listingId: '1' },
+      { sku: 'RAM-1', title: 'RAM B', lineItemCost: 50, listingId: '2' },
+    ],
+    grossTotal: 150,
+    netTotal: 120,
+    feeTotal: 30,
+    financialEvents: [
+      { kind: 'sale', amount: 150, transactionType: 'Bestellung', description: 'Sale' },
+      { kind: 'fee', amount: -20, transactionType: 'Verkaufsgebühr', description: 'FV' },
+      { kind: 'fee', amount: -10, transactionType: 'Anzeigengebühr', description: 'Ads' },
+    ],
+  };
+  const lineA = multiOrder.lineItems[0];
+  const fromOrder = saleProceedsFromOrder(multiOrder, lineA);
+  assert.equal(fromOrder.buyerTotalEur, 100, 'line buyer total is line gross, not order 150');
+  assert.equal(fromOrder.transactionFeeEur, 13.33, 'tx fee prorated 100/150');
+  assert.equal(fromOrder.adFeeEur, 6.67, 'ads fee prorated 100/150');
+  assert.equal(fromOrder.netPayoutEur, 80, 'net prorated 100/150 of 120');
+
+  const multiItem: InventoryItem = {
+    ...screenshotItem,
+    id: 'multi-a',
+    ebayOrderId: '03-99999-11111',
+    ebaySku: 'GPU-1',
+    sellPrice: 100,
+    saleProceeds: {
+      capturedAt: '2025-08-02T00:00:00.000Z',
+      source: 'ebay_screenshot',
+      buyerTotalEur: 100,
+      transactionFeeEur: 13.33,
+      adFeeEur: 6.67,
+      netPayoutEur: 80,
+      feesEstimated: false,
+    },
+  };
+  const multiPlan = buildHubBreakdownReplacePlan([multiItem], [multiOrder], 'SmallBusiness');
+  // Screenshot source still offers replace, but after snapshot must stay on line share.
+  assert.ok(multiPlan.length === 1);
+  assert.equal(multiPlan[0].after.total, 100);
+  assert.equal(multiPlan[0].after.sell, 100);
+  assert.equal(multiPlan[0].after.net, 80);
+  assert.notEqual(multiPlan[0].after.total, 150);
+}
 
 console.log('verify-hub-breakdown-replace: ok');

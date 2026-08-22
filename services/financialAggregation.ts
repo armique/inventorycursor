@@ -5,7 +5,7 @@
 import { InventoryItem, ItemStatus, TaxMode } from '../types';
 import { isRealizedDisposal } from '../utils/itemDisposition';
 import { calculateSaleProfit } from '../utils/saleProfit';
-import { netPayoutAfterRefund, saleProceedsFeeTotal } from '../utils/saleProceeds';
+import { netPayoutAfterRefund, saleProceedsFeeTotal, saleColumnSplit, isTrustedEbayProceeds } from '../utils/saleProceeds';
 
 export function roundMoney(n: number): number {
   const x = Number(n);
@@ -366,6 +366,23 @@ export function resolveSaleProfitParts(item: InventoryItem): { sell: number; fee
 /** Sold tab always shows this — cash in pocket, no VAT taken out. Dashboard applies TaxMode. */
 export const POCKET_PROFIT_TAX_MODE: TaxMode = 'SmallBusiness';
 
+/**
+ * Pocket margin (Bestelleinnahmen − EK) — for Hub/screenshot sales, match the sell-cell net line.
+ * Non-eBay sales keep the classic sell − shipping − fees − EK path.
+ */
+export function computeSoldTabMargin(item: InventoryItem): number {
+  const buy = Number(item.buyPrice) || 0;
+  if (isTrustedEbayProceeds(item.saleProceeds)) {
+    const split = saleColumnSplit(item, {
+      displaySellEur: item.sellPrice,
+    });
+    if (split?.netEur != null && Number.isFinite(split.netEur)) {
+      return roundMoney(split.netEur - buy);
+    }
+  }
+  return computeItemProfitBeforeOverhead(item, POCKET_PROFIT_TAX_MODE);
+}
+
 /** Per-line profit (fees included) for dashboard / checks — matches SaleModal logic. */
 export function computeItemProfitBeforeOverhead(item: InventoryItem, taxMode: TaxMode): number {
   const buy = Number(item.buyPrice) || 0;
@@ -373,7 +390,37 @@ export function computeItemProfitBeforeOverhead(item: InventoryItem, taxMode: Ta
   return roundMoney(calculateSaleProfit(sell, buy, fee, coerceTaxMode(taxMode)));
 }
 
-/** Green Sold-tab margin: Bestelleinnahmen − EK. Ignores Kleinunt./Diff./VAT. */
-export function computeSoldTabMargin(item: InventoryItem): number {
-  return computeItemProfitBeforeOverhead(item, POCKET_PROFIT_TAX_MODE);
+/**
+ * Stamp `profit` from current saleProceeds / fees. Returns the same reference when unchanged.
+ */
+export function withSyncedRealizedProfit(item: InventoryItem, taxMode: TaxMode): InventoryItem {
+  if (item.isBundle || item.isPC) return item;
+  if (item.status !== ItemStatus.SOLD && item.status !== ItemStatus.TRADED && item.status !== ItemStatus.GIFTED) {
+    return item;
+  }
+  if (item.sellPrice == null || !Number.isFinite(Number(item.sellPrice))) {
+    if (item.profit == null) return item;
+    return { ...item, profit: undefined };
+  }
+  const profit = computeItemProfitBeforeOverhead(item, taxMode);
+  if (item.profit != null && Math.abs(Number(item.profit) - profit) < 0.015) return item;
+  return { ...item, profit };
+}
+
+/** Patch sold/traded rows whose stored margin drifted from saleProceeds math. */
+export function healRealizedProfitsFromSaleProceeds(
+  items: InventoryItem[],
+  taxMode: TaxMode
+): InventoryItem[] {
+  const out: InventoryItem[] = [];
+  for (const item of items) {
+    if (item.isBundle || item.isPC) continue;
+    if (item.status !== ItemStatus.SOLD && item.status !== ItemStatus.TRADED && item.status !== ItemStatus.GIFTED) {
+      continue;
+    }
+    if (!item.saleProceeds && !(Number(item.feeAmount) > 0) && item.sellPrice == null) continue;
+    const next = withSyncedRealizedProfit(item, taxMode);
+    if (next !== item) out.push(next);
+  }
+  return out;
 }

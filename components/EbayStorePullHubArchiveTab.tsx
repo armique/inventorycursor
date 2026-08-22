@@ -51,7 +51,7 @@ import { applyEbayOrderMatchToItem } from '../utils/applyEbayOrderMatch';
 import { lineItemClaimKey } from '../utils/ebayOrderLinkAnalysis';
 import HubLedgerOrderList from './HubLedgerOrderList';
 import HubSplitApplyModal from './HubSplitApplyModal';
-import { getParentContainer, shouldHideContainerChildInList } from '../services/financialAggregation';
+import { getParentContainer, shouldHideContainerChildInList, computeSoldTabMargin } from '../services/financialAggregation';
 import ItemLink from './ItemLink';
 import EbayHubOrderDetailModal from './EbayHubOrderDetailModal';
 
@@ -273,7 +273,11 @@ const EbayStorePullHubArchiveTab: React.FC<Props> = ({ items, taxMode, onUpdate,
     if (!plan.length) return;
     const detailsByItemId: Record<string, string> = {};
     for (const row of plan) detailsByItemId[row.itemId] = hubBreakdownActionDetails(row);
-    onUpdate(hubBreakdownItemsToSave(plan), undefined, {
+    const toSave = hubBreakdownItemsToSave(plan).map((item) => ({
+      ...item,
+      profit: computeSoldTabMargin(item),
+    }));
+    onUpdate(toSave, undefined, {
       skipMembershipSync: true,
       skipContainerSync: true,
       flushCloud: true,
