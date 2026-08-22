@@ -116,6 +116,7 @@ import { applyCrucialRamInvoiceSaleFix } from './utils/crucialRamInvoiceSaleFix'
 import { restoreIntegralRamKit, INTEGRAL_RAM_KIT_ID } from './utils/restoreIntegralRamKit';
 import { restoreAsusA320mPcSale } from './utils/restoreAsusA320mPcSale';
 import { healActiveContainerPartMembership } from './utils/healActiveContainerPartMembership';
+import { localInventoryAheadOfRemote } from './utils/inventoryCloudPush';
 import { addRecentItemId } from './services/recentItemsService';
 import { mergeBusinessSettings } from './utils/mergeBusinessSettings';
 import {
@@ -128,9 +129,11 @@ import {
   LOCAL_PERSIST_DEBOUNCE_MS,
   STORE_CATALOG_DEBOUNCE_MS,
   REMOTE_APPLY_SUPPRESS_MS,
+  REMOTE_ECHO_TOLERANCE_MS,
   BULK_IMPORT_SYNC_FLUSH_MS,
   resolveCloudFlushDelay,
   shouldFlushCloudSoon,
+  shouldAcceptRemoteSnapshot,
 } from './utils/cloudSyncTiming';
 import {
   SYNC_MSG_PENDING,
@@ -622,6 +625,8 @@ const App: React.FC = () => {
   const catalogPublishDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cloudSyncInFlightRef = useRef(false);
   const suppressRemoteApplyUntilRef = useRef(0);
+  /** Timestamp (ms) of our last successful Firestore push — used to accept newer remote snapshots. */
+  const lastLocalPushAtRef = useRef(0);
   const remoteSnapshotSeenRef = useRef(false);
   const itemsRef = useRef(items);
   const trashRef = useRef(trash);
@@ -667,6 +672,11 @@ const App: React.FC = () => {
     );
   }, []);
 
+  const markCloudDirty = useCallback(() => {
+    hasUnsavedChanges.current = true;
+    requestFastCloudFlush();
+  }, [requestFastCloudFlush]);
+
   useEffect(() => {
     const syncLocal3d = () => {
       if (applyingRemote3dRef.current) return;
@@ -685,12 +695,14 @@ const App: React.FC = () => {
   }, [requestFastCloudFlush]);
 
   const shouldApplyRemoteSnapshot = useCallback((data: { updatedAt?: string } | null) => {
-    if (!data) return false;
-    if (!remoteSnapshotSeenRef.current) return true;
-    if (Date.now() < suppressRemoteApplyUntilRef.current) return false;
-    if (cloudSyncInFlightRef.current) return false;
-    if (hasUnsavedChanges.current) return false;
-    return true;
+    return shouldAcceptRemoteSnapshot({
+      data,
+      remoteSnapshotSeen: remoteSnapshotSeenRef.current,
+      lastLocalPushAt: lastLocalPushAtRef.current,
+      suppressRemoteApplyUntil: suppressRemoteApplyUntilRef.current,
+      cloudSyncInFlight: cloudSyncInFlightRef.current,
+      hasUnsavedChanges: hasUnsavedChanges.current,
+    });
   }, []);
 
   // Public storefront catalog is rebuilt from inventory via debounced publishStoreCatalog / writeStoreCatalog.
@@ -873,6 +885,14 @@ const App: React.FC = () => {
     const localTrash = trashRef.current;
     const inv = mergeInventoryWithLocal(remoteInv, localItems);
     const tr = mergeInventoryWithLocal(remoteTrash, localTrash);
+    if (
+      localInventoryAheadOfRemote(remoteInv, localItems) ||
+      localInventoryAheadOfRemote(remoteTrash, localTrash)
+    ) {
+      pendingCloudPushAfterRemoteRef.current = true;
+      hasUnsavedChanges.current = true;
+      requestFastCloudFlush();
+    }
     const localExpenses = expensesRef.current;
     const remoteExpenses = (data.expenses || []) as Expense[];
     const exp = mergeExpensesFromLocal(remoteExpenses, localExpenses);
@@ -1009,6 +1029,14 @@ const App: React.FC = () => {
       setSyncState({ status: 'syncing', lastSynced: null, message: 'Connecting…' });
       unsubSnapshot = subscribeToData(user.uid, (data) => {
         if (data && shouldApplyRemoteSnapshot(data)) {
+          const remoteTs = data.updatedAt ? Date.parse(data.updatedAt) : NaN;
+          if (
+            Number.isFinite(remoteTs) &&
+            remoteTs > lastLocalPushAtRef.current + REMOTE_ECHO_TOLERANCE_MS
+          ) {
+            // Another device/tab wrote newer data — treat cloud as source of truth.
+            hasUnsavedChanges.current = false;
+          }
           applyRemoteData(data);
         }
         if (data) {
@@ -1255,6 +1283,7 @@ const App: React.FC = () => {
         };
         await writeToCloud(payload);
         hasUnsavedChanges.current = false;
+        lastLocalPushAtRef.current = Date.now();
         cloudHydratedRef.current = true;
         pendingCloudFlushRef.current = false;
         suppressRemoteApplyUntilRef.current = Date.now() + REMOTE_APPLY_SUPPRESS_MS;
@@ -1503,12 +1532,14 @@ const App: React.FC = () => {
         // Add new generated expenses
         const existingIds = new Set(workingExpenses.map(e => e.id));
         const uniqueNew = newExpenses.filter(e => !existingIds.has(e.id));
+        hasUnsavedChanges.current = true;
+        requestFastCloudFlush();
         return [...workingExpenses, ...uniqueNew];
       }
       
       return workingExpenses;
     });
-  }, [appState, recurringExpenses]); // Only depend on recurringExpenses, use functional setState for expenses
+  }, [appState, recurringExpenses, requestFastCloudFlush]);
 
   const runSilentCloudSync = useCallback(async () => {
     if (!isCloudEnabled() || !authUser) return;
@@ -1545,6 +1576,7 @@ const App: React.FC = () => {
     try {
       await writeToCloud(payload);
       hasUnsavedChanges.current = false;
+      lastLocalPushAtRef.current = Date.now();
       suppressRemoteApplyUntilRef.current = Date.now() + REMOTE_APPLY_SUPPRESS_MS;
       setSyncState({ status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED });
       scheduleBackgroundWork(async () => {
@@ -1566,10 +1598,10 @@ const App: React.FC = () => {
     }
   }, [authUser, getSyncSnapshot]);
 
-  // When remote merge kept local-only bulk history, push so other devices get it.
+  // When remote merge kept local-only rows (sold ahead of cloud, bulk history), push immediately.
   useEffect(() => {
     if (!pendingCloudPushAfterRemoteRef.current) return;
-    if (!authUser || !isCloudEnabled()) return;
+    if (!authUser || !isCloudEnabled() || !cloudHydratedRef.current) return;
     pendingCloudPushAfterRemoteRef.current = false;
     hasUnsavedChanges.current = true;
     requestFastCloudFlush();
@@ -1577,8 +1609,8 @@ const App: React.FC = () => {
     writeDebounceRef.current = setTimeout(() => {
       writeDebounceRef.current = null;
       void runSilentCloudSync();
-    }, BULK_IMPORT_SYNC_FLUSH_MS);
-  }, [bulkImports, authUser, requestFastCloudFlush, runSilentCloudSync]);
+    }, FAST_CLOUD_FLUSH_MS);
+  }, [bulkImports, items, trash, authUser, requestFastCloudFlush, runSilentCloudSync]);
 
   const publishStoreCatalogNow = useCallback(async () => {
     if (!isCloudEnabled() || !authUser) return;
@@ -1591,9 +1623,11 @@ const App: React.FC = () => {
   // 2. Local persistence (debounced, chunked) + silent background Firestore write
   useEffect(() => {
     if (appState !== 'READY') return;
-    if (isRemoteUpdate.current) {
+    const remoteApply = isRemoteUpdate.current;
+    if (remoteApply) {
       isRemoteUpdate.current = false;
-      return;
+      // Remote merge can keep local sold rows ahead of cloud — still upload in that case.
+      if (!hasUnsavedChanges.current) return;
     }
     if (localPersistDebounceRef.current) clearTimeout(localPersistDebounceRef.current);
     localPersistDebounceRef.current = setTimeout(() => {
@@ -1734,6 +1768,7 @@ const App: React.FC = () => {
       cloudSyncInFlightRef.current = true;
       await writeToCloud(payload, { allowEmptyOverwrite: true });
       hasUnsavedChanges.current = false;
+      lastLocalPushAtRef.current = Date.now();
       suppressRemoteApplyUntilRef.current = Date.now() + REMOTE_APPLY_SUPPRESS_MS;
       scheduleBackgroundWork(() =>
         persistSnapshotToLocalStorage({
@@ -2070,29 +2105,35 @@ const App: React.FC = () => {
   };
   const handleAddExpense = (expense: Expense) => {
     setExpenses(prev => [...prev, expense]);
+    markCloudDirty();
     addActionEntries([makeActionEntry('Expense added', undefined, `${expense.description} (€${expense.amount})`)]);
   };
   const handleUpdateExpense = (expense: Expense) => {
     setExpenses(prev => prev.map(e => (e.id === expense.id ? expense : e)));
+    markCloudDirty();
     addActionEntries([makeActionEntry('Expense updated', undefined, `${expense.description} (€${expense.amount})`)]);
   };
   const handleDeleteExpense = (id: string) => {
     setExpenses(prev => prev.filter(e => e.id !== id));
+    markCloudDirty();
     addActionEntries([makeActionEntry('Expense deleted', undefined, id)]);
   };
   
   const handleAddRecurringExpense = (recurring: RecurringExpense) => {
     setRecurringExpenses(prev => [...prev, recurring]);
+    markCloudDirty();
     addActionEntries([makeActionEntry('Recurring expense added', undefined, recurring.description)]);
   };
   const handleDeleteRecurringExpense = (id: string) => {
     setRecurringExpenses(prev => prev.filter(r => r.id !== id));
     // Also delete all generated expenses from this recurring expense
     setExpenses(prev => prev.filter(e => e.recurringExpenseId !== id));
+    markCloudDirty();
     addActionEntries([makeActionEntry('Recurring expense deleted', undefined, id)]);
   };
   const handleUpdateRecurringExpense = (recurring: RecurringExpense) => {
     setRecurringExpenses(prev => prev.map(r => r.id === recurring.id ? recurring : r));
+    markCloudDirty();
     addActionEntries([makeActionEntry('Recurring expense updated', undefined, recurring.description)]);
   };
   

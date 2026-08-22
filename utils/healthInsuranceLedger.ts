@@ -6,8 +6,10 @@ import type { Expense, RecurringExpense } from '../types';
 
 export const AOK_RECURRING_ID = 'recurring-aok-bayern-v1';
 export const AOK_START_DATE = '2026-08-17';
-export const AOK_MONTHLY = 264.19;
+/** User-confirmed monthly debit (Aug 2026 onward). */
+export const AOK_MONTHLY = 260;
 export const DAK_TOTAL_EUR = 2811;
+export const DAK_LAST_DATE = '2026-07-28';
 export const HEALTH_INSURANCE_CATEGORY = 'Office';
 
 const DAK_ID_PREFIX = 'exp-dak-gesundheit-';
@@ -42,6 +44,16 @@ export function aokExpenseId(date: string): string {
 
 export function looksLikeDakGesundheit(text: string | undefined): boolean {
   return /dak/i.test(String(text || ''));
+}
+
+export function looksLikeAokBayern(text: string | undefined): boolean {
+  return /aok/i.test(String(text || ''));
+}
+
+function isStaleDakExpense(expense: Expense): boolean {
+  if (!looksLikeDakGesundheit(expense.description) && !expense.id.startsWith(DAK_ID_PREFIX)) return false;
+  const date = String(expense.date || '');
+  return date > DAK_LAST_DATE;
 }
 
 function round2(n: number): number {
@@ -97,6 +109,9 @@ export function applyHealthInsuranceLedger(
   const seen = new Set<string>();
   for (const expense of expenses) {
     if (looksLikeDakGesundheit(expense.description) || expense.id.startsWith(DAK_ID_PREFIX)) continue;
+    if (isStaleDakExpense(expense)) continue;
+    if (looksLikeAokBayern(expense.description)) continue;
+    if (expense.recurringExpenseId === AOK_RECURRING_ID) continue;
     if (expense.id === aokExp.id) continue;
     if (seen.has(expense.id)) continue;
     seen.add(expense.id);
@@ -112,6 +127,7 @@ export function applyHealthInsuranceLedger(
   const seenRec = new Set<string>();
   for (const row of recurring) {
     if (looksLikeDakGesundheit(row.description) || row.id === AOK_RECURRING_ID) continue;
+    if (looksLikeAokBayern(row.description)) continue;
     if (seenRec.has(row.id)) continue;
     seenRec.add(row.id);
     nextRecurring.push(row);
@@ -125,6 +141,8 @@ export function applyHealthInsuranceLedger(
       return !old || old.amount !== row.amount || old.date !== row.date || old.description !== row.description;
     }) ||
     expenses.some((e) => looksLikeDakGesundheit(e.description) && !dakIds.has(e.id)) ||
+    expenses.some((e) => isStaleDakExpense(e)) ||
+    expenses.some((e) => looksLikeAokBayern(e.description) && e.id !== aokExp.id) ||
     !expenses.some((e) => e.id === aokExp.id && e.amount === AOK_MONTHLY && e.date === AOK_START_DATE);
 
   const recurringChanged =
@@ -134,7 +152,7 @@ export function applyHealthInsuranceLedger(
         r.monthlyAmount === AOK_MONTHLY &&
         r.startDate === AOK_START_DATE &&
         r.description === 'AOK Bayern'
-    ) || recurring.some((r) => looksLikeDakGesundheit(r.description));
+    ) || recurring.some((r) => looksLikeDakGesundheit(r.description)) || recurring.some((r) => looksLikeAokBayern(r.description) && r.id !== AOK_RECURRING_ID);
 
   return {
     expenses: nextExpenses,

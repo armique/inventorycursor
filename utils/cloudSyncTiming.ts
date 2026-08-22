@@ -5,10 +5,10 @@
  */
 
 /** Default background Firestore write after ordinary edits. */
-export const WRITE_DEBOUNCE_MS = 1000;
+export const WRITE_DEBOUNCE_MS = 200;
 
-/** Compose / sell / trade / delete / bulk import — feel snappy without hammering every keystroke. */
-export const FAST_CLOUD_FLUSH_MS = 400;
+/** Compose / sell / trade / delete / bulk import — push immediately (0 = next tick). */
+export const FAST_CLOUD_FLUSH_MS = 0;
 
 /** localStorage snapshot after edits. */
 export const LOCAL_PERSIST_DEBOUNCE_MS = 400;
@@ -16,8 +16,14 @@ export const LOCAL_PERSIST_DEBOUNCE_MS = 400;
 /** Public storefront catalog rebuild. */
 export const STORE_CATALOG_DEBOUNCE_MS = 1500;
 
-/** Ignore remote snapshots briefly after a successful local push. */
-export const REMOTE_APPLY_SUPPRESS_MS = 1500;
+/** Ignore remote snapshots briefly after a successful local push (echo suppression). */
+export const REMOTE_APPLY_SUPPRESS_MS = 400;
+
+/**
+ * If remote meta.updatedAt is newer than lastLocalPushAt by more than this,
+ * treat it as another device/session and apply even when local has unsaved edits.
+ */
+export const REMOTE_ECHO_TOLERANCE_MS = 500;
 
 /** @deprecated alias — same as FAST_CLOUD_FLUSH_MS */
 export const BULK_IMPORT_SYNC_FLUSH_MS = FAST_CLOUD_FLUSH_MS;
@@ -47,4 +53,35 @@ export function shouldFlushCloudSoon(args: {
       args.createdContainers ||
       args.statusTransition
   );
+}
+
+/** Decide whether an incoming Firestore snapshot should replace local state. */
+export function shouldAcceptRemoteSnapshot(args: {
+  data: { updatedAt?: string } | null;
+  remoteSnapshotSeen: boolean;
+  lastLocalPushAt: number;
+  suppressRemoteApplyUntil: number;
+  cloudSyncInFlight: boolean;
+  hasUnsavedChanges: boolean;
+  now?: number;
+}): boolean {
+  const { data, remoteSnapshotSeen, lastLocalPushAt, suppressRemoteApplyUntil, cloudSyncInFlight, hasUnsavedChanges } =
+    args;
+  const now = args.now ?? Date.now();
+  if (!data) return false;
+  if (!remoteSnapshotSeen) return true;
+
+  const remoteTs = data.updatedAt ? Date.parse(data.updatedAt) : NaN;
+  const hasRemoteTs = Number.isFinite(remoteTs) && remoteTs > 0;
+
+  // Another device or tab wrote after our last push — pull immediately.
+  if (hasRemoteTs && remoteTs > lastLocalPushAt + REMOTE_ECHO_TOLERANCE_MS) {
+    return !cloudSyncInFlight;
+  }
+
+  // Likely echo of our own write or concurrent local edits on this session.
+  if (now < suppressRemoteApplyUntil) return false;
+  if (cloudSyncInFlight) return false;
+  if (hasUnsavedChanges) return false;
+  return true;
 }
