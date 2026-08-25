@@ -4,6 +4,8 @@
  * Routes: order | orders | listings
  */
 
+import { createHash, createPrivateKey, sign as cryptoSign } from 'node:crypto';
+
 function getTokenFromRequest(req) {
   if (req.method === 'POST') {
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
@@ -183,11 +185,14 @@ async function handleEbayOAuthRefresh(req, res) {
     const body = parseBody(req);
     const refreshToken = body.refresh_token || body.refreshToken;
     if (!refreshToken) return res.status(400).json({ error: 'Missing refresh_token.' });
+    // Do not pass `scope` here: eBay rejects a refresh whose requested scope string doesn't
+    // exactly match what the refresh_token itself was granted with (seen as a bogus
+    // "requested scope is invalid" 401, even when the scope IS a subset of what's granted).
+    // Omitting it makes eBay reissue an access token with the same scopes as the refresh_token.
     const data = await ebayUserTokenRequest(
       new URLSearchParams({
         grant_type: 'refresh_token',
         refresh_token: String(refreshToken).trim(),
-        scope: EBAY_USER_SCOPES,
       }).toString()
     );
     return res.status(200).json({
@@ -201,6 +206,61 @@ async function handleEbayOAuthRefresh(req, res) {
   } catch (e) {
     return res.status(401).json({ error: e instanceof Error ? e.message : 'OAuth refresh failed' });
   }
+}
+
+/**
+ * eBay's "Digital Signatures for APIs" (required for the Sell Finances API for EU/UK sellers) —
+ * separate from OAuth. A one-time ED25519 keypair was registered via eBay's Key Management API
+ * (POST /developer/key_management/v1/signing_key); the private key + public-key-as-JWE live only
+ * in env vars (eBay does not store the private key anywhere retrievable). Every signed request adds
+ * a Signature/Signature-Input header pair per RFC 9421 (HTTP Message Signatures) covering
+ * content-digest (body requests only) + x-ebay-signature-key + @method + @path + @authority.
+ * See https://developer.ebay.com/develop/guides/digital-signatures-for-apis
+ */
+let ebaySigningPrivateKeyCache;
+function ebaySigningPrivateKey() {
+  if (ebaySigningPrivateKeyCache !== undefined) return ebaySigningPrivateKeyCache;
+  const b64 = (process.env.EBAY_SIGNING_PRIVATE_KEY_B64 || '').trim();
+  ebaySigningPrivateKeyCache = b64
+    ? createPrivateKey(`-----BEGIN PRIVATE KEY-----\n${b64}\n-----END PRIVATE KEY-----\n`)
+    : null;
+  return ebaySigningPrivateKeyCache;
+}
+
+/** Adds the eBay digital-signature headers to `headers` in place; no-ops if signing isn't configured. */
+function applyEbaySignatureHeaders(headers, { method, path, authority, bodyString }) {
+  const jwe = (process.env.EBAY_SIGNING_KEY_JWE || '').trim();
+  const privateKey = ebaySigningPrivateKey();
+  if (!jwe || !privateKey) return false;
+
+  const created = Math.floor(Date.now() / 1000);
+  const hasBody = bodyString != null && bodyString !== '';
+  const digest = hasBody ? `sha-256=:${createHash('sha256').update(bodyString, 'utf8').digest('base64')}:` : null;
+
+  const components = hasBody
+    ? ['content-digest', 'x-ebay-signature-key', '@method', '@path', '@authority']
+    : ['x-ebay-signature-key', '@method', '@path', '@authority'];
+  const paramsStr = `(${components.map((c) => `"${c}"`).join(' ')});created=${created}`;
+
+  const valueFor = (c) => {
+    if (c === 'content-digest') return digest;
+    if (c === 'x-ebay-signature-key') return jwe;
+    if (c === '@method') return method.toUpperCase();
+    if (c === '@path') return path;
+    if (c === '@authority') return authority;
+    return '';
+  };
+  const signatureBase =
+    components.map((c) => `"${c}": ${valueFor(c)}`).join('\n') + `\n"@signature-params": ${paramsStr}`;
+
+  const signature = cryptoSign(null, Buffer.from(signatureBase, 'utf8'), privateKey).toString('base64');
+
+  headers['x-ebay-signature-key'] = jwe;
+  headers['x-ebay-enforce-signature'] = 'true';
+  headers['Signature-Input'] = `sig1=${paramsStr}`;
+  headers['Signature'] = `sig1=:${signature}:`;
+  if (digest) headers['Content-Digest'] = digest;
+  return true;
 }
 
 async function getEbayAppToken() {
@@ -954,23 +1014,25 @@ async function handleEbayFinances(req, res) {
 
   try {
     for (;;) {
-      const url = `https://apiz.ebay.com/sell/finances/v1/transaction?limit=${limit}&offset=${offset}&filter=${encodeURIComponent(filter)}`;
-      const ebayRes = await fetch(url, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-          'X-EBAY-C-MARKETPLACE-ID': 'EBAY_DE',
-        },
-      });
+      const path = '/sell/finances/v1/transaction';
+      const url = `https://apiz.ebay.com${path}?limit=${limit}&offset=${offset}&filter=${encodeURIComponent(filter)}`;
+      const headers = {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'X-EBAY-C-MARKETPLACE-ID': 'EBAY_DE',
+      };
+      applyEbaySignatureHeaders(headers, { method: 'GET', path, authority: 'apiz.ebay.com' });
+      const ebayRes = await fetch(url, { method: 'GET', headers });
       if (ebayRes.status === 401) return res.status(401).json({ error: 'eBay token expired or invalid.' });
       if (ebayRes.status === 403) {
         const errText = await ebayRes.text();
+        // A 403 here is usually eBay's "Digital Signatures for APIs" requirement (missing
+        // x-ebay-signature-key) — either signing isn't configured (EBAY_SIGNING_* env vars) or the
+        // registered key was rejected. Surface the real eBay error instead of guessing at scope.
         return res.status(403).json({
-          error:
-            'eBay token is missing sell.finances. Reconnect eBay in Settings so the app can fetch ads, fees, and net payout.',
-          code: 'insufficient_scope',
+          error: 'eBay Finances API rejected the request (see detail) — likely a Digital Signatures for APIs (request-signing) problem.',
+          code: 'forbidden',
           detail: errText.slice(0, 240),
         });
       }
@@ -978,7 +1040,9 @@ async function handleEbayFinances(req, res) {
         const errText = await ebayRes.text();
         return res.status(ebayRes.status).json({ error: errText.slice(0, 400) });
       }
-      const data = await ebayRes.json();
+      // eBay can return 200 with an empty body for a degenerate (same-day, zero-transaction) range.
+      const bodyText = await ebayRes.text();
+      const data = bodyText ? JSON.parse(bodyText) : {};
       const txs = data.transactions || [];
       for (const tx of txs) all.push(tx);
       if (txs.length < limit) break;
