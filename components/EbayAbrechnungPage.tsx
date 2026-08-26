@@ -819,6 +819,19 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
     return map;
   }, [items]);
 
+  // Refunded/cancelled orders whose fee has been manually absorbed into some item's buy
+  // price (utils/refundFeeAbsorption.ts) — the item stays a "candidate" awaiting relink to
+  // its actual successful order. Keyed the same way as linkedByOrder for the row lookup.
+  const feeAbsorbedByOrder = useMemo(() => {
+    const map = new Map<string, InventoryItem>();
+    for (const item of items) {
+      for (const orderId of item.pendingRefundFeeOrderIds || []) {
+        map.set(orderId.trim().toLowerCase(), item);
+      }
+    }
+    return map;
+  }, [items]);
+
   const sellDateFixCount = useMemo(
     () => (report?.rows?.length ? countEbayTxLinkedSellDateFixes(items, report.rows) : 0),
     [items, report]
@@ -2018,6 +2031,9 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
                       linked={
                         row.orderId ? linkedByOrder.get(row.orderId.trim().toLowerCase()) || null : null
                       }
+                      feeAbsorbedItem={
+                        row.orderId ? feeAbsorbedByOrder.get(row.orderId.trim().toLowerCase()) || null : null
+                      }
                       refundState={refundStateByRowId.get(row.id) || 'none'}
                       matchActive={matchRow?.id === row.id}
                       presets={labelChoices.presets}
@@ -2310,6 +2326,7 @@ function TxRow({
   row,
   ledger,
   linked,
+  feeAbsorbedItem,
   refundState,
   matchActive,
   presets,
@@ -2322,6 +2339,8 @@ function TxRow({
   row: EbayTxRow;
   ledger: EbayTxOrderLedger | null;
   linked: InventoryItem | null;
+  /** Item that absorbed this order's refund/cancellation fee, if any — see refundFeeAbsorption.ts. */
+  feeAbsorbedItem?: InventoryItem | null;
   refundState: EbayTxOrderRefundState;
   matchActive?: boolean;
   presets: DhlLabelPreset[];
@@ -2402,24 +2421,38 @@ function TxRow({
               title={
                 matchActive
                   ? 'Close match panel'
-                  : isFullRefund
-                    ? 'Cancelled sale — find the later resale order instead'
-                    : linked
-                      ? `Linked: ${linked.name}`
-                      : 'Match sold inventory item'
+                  : isFullRefund && feeAbsorbedItem
+                    ? `Fee absorbed into ${feeAbsorbedItem.name} — still a candidate, click to relink once you find the real order`
+                    : isFullRefund
+                      ? 'Cancelled sale — pick the item that ate this fee, or find the later resale order'
+                      : linked
+                        ? `Linked: ${linked.name}`
+                        : 'Match sold inventory item'
               }
               className={`inline-flex items-center gap-1 flex-1 min-w-0 px-1.5 py-0.5 rounded-md border text-[10px] font-bold ${
                 matchActive
                   ? 'border-indigo-300 bg-indigo-100 text-indigo-900'
-                  : isFullRefund
-                    ? 'border-red-200 bg-red-50 text-red-700 hover:border-red-300'
-                    : linked
-                      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                      : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'
+                  : isFullRefund && feeAbsorbedItem
+                    ? 'border-violet-300 bg-violet-100 text-violet-900 hover:border-violet-400'
+                    : isFullRefund
+                      ? 'border-red-200 bg-red-50 text-red-700 hover:border-red-300'
+                      : linked
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'
               }`}
             >
-              {linked ? <CheckCircle2 size={11} className="shrink-0" /> : <Link2 size={11} className="shrink-0" />}
-              <span className="truncate min-w-0">{linked ? linked.name : matchActive ? 'Matching…' : isFullRefund ? 'Refunded' : 'Match'}</span>
+              {linked || feeAbsorbedItem ? <CheckCircle2 size={11} className="shrink-0" /> : <Link2 size={11} className="shrink-0" />}
+              <span className="truncate min-w-0">
+                {linked
+                  ? linked.name
+                  : isFullRefund && feeAbsorbedItem
+                    ? `Absorbed → ${feeAbsorbedItem.name}`
+                    : matchActive
+                      ? 'Matching…'
+                      : isFullRefund
+                        ? 'Refunded'
+                        : 'Match'}
+              </span>
             </button>
             {linked && onUnlinkItem && row.orderId ? (
               <button

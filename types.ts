@@ -375,6 +375,14 @@ export interface InventoryItem extends AiAttribution, SourceLinks {
   /** Documented post-sale payout changes (returns, refunds, cancellations). */
   ebaySaleAdjustments?: EbaySaleAdjustment[];
   /**
+   * Order IDs whose refund/cancellation fee this item has manually absorbed into its buy
+   * price (see utils/refundFeeAbsorption.ts) but hasn't yet been resold against. While this
+   * is non-empty and status is In Stock, the item is a "candidate" — still available, shown
+   * with a distinct color in the matcher — waiting for you to link it to the order that
+   * actually sold it.
+   */
+  pendingRefundFeeOrderIds?: string[];
+  /**
    * Closed prior sales (refund / return / unsold). Live ebayOrderId is the current
    * sale only — so a resale can bind a new buyer while this array keeps history.
    */

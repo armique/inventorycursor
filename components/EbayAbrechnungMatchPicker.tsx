@@ -27,6 +27,8 @@ import {
   flagOrderMatcherNeedsReview,
   unflagOrderMatcherNeedsReview,
 } from '../utils/orderMatcherNeedsReview';
+import { orderCancellationCostAbs } from '../utils/ebaySaleAdjustments';
+import { applyRefundFeeAbsorption, hasAbsorbedRefundFee } from '../utils/refundFeeAbsorption';
 
 type Props = {
   row: EbayTxRow;
@@ -440,6 +442,24 @@ const EbayAbrechnungMatchPicker: React.FC<Props> = ({
   const alreadyLinked = matches.some((hit) => hit.alreadyLinked);
   const stubPreview = useMemo(() => createInventoryItemFromEbayTx(row, ledger), [row, ledger]);
   const sellTotal = ebayTxBuyerTotalEur(row, ledger);
+  const absorbFeeEur = orderCancellationCostAbs(pocketEur ?? 0);
+
+  const handleAbsorbFee = (item: InventoryItem) => {
+    if (absorbFeeEur < 0.01) return;
+    setBusyId(item.id);
+    try {
+      onLink(
+        applyRefundFeeAbsorption(
+          item,
+          row.orderId,
+          absorbFeeEur,
+          `Absorbed from ${isFullRefund ? 'fully' : 'partially'} refunded order ${row.orderId}`
+        )
+      );
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   useEffect(() => {
     setQuery('');
@@ -653,14 +673,45 @@ const EbayAbrechnungMatchPicker: React.FC<Props> = ({
       <div className="flex-1 min-h-0 overflow-y-auto px-1.5 pb-2">
         <p className="px-1.5 py-1 text-[10px] text-slate-400 uppercase tracking-wider font-bold">
           {blockLink
-            ? 'Linking disabled'
+            ? 'Linking disabled — absorb the fee instead'
             : 'Match inventory'}
         </p>
         <p className="px-1.5 pb-1 text-[10px] text-slate-400">
           {blockLink
-            ? 'Fully refunded — use Find later resale.'
+            ? `You paid ${formatSignedEUR(-absorbFeeEur)} on this cancelled order. Pick the item you ` +
+              `think this really was — the fee gets added to its buy price and it stays available ` +
+              `to link once you find the real successful order below.`
             : `Link a bundle to equal-split sell + CSV date onto all parts · or check 2+ items → new sold bundle`}
         </p>
+        {blockLink && absorbFeeEur >= 0.01 ? (
+          matches.length === 0 ? (
+            <p className="px-1.5 py-3 text-center text-[11px] text-slate-400">No close match — search above.</p>
+          ) : (
+            matches.slice(0, 12).map((hit) => (
+              <div
+                key={hit.item.id}
+                className="mt-0.5 w-full px-1.5 py-1.5 rounded-lg border border-slate-200 hover:border-violet-300 hover:bg-violet-50/50 flex items-start gap-2"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-bold text-slate-800 truncate">{hit.item.name}</p>
+                  <p className="text-[10px] text-slate-500">
+                    {hit.item.status} · EK {formatSignedEUR(-(hit.item.buyPrice || 0))}
+                    {hasAbsorbedRefundFee(hit.item, row.orderId) ? ' · already absorbed this order' : ''}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={busyId != null || hasAbsorbedRefundFee(hit.item, row.orderId)}
+                  onClick={() => handleAbsorbFee(hit.item)}
+                  className="shrink-0 inline-flex items-center justify-center gap-1 rounded-lg border border-violet-400 bg-violet-600 px-3 py-2 min-h-[34px] text-[11px] font-bold text-white shadow-sm hover:bg-violet-700 disabled:opacity-50"
+                >
+                  {busyId === hit.item.id ? <Loader2 size={13} className="animate-spin" /> : null}
+                  Absorb fee
+                </button>
+              </div>
+            ))
+          )
+        ) : null}
         {!blockLink && matchTree.length === 0 ? (
           <p className="px-1.5 py-3 text-center text-[11px] text-slate-400">No close match — search or create stub.</p>
         ) : !blockLink ? (
