@@ -485,14 +485,17 @@ const EbayAbrechnungMatchPicker: React.FC<Props> = ({
     if (absorbFeeEur < 0.01) return;
     setBusyId(item.id);
     try {
-      onLink(
-        applyRefundFeeAbsorption(
-          item,
-          row.orderId,
-          absorbFeeEur,
-          `Absorbed from ${isFullRefund ? 'fully' : 'partially'} refunded order ${row.orderId}`
-        )
+      const updates = applyRefundFeeAbsorption(
+        item,
+        row.orderId,
+        absorbFeeEur,
+        items,
+        `Absorbed from ${isFullRefund ? 'fully' : 'partially'} refunded order ${row.orderId}`
       );
+      // A bundle/PC target returns [parent, ...children] — that needs the multi-item path
+      // (onLinkBundle) so every changed part actually saves, not just the container.
+      if (updates.length > 1) onLinkBundle(updates);
+      else onLink(updates[0]);
     } finally {
       setBusyId(null);
     }
