@@ -4,7 +4,7 @@
  * Archives Franz Haselbeck / hafra09 order #22-14949-82264 into ebaySaleCycles,
  * capitalizes €6.73 into EK, then marks sold to Natasha Olesja Schon for €50 cash.
  */
-import { InventoryItem, ItemStatus, TaxMode } from '../types';
+import { InventoryItem, ItemStatus, TaxMode, Platform, PaymentType } from '../types';
 import { computeSoldTabMargin, roundMoney } from '../services/financialAggregation';
 import { appendBuyPriceChange, appendPriceHistoryIfChanged } from '../services/priceHistory';
 import { appendReturnedNote, restockItemFields } from '../services/saleRevert';
@@ -152,8 +152,8 @@ function applyCashResale(item: InventoryItem, _taxMode: TaxMode): InventoryItem 
     status: ItemStatus.SOLD,
     sellPrice: SAMSUNG_EVO840_CASH_SELL,
     sellDate: SAMSUNG_EVO840_CASH_SELL_DATE,
-    platformSold: 'In Person',
-    paymentType: 'Cash',
+    platformSold: 'In Person' as Platform,
+    paymentType: 'Cash' as PaymentType,
     customer: { name: SAMSUNG_EVO840_CASH_BUYER, address: '' },
     feeAmount: 0,
     hasFee: false,

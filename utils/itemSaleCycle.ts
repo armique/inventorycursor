@@ -304,6 +304,7 @@ export function pickPriorSaleFromPriceHistory(
       sellDate,
       platformSold: item.platformSold || 'ebay.de',
       paymentType: item.paymentType || 'ebay.de',
+      buyPriceAtClose: item.buyPrice,
     };
   }
 
@@ -411,6 +412,7 @@ export function getRecoverablePriorAbrechnungSale(
       closedAt: new Date().toISOString(),
       reason: 'manual_unsold',
       reasonLabel: 'Remove false Abrechnung link history',
+      buyPriceAtClose: item.buyPrice,
     };
   }
   return null;

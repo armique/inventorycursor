@@ -1,10 +1,7 @@
-import {
-  persistDashboardPreferencesToLocalStorage,
-  type DashboardPreferences,
-} from './dashboardPreferences';
+import { persistDashboardPreferencesToLocalStorage } from './dashboardPreferences';
 import { scheduleItemSalesPoolRebuild } from '../utils/itemSalesPool';
 import { writeInventoryItemsToDB, clearPendingItemPatches } from './inventoryItemsStore';
-import type { InventoryItem } from '../types';
+import type { InventoryItem, DashboardPreferences } from '../types';
 
 /** Yield control so typing / clicks stay responsive during large saves. */
 let lastInteractiveAt = 0;

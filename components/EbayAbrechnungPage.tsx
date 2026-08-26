@@ -1163,14 +1163,16 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
       );
       return;
     }
-    if (saved.reason === 'dev-only') {
+    if (saved.saved === false && saved.reason === 'dev-only') {
       setLinkNote(`Downloaded ${downloaded.fileName} · ${downloaded.rowCount} rows (project save is dev-only)`);
       return;
     }
-    setLinkNote(
-      `Downloaded ${downloaded.fileName} · ${downloaded.rowCount} rows` +
-        (saved.error ? ` · could not save to project (${saved.error})` : '')
-    );
+    if (saved.saved === false) {
+      setLinkNote(
+        `Downloaded ${downloaded.fileName} · ${downloaded.rowCount} rows` +
+          (saved.error ? ` · could not save to project (${saved.error})` : '')
+      );
+    }
   }, [coverage, displayReport, labelOverrides]);
 
   const onLinkItem = useCallback(

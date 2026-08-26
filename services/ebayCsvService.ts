@@ -1,3 +1,4 @@
+import type { InventoryItem, BusinessSettings } from '../types';
 import { resolveEbayCategoryId } from './ebayCategoryMap';
 
 /**

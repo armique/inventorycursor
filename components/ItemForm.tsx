@@ -1701,7 +1701,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                           <div className="space-y-1.5 flex-1 min-w-0">
                              <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest inline-flex items-center gap-1">
                                Buy (€)
-                               <BuyPriceBumpBadge item={formData} />
+                               <BuyPriceBumpBadge item={formData as InventoryItem} />
                              </label>
                              <input
                                 type="text"
@@ -1724,7 +1724,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                                   }
                                 }}
                              />
-                             <BuyPriceHistory item={formData} compact />
+                             <BuyPriceHistory item={formData as InventoryItem} compact />
                           </div>
                           <div className="space-y-1.5 flex-1 min-w-0">
                              <label
@@ -1733,7 +1733,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                              >
                                {showSaleFields ? (
                                  <SaleProceedsTrigger
-                                   item={formData}
+                                   item={formData as InventoryItem}
                                    className="underline decoration-dotted underline-offset-2"
                                  >
                                    Sold (€)

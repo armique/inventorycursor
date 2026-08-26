@@ -29,7 +29,7 @@ export function isListingPresenceEligible(item: InventoryItem): boolean {
   ) {
     return false;
   }
-  if (item.status === ItemStatus.IN_COMPOSITION || item.parentContainerId) {
+  if (item.parentContainerId) {
     return false;
   }
   return true;

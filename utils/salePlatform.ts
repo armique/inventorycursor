@@ -185,7 +185,7 @@ export function buildEbayTagFixUpdates(items: InventoryItem[]): InventoryItem[] 
         ...item,
         platformSold: 'ebay.de' as Platform,
         paymentType: item.paymentType || 'ebay.de',
-      };
+      } as InventoryItem;
     })
     .filter((x): x is InventoryItem => x !== null);
   // Sold PC/bundle tags also stamp every linked part.

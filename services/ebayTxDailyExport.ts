@@ -51,7 +51,7 @@ export async function runEbayTxDailyCsvExport(options?: {
   const merged = mergeEbayTxReports(library.reports);
   const rows = (merged?.rows || []).filter((row) => row.source !== 'inventory');
   const result = await saveEbayTxCsvBackupToProject(rows, labelOverrides, { coverage });
-  if (!result.saved) {
+  if (result.saved === false) {
     if (result.reason === 'dev-only') return { ran: false, reason: 'dev-only' };
     if (result.reason === 'empty') return { ran: false, reason: 'empty' };
     return { ran: false, reason: 'offline' };

@@ -161,7 +161,7 @@ export function listOpenEbayOrderLines(
 
   for (const order of orders) {
     if (isOrderCancelled(order) || isOrderFullyRefunded(order)) continue;
-    const lines = order.lineItems.length ? order.lineItems : [{ sku: null, title: '(no title)' }];
+    const lines = order.lineItems.length ? order.lineItems : [{ sku: null, title: '(no title)', lineItemCost: null }];
     for (const line of lines) {
       const key = lineItemClaimKey(order.orderId, line);
       if (claimed.has(key)) continue;
@@ -197,7 +197,7 @@ export function countOpenEbayOrderLines(items: InventoryItem[], orders: EbayOrde
   let n = 0;
   for (const order of orders) {
     if (isOrderCancelled(order) || isOrderFullyRefunded(order)) continue;
-    const lines = order.lineItems.length ? order.lineItems : [{ sku: null, title: '(no title)' }];
+    const lines = order.lineItems.length ? order.lineItems : [{ sku: null, title: '(no title)', lineItemCost: null }];
     for (const line of lines) {
       if (!claimed.has(lineItemClaimKey(order.orderId, line))) n += 1;
     }

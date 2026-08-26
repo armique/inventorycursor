@@ -123,10 +123,9 @@ export function enforceContainerMembershipInvariants(items: InventoryItem[]): Me
     if (listed.length === 0) continue;
 
     const isSoldStandalone =
-      (current.status === ItemStatus.SOLD ||
-        current.status === ItemStatus.TRADED ||
-        current.status === ItemStatus.GIFTED) &&
-      current.status !== ItemStatus.IN_COMPOSITION;
+      current.status === ItemStatus.SOLD ||
+      current.status === ItemStatus.TRADED ||
+      current.status === ItemStatus.GIFTED;
     if (isSoldStandalone) {
       // Leave unparented; step 4 will drop stale componentIds from containers.
       continue;

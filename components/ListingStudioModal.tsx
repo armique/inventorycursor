@@ -2424,7 +2424,7 @@ const ListingStudioModal: React.FC<Props> = ({
                 <PhoneUploadQrPanel
                   itemId={item.id}
                   itemName={name || item.name}
-                  onUrls={mergeRemotePhotoUrls}
+                  onUrls={(urls) => { void mergeRemotePhotoUrls(urls); }}
                   onClose={() => setPhotoSource('none')}
                 />
               )}

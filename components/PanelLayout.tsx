@@ -58,7 +58,7 @@ interface PanelLayoutProps {
   updateGamification?: (updater: (prev: GamificationState) => GamificationState) => void;
 }
 
-const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, authReady = false, isAdmin = false, syncState = { status: 'idle', lastSynced: null }, onForcePush, backupBannerDismissed = true, onDismissBackupBanner, tabDataStale = false, items = [], expenses = [], businessSettings = { companyName: '', ownerName: '', address: '', taxMode: 'SmallBusiness' }, onUpdateItems, gamification, updateGamification }) => {
+const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, authReady = false, isAdmin = false, syncState = { status: 'idle', lastSynced: null }, onForcePush, backupBannerDismissed = true, onDismissBackupBanner, tabDataStale = false, items = [], expenses = [], businessSettings = { companyName: '', ownerName: '', address: '', phone: '', taxId: '', iban: '', bic: '', bankName: '', taxMode: 'SmallBusiness' }, onUpdateItems, gamification, updateGamification }) => {
   const location = useLocation();
   const { locale, setLocale } = usePanelLocale();
   const { openSettings } = useSettingsModal();

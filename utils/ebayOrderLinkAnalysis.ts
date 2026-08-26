@@ -215,14 +215,14 @@ export function buildClaimedLineKeys(items: InventoryItem[], orders: EbayOrderRe
         claimed.add(cycle.ebayOrderLineKey.trim());
         continue;
       }
-      const lines = order.lineItems.length ? order.lineItems : [{ sku: null, title: '(no title)' }];
+      const lines = order.lineItems.length ? order.lineItems : [{ sku: null, title: '(no title)', lineItemCost: null }];
       for (const line of lines) claimed.add(lineItemClaimKey(order.orderId, line));
     }
   }
   for (const [orderId, linked] of linkedByOrderId) {
     const order = ordersByNormId.get(normalizeEbayOrderId(orderId));
     if (!order) continue;
-    const lines = order.lineItems.length ? order.lineItems : [{ sku: null, title: '(no title)' }];
+    const lines = order.lineItems.length ? order.lineItems : [{ sku: null, title: '(no title)', lineItemCost: null }];
 
     const pairs: { item: InventoryItem; line: EbayOrderLineItem; score: number }[] = [];
     for (const item of linked) {

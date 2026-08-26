@@ -2,7 +2,7 @@
  * Resolve which eBay order lines belong to an inventory row (incl. sold bundles)
  * and build order-level Hub proceeds — never hang half an order on one bundle row.
  */
-import type { InventoryItem } from '../types';
+import type { InventoryItem, SaleProceedsBreakdown } from '../types';
 import type { EbayOrderLineItem, EbayOrderRecord } from '../services/ebayOrderIndex';
 import {
   getChildren,
@@ -14,7 +14,7 @@ import { normalizeHubOrderForProceeds } from './ebayOrderFinancial';
 import { isRealizedDisposal } from './itemDisposition';
 import { lineItemClaimKey, linkedEbayOrderRef } from './ebayOrderLinkAnalysis';
 import { scoreItemAgainstOrderLine } from './ebayOrderMatch';
-import { saleProceedsFromOrder, hubSaleColumnSplit, hubReconciledFeeSplit, type SaleColumnSplit, type SaleProceedsBreakdown } from './saleProceeds';
+import { saleProceedsFromOrder, hubSaleColumnSplit, hubReconciledFeeSplit, type SaleColumnSplit } from './saleProceeds';
 
 const TITLE_MATCH_MIN = 40;
 const ORDER_GROSS_EPS = 0.06;

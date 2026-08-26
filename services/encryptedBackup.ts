@@ -33,13 +33,13 @@ export async function decryptBackupJson(payload: string, passphrase: string): Pr
   const data = ub64(pack.data);
   const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(passphrase), 'PBKDF2', false, ['deriveKey']);
   const key = await crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt: salt as BufferSource, iterations: 100000, hash: 'SHA-256' },
     keyMaterial,
     { name: 'AES-GCM', length: 256 },
     false,
     ['decrypt']
   );
-  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, data);
+  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv as BufferSource }, key, data.buffer as ArrayBuffer);
   return new TextDecoder().decode(plain);
 }
 

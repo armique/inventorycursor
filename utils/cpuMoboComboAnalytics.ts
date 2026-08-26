@@ -633,7 +633,6 @@ function isFreeActivePart(item: InventoryItem): boolean {
   if (item.isDefective) return false;
   if (item.status !== ItemStatus.IN_STOCK && item.status !== ItemStatus.ORDERED) return false;
   if (item.parentContainerId) return false;
-  if (item.status === ItemStatus.IN_COMPOSITION) return false;
   return true;
 }
 

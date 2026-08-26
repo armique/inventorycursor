@@ -49,7 +49,7 @@ export function mergeBusinessSettings(
       if (!isBlank(lv)) keptLocalFilled = true;
       continue;
     }
-    (out as Record<string, unknown>)[key as string] = rv as unknown;
+    (out as unknown as Record<string, unknown>)[key as string] = rv as unknown;
   }
 
   for (const key of STRING_KEYS) {

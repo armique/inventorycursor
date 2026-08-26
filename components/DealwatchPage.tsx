@@ -10,7 +10,7 @@ import type { LiveDeal, DealSearchPlatform } from '../services/geminiService';
 export type SavedDealSearch = {
   id: string;
   query: string;
-  maxPrice?: number;
+  maxPrice: number;
   includeEbay?: boolean;
   platform?: DealSearchPlatform;
   customUrl?: string;

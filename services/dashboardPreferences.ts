@@ -57,7 +57,7 @@ export function loadDashboardPreferencesFromLocalStorage(): DashboardPreferences
     try {
       const parsed = JSON.parse(savedW) as string[];
       if (Array.isArray(parsed)) {
-        const valid = parsed.filter((id): id is string =>
+        const valid = parsed.filter((id): id is (typeof DEFAULT_DASHBOARD_WIDGET_IDS)[number] =>
           typeof id === 'string' && DEFAULT_DASHBOARD_WIDGET_IDS.includes(id as (typeof DEFAULT_DASHBOARD_WIDGET_IDS)[number])
         );
         widgets = valid.length > 0 ? [...valid] : [...DEFAULT_DASHBOARD_WIDGET_IDS];

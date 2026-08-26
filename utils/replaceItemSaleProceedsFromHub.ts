@@ -16,7 +16,7 @@ import {
 } from './saleProceeds';
 import { orderHasFeeBreakdown } from '../services/ebayOrderIndex';
 import { sumOrderRefundEur } from './ebayOrderFinancial';
-import { roundMoney, computeItemProfitBeforeOverhead, computeSoldTabMargin, buildInventoryLookup, getChildren, type InventoryLookup } from '../services/financialAggregation';
+import { roundMoney, computeItemProfitBeforeOverhead, computeSoldTabMargin, buildInventoryLookup, getChildren, POCKET_PROFIT_TAX_MODE, type InventoryLookup } from '../services/financialAggregation';
 import { formatEUR } from './formatMoney';
 import { customerFromEbayOrder } from './ebayOrderBuyerData';
 import { shouldCorrectSalePlatformToEbay } from './applyEbayOrderMatch';
@@ -407,7 +407,7 @@ export function applyHubPayoutBreakdownToSoldItem(
     itemFeeSplitIsRicherAndReconcilesToHub(current, hubFeeProceeds);
   const refundEur = fromHub.refundEur ?? current.refundEur ?? 0;
   const feeSource = keepExistingFees ? current : fullOrderShare ? hubFees : fromHub;
-  const feeTotal = saleProceedsFeeTotal(feeSource);
+  const feeTotal = saleProceedsFeeTotal(feeSource as SaleProceedsBreakdown);
   const buyerTotal =
     (fullOrderShare ? hubFees.buyerTotalEur : fromHub.buyerTotalEur) ??
     fromHub.buyerTotalEur ??
