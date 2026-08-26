@@ -1,3 +1,4 @@
+import type { InventoryItem } from '../types';
 import { isRealizedDisposal } from '../utils/itemDisposition';
 
 /** Get a spec value from item (case-insensitive key match). */

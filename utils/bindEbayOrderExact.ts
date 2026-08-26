@@ -69,6 +69,21 @@ function fetchHub(match: EbayOrderMatch, item: InventoryItem) {
   });
 }
 
+/** Retries once unless the failure is a local-setup issue a retry can't fix. Kept as its own
+ *  const-returning function (no reassigned `let`) so the ok:false narrowing below is clean. */
+async function fetchHubWithRetry(match: EbayOrderMatch, item: InventoryItem) {
+  const first = await fetchHub(match, item);
+  if (first.ok) return first;
+  // tsconfig has no strictNullChecks, under which the sibling `if (first.ok) return` doesn't
+  // narrow this fallthrough — re-checking `=== false` explicitly here does narrow it.
+  if (first.ok === false) {
+    const skipRetry =
+      first.code === 'cdp_unavailable' || first.code === 'local_only' || first.code === 'not_logged_in';
+    return skipRetry ? first : fetchHub(match, item);
+  }
+  return first;
+}
+
 /**
  * One-click bind: Hub payout + API username/address. Never asks the user to copy/paste.
  */
@@ -92,15 +107,9 @@ export async function bindEbayOrderExact(
     };
   }
 
-  const [firstHub, orderWithBuyer] = await Promise.all([fetchHub(match, item), buyerPromise]);
-  let hub = firstHub;
-  if (!hub.ok) {
-    const skipRetry =
-      hub.code === 'cdp_unavailable' || hub.code === 'local_only' || hub.code === 'not_logged_in';
-    if (!skipRetry) hub = await fetchHub(match, item);
-  }
+  const [hub, orderWithBuyer] = await Promise.all([fetchHubWithRetry(match, item), buyerPromise]);
 
-  if (!hub.ok) {
+  if (hub.ok === false) {
     return {
       ok: false,
       code: hub.code,

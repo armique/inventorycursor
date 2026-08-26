@@ -905,10 +905,10 @@ const App: React.FC = () => {
       let changed = false;
       const out = { ...base };
       for (const key of largeFields) {
-        const rv = (fromRemote as Record<string, unknown>)[key];
-        const lv = (base as Record<string, unknown>)[key];
+        const rv = (fromRemote as unknown as Record<string, unknown>)[key];
+        const lv = (base as unknown as Record<string, unknown>)[key];
         if (rv === CLOUD_OMITTED_PLACEHOLDER && lv && typeof lv === 'string' && lv.length > 0) {
-          (out as Record<string, unknown>)[key] = lv;
+          (out as unknown as Record<string, unknown>)[key] = lv;
           changed = true;
         }
       }
@@ -963,10 +963,10 @@ const App: React.FC = () => {
       let changed = false;
       const out = { ...r };
       for (const key of largeFields) {
-        const rv = (r as Record<string, unknown>)[key];
-        const lv = (local as Record<string, unknown>)[key];
+        const rv = (r as unknown as Record<string, unknown>)[key];
+        const lv = (local as unknown as Record<string, unknown>)[key];
         if (rv === CLOUD_OMITTED_PLACEHOLDER && lv && typeof lv === 'string' && lv.length > 0) {
-          (out as Record<string, unknown>)[key] = lv;
+          (out as unknown as Record<string, unknown>)[key] = lv;
           changed = true;
         }
       }
@@ -2846,7 +2846,7 @@ const App: React.FC = () => {
           entry.tradeReceivedIds,
           businessSettings.taxMode || 'SmallBusiness'
         );
-        if (!res.ok) {
+        if (res.ok === false) {
           alert(res.message);
           return currentItems;
         }

@@ -235,7 +235,9 @@ const SaleModal: React.FC<Props> = ({
       setOrderIdLookupMessage('Reading Seller Hub…');
       try {
         const result = await bindEbayOrderExact(item, match, taxMode);
-        if (!result.ok) {
+        // tsconfig has no strictNullChecks, under which `!result.ok` on a boolean-literal
+        // discriminant doesn't narrow the union — `=== false` does. Same runtime check either way.
+        if (result.ok === false) {
           setHubMessage(result.hint);
           setSaveError(result.hint);
           setHubCandidates(result.candidates || []);
@@ -710,12 +712,16 @@ const SaleModal: React.FC<Props> = ({
         applyHubPayout(result.payout, result.source === 'paste' ? 'from paste' : 'from Seller Hub');
         return;
       }
-      setHubCandidates(result.candidates || []);
-      setHubMessage(
-        result.code === 'local_only' || result.code === 'cdp_unavailable'
-          ? 'Start once with npm run dev:ebay, log into eBay.de in that Chrome, then click Bind again.'
-          : result.hint || result.error || `Seller Hub: ${result.code}`
-      );
+      // tsconfig has no strictNullChecks, under which narrowing doesn't carry across an early
+      // return in the sibling branch — re-checking `=== false` explicitly here does narrow.
+      if (result.ok === false) {
+        setHubCandidates(result.candidates || []);
+        setHubMessage(
+          result.code === 'local_only' || result.code === 'cdp_unavailable'
+            ? 'Start once with npm run dev:ebay, log into eBay.de in that Chrome, then click Bind again.'
+            : result.hint || result.error || `Seller Hub: ${result.code}`
+        );
+      }
     } catch {
       setHubMessage(
         'Could not read Seller Hub. Keep the eBay Chrome window logged in and click Bind again.'

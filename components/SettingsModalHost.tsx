@@ -12,10 +12,10 @@ type Props = {
   dashboardPreferences: DashboardPreferences;
   actionHistory: ActionHistoryEntry[];
   bulkImports: BulkImportRecord[];
-  onForcePush: () => void | Promise<void>;
+  onForcePush: () => Promise<boolean>;
   onRestoreItems: (items: InventoryItem[]) => void | Promise<void>;
   onRestoreBackup: (data: unknown) => void | Promise<void>;
-  onFixEncoding: () => void | Promise<void>;
+  onFixEncoding: (fixedItems: InventoryItem[], fixedTrash: InventoryItem[]) => void;
   businessSettings: BusinessSettings;
   onBusinessSettingsChange: (next: BusinessSettings) => void;
   categories: Record<string, string[]>;
