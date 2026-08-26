@@ -3,6 +3,7 @@ import {
   Ban,
   Check,
   CheckCircle2,
+  Flag,
   Loader2,
   Package,
   RefreshCw,
@@ -26,6 +27,10 @@ import {
   ignoreOrderMatcherKey,
   unignoreOrderMatcherKey,
 } from '../utils/orderMatcherIgnored';
+import {
+  isOrderMatcherNeedsReview,
+  toggleOrderMatcherNeedsReview,
+} from '../utils/orderMatcherNeedsReview';
 import {
   linkIncompatibilityReason,
   orderItemLinkCompatible,
@@ -53,6 +58,7 @@ const OrderMatcherTab: React.FC<Props> = ({ items, taxMode, onUpdateItems }) => 
   const [search, setSearch] = useState('');
   const [showIgnored, setShowIgnored] = useState(false);
   const [ignoredTick, setIgnoredTick] = useState(0);
+  const [, setNeedsReviewTick] = useState(0);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [replaceKey, setReplaceKey] = useState<string | null>(null);
   const [replaceQuery, setReplaceQuery] = useState('');
@@ -281,6 +287,16 @@ const OrderMatcherTab: React.FC<Props> = ({ items, taxMode, onUpdateItems }) => 
     setMessage(`Restored order ${row.order.orderId} to the matcher queue.`);
   };
 
+  const handleToggleNeedsReview = (row: OrderMatcherRow) => {
+    const flagged = toggleOrderMatcherNeedsReview(row.key);
+    setNeedsReviewTick((n) => n + 1);
+    setMessage(
+      flagged
+        ? `Flagged order ${row.order.orderId} for review.`
+        : `Cleared review flag on order ${row.order.orderId}.`
+    );
+  };
+
   const selectableCount = filteredRows.filter((r) => !r.ignored && resolveRowItem(r)).length;
   const selectedCount = filteredRows.filter((r) => selectedKeys.has(r.key) && resolveRowItem(r)).length;
 
@@ -410,6 +426,11 @@ const OrderMatcherTab: React.FC<Props> = ({ items, taxMode, onUpdateItems }) => 
                             Ignored
                           </span>
                         )}
+                        {isOrderMatcherNeedsReview(row.key) && (
+                          <span className="inline-flex mt-1 ml-1 rounded-md border border-violet-300 bg-violet-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-violet-800">
+                            Needs review
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-3 min-w-0">
                         {displayItem ? (
@@ -513,6 +534,20 @@ const OrderMatcherTab: React.FC<Props> = ({ items, taxMode, onUpdateItems }) => 
                               Ignore
                             </button>
                           )}
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => handleToggleNeedsReview(row)}
+                            className={`inline-flex items-center gap-1 px-2 py-1.5 rounded-lg border text-[9px] font-black uppercase tracking-wider disabled:opacity-40 ${
+                              isOrderMatcherNeedsReview(row.key)
+                                ? 'border-violet-300 bg-violet-100 text-violet-800'
+                                : 'border-slate-200 bg-white text-slate-500 hover:border-violet-200 hover:text-violet-700'
+                            }`}
+                            title="Flag this order for manual review later"
+                          >
+                            <Flag size={11} />
+                            {isOrderMatcherNeedsReview(row.key) ? 'Flagged' : 'Review'}
+                          </button>
                         </div>
                       </td>
                     </tr>

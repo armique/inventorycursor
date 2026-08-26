@@ -13,6 +13,7 @@ import {
   suggestEbayCondition,
 } from '../utils/ebayListingReadiness';
 import { resolveListingTitle } from '../utils/listingPrepChecklist';
+import { appendAssetTagToTitle } from '../utils/assetTag';
 
 export type EbayPublishOutcome = {
   ok: boolean;
@@ -53,9 +54,14 @@ export async function publishItemToEbay(item: InventoryItem): Promise<EbayPublis
 
   const condition = item.ebayCondition || suggestEbayCondition(item);
   const shippingTier = resolveEbayShippingTier(item);
-  const title = (resolveListingTitle(item) || item.name).slice(0, 80);
+  // Asset tag goes on at publish time (not baked into marketTitle) so AI regeneration of the
+  // title never accidentally strips it, and it's always present exactly once.
+  const title = appendAssetTagToTitle(resolveListingTitle(item) || item.name, item.assetTag);
   const description = item.marketDescription?.trim() || '';
-  const aspects = category ? category.buildAspects(item) : {};
+  const aspects: Record<string, string[]> = { ...(category ? category.buildAspects(item) : {}) };
+  // Most used PC parts have no retail barcode — eBay explicitly supports this designation
+  // rather than guessing or leaving a required aspect blank.
+  if (!item.ean?.trim()) aspects.EAN = ['Does not apply'];
 
   const res = await fetch('/api/ebay?route=publish_item', {
     method: 'POST',
@@ -71,6 +77,7 @@ export async function publishItemToEbay(item: InventoryItem): Promise<EbayPublis
       conditionId: EBAY_CONDITION_ID[condition],
       categoryId,
       aspects,
+      ean: item.ean?.trim() || undefined,
       weightKg: item.shippingWeightKg,
       shippingCostEur: shippingTier.costEur,
       existingOfferId: item.ebayOfferId || undefined,

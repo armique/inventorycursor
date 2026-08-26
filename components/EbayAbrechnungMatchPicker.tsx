@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, ChevronRight, ExternalLink, Link2, Loader2, Plus, Tag, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, ExternalLink, Flag, Link2, Loader2, Plus, Tag, X } from 'lucide-react';
 import { ItemStatus, type InventoryItem, type TaxMode } from '../types';
 import { formatSignedEUR } from '../utils/formatMoney';
 import { isRealizedDisposal } from '../utils/itemDisposition';
@@ -22,6 +22,11 @@ import {
   linkInventoryItemToEbayTx,
   linkMultipleInventoryItemsToEbayTx,
 } from '../utils/linkInventoryItemToEbayTx';
+import {
+  isOrderMatcherNeedsReview,
+  flagOrderMatcherNeedsReview,
+  unflagOrderMatcherNeedsReview,
+} from '../utils/orderMatcherNeedsReview';
 
 type Props = {
   row: EbayTxRow;
@@ -402,6 +407,14 @@ const EbayAbrechnungMatchPicker: React.FC<Props> = ({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [collapsedContainers, setCollapsedContainers] = useState<Set<string>>(() => new Set());
+  const [needsReviewFlagged, setNeedsReviewFlagged] = useState(() => isOrderMatcherNeedsReview(row.id));
+  useEffect(() => {
+    setNeedsReviewFlagged(isOrderMatcherNeedsReview(row.id));
+  }, [row.id]);
+  useEffect(() => {
+    if (needsReviewFlagged) flagOrderMatcherNeedsReview(row.id);
+    else unflagOrderMatcherNeedsReview(row.id);
+  }, [needsReviewFlagged, row.id]);
   const isPanel = variant === 'panel';
   const address = addressFromEbayTxRow(row);
   const itemEur = ledger?.itemEur || row.itemSubtotalEur;
@@ -584,6 +597,17 @@ const EbayAbrechnungMatchPicker: React.FC<Props> = ({
             </p>
           )}
         </div>
+        <button
+          type="button"
+          onClick={() => setNeedsReviewFlagged((f) => !f)}
+          className={`p-1 rounded-lg shrink-0 ${
+            needsReviewFlagged ? 'text-violet-700 bg-violet-100' : 'text-slate-400 hover:bg-slate-100'
+          }`}
+          title={needsReviewFlagged ? 'Flagged for review — click to clear' : 'Flag this order for review'}
+          aria-label="Toggle needs review"
+        >
+          <Flag size={14} />
+        </button>
         <button type="button" onClick={onClose} className="p-1 rounded-lg text-slate-400 hover:bg-slate-100 shrink-0" aria-label="Close">
           <X size={14} />
         </button>

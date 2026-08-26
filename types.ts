@@ -398,6 +398,25 @@ export interface InventoryItem extends AiAttribution, SourceLinks {
   ebayShippingMethod?: 'tracked' | 'warensendung';
   /** Override the subCategory → eBay categoryId mapping for this one item, when needed. */
   ebayCategoryIdOverride?: string;
+  /**
+   * Short sequential human-readable tag (e.g. "AT-0421"), generated once per item.
+   * Embedded at the end of the eBay listing title so a buyer/return references the exact
+   * physical unit when you have 2+ similar or identical items in stock.
+   */
+  assetTag?: string;
+  /**
+   * Category-aware condition detail toggles (e.g. 'tested_working', 'signs_of_use') — feed
+   * the AI listing description so it states exactly what's true of THIS unit. Distinct from
+   * ebayCondition (eBay's required New/Used/For-parts enum) and hasOVP/hasIOShield (which
+   * stay their own dedicated fields). See utils/itemConditionToggles.ts for the catalog.
+   */
+  conditionToggles?: string[];
+  /**
+   * EAN/GTIN barcode. Left unset for most used/no-box parts — the eBay publish payload then
+   * sends "Does not apply" (eBay's own designation for used items with no retail barcode).
+   * Only set when AI or you have identified a real manufacturer EAN for a retail-boxed part.
+   */
+  ean?: string;
 
   // Platform Specific Buy Data
   kleinanzeigenBuyChatUrl?: string;

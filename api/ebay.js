@@ -1215,6 +1215,7 @@ async function handleEbayPublishItem(req, res) {
     const conditionId = String(body.conditionId || '3000');
     const categoryId = String(body.categoryId || '').trim();
     const aspects = body.aspects && typeof body.aspects === 'object' ? body.aspects : {};
+    const ean = String(body.ean || '').trim();
     const weightKg = Number(body.weightKg);
     const shippingCostEur = parseListingPrice(body.shippingCostEur);
     const existingOfferId = body.existingOfferId ? String(body.existingOfferId) : '';
@@ -1238,6 +1239,7 @@ async function handleEbayPublishItem(req, res) {
         description,
         imageUrls,
         aspects,
+        ...(ean ? { ean: [ean] } : {}),
       },
       ...(Number.isFinite(weightKg) && weightKg > 0
         ? { packageWeightAndSize: { weight: { value: weightKg, unit: 'KILOGRAM' } } }

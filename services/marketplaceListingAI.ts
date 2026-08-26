@@ -7,6 +7,7 @@ import { ItemStatus } from '../types';
 import { requestAIJson } from './specsAI';
 import { isIOShieldRelevant, listingAccessoriesReady, resolveIoShieldTriState } from '../utils/itemAccessoryToggles';
 import type { AccessoryChildRef } from '../utils/itemAccessoryToggles';
+import { conditionToggleHints } from '../utils/itemConditionToggles';
 
 export interface MarketplaceListingHints {
   /** Original packaging present — buyer-facing Lieferumfang/Zustand hint. */
@@ -283,6 +284,9 @@ function buildItemContext(item: InventoryItem, hints?: MarketplaceListingHints):
     item.isDefective
       ? ''
       : 'CONDITION NOTICE (required in ✅ Zustand): Gebraucht / Voll funktionsfähig. Normale Gebrauchsspuren sind möglich.',
+    conditionToggleHints(item).length
+      ? `CONFIRMED CONDITION DETAILS (must incorporate factually into ✅ Zustand — these are seller-confirmed, not assumptions):\n${conditionToggleHints(item).join('\n')}`
+      : '',
     aiNote
       ? `SELLER NOTE FOR AI (must incorporate — rephrase professionally in German; do not ignore):\n${aiNote}`
       : '',

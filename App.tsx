@@ -141,6 +141,7 @@ import { healActiveContainerPartMembership } from './utils/healActiveContainerPa
 import { localInventoryAheadOfRemote, inventoryLooksUnchanged, expenseListLooksUnchanged, mergeItemsPreservingReferences } from './utils/inventoryCloudPush';
 import { addRecentItemId } from './services/recentItemsService';
 import { mergeBusinessSettings } from './utils/mergeBusinessSettings';
+import { maxAssetTagNumber, formatAssetTag } from './utils/assetTag';
 import {
   markInvoiceBusinessProfileDone,
   stampInvoiceBusinessProfile,
@@ -2277,6 +2278,7 @@ const App: React.FC = () => {
         const actionEntries: ActionHistoryEntry[] = [];
         const trashBefore = trashRef.current;
         let nextTrash = trashBefore;
+        let nextAssetTagNum = maxAssetTagNumber(nextItems, trashBefore);
         const addToTrash = (rows: InventoryItem[]) => {
           if (!rows.length) return;
           const existing = new Set(nextTrash.map((t) => t.id));
@@ -2313,6 +2315,9 @@ const App: React.FC = () => {
               }
             }
           } else {
+            if (!final.assetTag) {
+              final = { ...final, assetTag: formatAssetTag(++nextAssetTagNum) };
+            }
             indexById.set(final.id, nextItems.length);
             nextItems.push(final);
             if (recordAction) {

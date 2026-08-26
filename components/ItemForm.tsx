@@ -1125,6 +1125,38 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     if (!isEditingExisting) {
       saveLastAddTemplate(base);
       setLastTemplate(loadLastAddTemplate());
+
+      // Auto spec-parse on add — fire-and-forget so it survives this modal closing/unmounting.
+      // Patches the item that was just saved rather than touching local form state, since
+      // the form is about to navigate away. Silently no-ops on failure (manual "Parse AI" in
+      // Listing Studio remains available as a retry).
+      const nameForAi = base.name;
+      const categoryForAi = base.category || 'Unknown';
+      const subCategoryForAi = base.subCategory;
+      const definedFieldsForAi = resolveEssentialSpecKeys(categoryForAi, subCategoryForAi, categoryFields);
+      void (async () => {
+        try {
+          const result = await generateItemSpecs(nameForAi, categoryForAi, definedFieldsForAi);
+          const newSpecs = mergeAiSpecsIntoEssential(
+            base.specs,
+            result.specs,
+            categoryForAi,
+            subCategoryForAi,
+            categoryFields
+          );
+          const nextAi = filterSpecsToEssentialKeys(result.specs || {}, definedFieldsForAi);
+          onSave([
+            {
+              ...base,
+              specs: newSpecs,
+              specsAiSuggested: Object.keys(nextAi).length ? nextAi : undefined,
+              ...pickSpecsAiNameVendorUpdates(result, { applyStandardizedName: false }),
+            },
+          ]);
+        } catch {
+          /* best-effort — manual Parse AI in Listing Studio remains available */
+        }
+      })();
     }
 
     const prevCategory = initialData?.category;

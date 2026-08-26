@@ -93,6 +93,7 @@ import {
   EBAY_PUBLISH_BLOCKER_LABEL,
   getEbayPublishReadiness,
 } from '../utils/ebayListingReadiness';
+import { conditionToggleDefsForItem } from '../utils/itemConditionToggles';
 
 const BUY_PLATFORMS: Platform[] = [
   'kleinanzeigen.de',
@@ -216,6 +217,8 @@ const ListingStudioModal: React.FC<Props> = ({
   const [ebayShippingMethod, setEbayShippingMethod] = useState<
     NonNullable<InventoryItem['ebayShippingMethod']>
   >(item.ebayShippingMethod || 'tracked');
+  const [conditionToggles, setConditionToggles] = useState<string[]>(item.conditionToggles || []);
+  const [eanText, setEanText] = useState(item.ean || '');
   const [publishing, setPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState<string | null>(null);
 
@@ -283,6 +286,8 @@ const ListingStudioModal: React.FC<Props> = ({
       ebayCondition: ebayCondition || undefined,
       shippingWeightKg: shippingWeightText.trim() ? parseLocaleNumber(shippingWeightText) : undefined,
       ebayShippingMethod,
+      conditionToggles: conditionToggles.length ? conditionToggles : undefined,
+      ean: eanText.trim() || undefined,
     }),
     [
       item,
@@ -305,6 +310,8 @@ const ListingStudioModal: React.FC<Props> = ({
       ebayCondition,
       shippingWeightText,
       ebayShippingMethod,
+      conditionToggles,
+      eanText,
     ]
   );
 
@@ -322,6 +329,8 @@ const ListingStudioModal: React.FC<Props> = ({
         ebayCondition: ebayCondition || undefined,
         shippingWeightKg: shippingWeightText.trim() ? parseLocaleNumber(shippingWeightText) : undefined,
         ebayShippingMethod,
+        conditionToggles: conditionToggles.length ? conditionToggles : undefined,
+        ean: eanText.trim() || undefined,
       });
       const result = await publishItemToEbay(workingItem);
       if (!result.ok || !result.listingId) {
@@ -501,6 +510,8 @@ const ListingStudioModal: React.FC<Props> = ({
     setEbayCondition(item.ebayCondition || '');
     setShippingWeightText(item.shippingWeightKg != null ? String(item.shippingWeightKg) : '');
     setEbayShippingMethod(item.ebayShippingMethod || 'tracked');
+    setConditionToggles(item.conditionToggles || []);
+    setEanText(item.ean || '');
     setPublishResult(null);
     setPreviewPhotoIndex(null);
     setError(null);
@@ -1594,6 +1605,49 @@ const ListingStudioModal: React.FC<Props> = ({
                   className="rounded border-slate-300 text-rose-600 focus:ring-rose-500"
                 />
                 Use untracked DHL Warensendung (cheap, no tracking — your risk)
+              </label>
+              <div className="space-y-1">
+                <span className="text-[9px] font-black uppercase text-slate-400">
+                  Condition details {item.assetTag ? `· Tag ${item.assetTag}` : ''}
+                </span>
+                <div className="flex flex-wrap gap-1">
+                  {conditionToggleDefsForItem(workingItem).map((def) => {
+                    const active = conditionToggles.includes(def.id);
+                    return (
+                      <button
+                        key={def.id}
+                        type="button"
+                        onClick={() => {
+                          const next = active
+                            ? conditionToggles.filter((t) => t !== def.id)
+                            : [...conditionToggles, def.id];
+                          setConditionToggles(next);
+                          void persistPatch({ conditionToggles: next.length ? next : undefined });
+                        }}
+                        className={`px-2 py-1 rounded-lg text-[10px] font-bold border ${
+                          active
+                            ? 'bg-slate-900 text-white border-slate-900'
+                            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        {def.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <label className="block space-y-0.5">
+                <span className="text-[9px] font-black uppercase text-slate-400">
+                  EAN (leave blank if none — sent as "Does not apply")
+                </span>
+                <input
+                  type="text"
+                  className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-bold text-slate-900 outline-none focus:border-rose-400"
+                  value={eanText}
+                  placeholder="e.g. 4719331865622"
+                  onChange={(e) => setEanText(e.target.value)}
+                  onBlur={() => void persistPatch({ ean: eanText.trim() || undefined })}
+                />
               </label>
               {!ebayReadiness.ok ? (
                 <ul className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 space-y-0.5">
