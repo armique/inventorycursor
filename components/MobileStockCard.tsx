@@ -19,6 +19,10 @@ import {
   EyeOff,
   Undo2,
   Bookmark,
+  Unlink,
+  User,
+  RotateCcw,
+  AlertCircle,
 } from 'lucide-react';
 import type { InventoryItem, TaxMode } from '../types';
 import { ItemStatus } from '../types';
@@ -29,13 +33,14 @@ import { resolveSellColumnSplit } from '../utils/sellColumnDisplay';
 import { POCKET_PROFIT_TAX_MODE } from '../services/financialAggregation';
 import { SellerShippingEditorDialog } from './SaleProceedsPopover';
 import { SellSplitLedger } from './SellSplitLedger';
-import { getItemUserPhotoCount } from '../utils/imageImport';
+import { getItemPresenceCycleState, getItemUserPhotoCount } from '../utils/imageImport';
 import { computePriceAnalyzer } from '../utils/listingWatch';
 import ItemThumbnail from './ItemThumbnail';
 import { MobileSheetShell } from './MobileBottomSheets';
 import ItemAccessoryToggles from './ItemAccessoryToggles';
 import { resolveComponentPartTone, componentPartPillProps } from '../utils/componentPartTone';
 import { canSplitItem, resolveIdenticalLotQty } from '../utils/splitParts';
+import { buildEbayItemUrl } from '../utils/sourceLinks';
 
 export interface MobileStockCardActions {
   onEdit: (item: InventoryItem) => void;
@@ -52,6 +57,14 @@ export interface MobileStockCardActions {
   onDuplicate?: (item: InventoryItem) => void;
   onDelete?: (item: InventoryItem) => void;
   onPatchAccessory?: (item: InventoryItem, patch: Partial<InventoryItem>) => void;
+  /** Present → lost → defective → unknown — same cycle as the desktop Flags dot. */
+  onTogglePresence?: (item: InventoryItem) => void;
+  /** PC/bundle only — breaks the container back into its standalone parts. */
+  onUnbundle?: (item: InventoryItem) => void;
+  /** Sold only — edit buyer name/address/eBay order link. */
+  onEditBuyer?: (item: InventoryItem) => void;
+  /** Sold/gifted only — revert back to active stock. */
+  onMarkUnsold?: (item: InventoryItem) => void;
 }
 
 export interface MobilePurchaseActions {
@@ -349,13 +362,58 @@ export const MobileStockCard: React.FC<{
                 );
               })()}
             </div>
-            {actions.onPatchAccessory && !purchaseActions && (
+            {(actions.onPatchAccessory || actions.onTogglePresence) && !purchaseActions && (
               <div className="mt-1 flex items-center gap-1 flex-wrap" onClick={(e) => e.stopPropagation()}>
+                {actions.onTogglePresence && (() => {
+                  const cycleState = getItemPresenceCycleState(item);
+                  return (
+                    <button
+                      type="button"
+                      title={
+                        cycleState === 'present'
+                          ? 'Present (tap → lost)'
+                          : cycleState === 'lost'
+                            ? 'Lost (tap → defective)'
+                            : cycleState === 'defective'
+                              ? 'Defective (tap → clear)'
+                              : 'Presence not set — tap to mark'
+                      }
+                      onClick={() => actions.onTogglePresence?.(item)}
+                      className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-black uppercase border ${
+                        cycleState === 'present'
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                          : cycleState === 'lost'
+                            ? 'bg-red-50 text-red-800 border-red-300'
+                            : cycleState === 'defective'
+                              ? 'bg-amber-50 text-amber-900 border-amber-300'
+                              : 'bg-slate-50 text-slate-400 border-slate-200'
+                      }`}
+                    >
+                      {cycleState === 'defective' ? (
+                        <AlertCircle size={10} />
+                      ) : (
+                        <span
+                          className={`h-1.5 w-1.5 rounded-full ${
+                            cycleState === 'present'
+                              ? 'bg-emerald-500'
+                              : cycleState === 'lost'
+                                ? 'bg-red-500'
+                                : 'bg-slate-300'
+                          }`}
+                        />
+                      )}
+                      {cycleState === 'unknown' ? '?' : cycleState}
+                    </button>
+                  );
+                })()}
+                {actions.onPatchAccessory && (
                 <ItemAccessoryToggles
                   item={item}
                   mini
                   onPatch={(patch) => actions.onPatchAccessory?.(item, patch)}
                 />
+                )}
+                {actions.onPatchAccessory && (
                 <button
                   type="button"
                   title={item.photosReady ? 'Photos ready' : 'Mark photos ready'}
@@ -368,6 +426,8 @@ export const MobileStockCard: React.FC<{
                 >
                   <Camera size={10} /> Photo
                 </button>
+                )}
+                {actions.onPatchAccessory && (
                 <button
                   type="button"
                   title={item.reserved ? 'Reserved' : 'Hold'}
@@ -380,6 +440,7 @@ export const MobileStockCard: React.FC<{
                 >
                   <Bookmark size={10} /> Hold
                 </button>
+                )}
               </div>
             )}
           </div>
@@ -525,6 +586,14 @@ export const MobileStockCard: React.FC<{
                   run: () => actions.onSplitParts?.(item),
                 }
               : null,
+            (item.isPC || item.isBundle) && actions.onUnbundle
+              ? {
+                  key: 'unbundle',
+                  label: 'Unbundle / Dismantle',
+                  icon: <Unlink size={16} />,
+                  run: () => actions.onUnbundle?.(item),
+                }
+              : null,
             {
               key: 'edit',
               label: 'Edit item',
@@ -545,12 +614,36 @@ export const MobileStockCard: React.FC<{
                   run: () => actions.onEbayPhotos?.(item),
                 }
               : null,
+            item.listedOnEbay && item.ebayListingId
+              ? {
+                  key: 'view_ebay_listing',
+                  label: 'View eBay listing',
+                  icon: <ShoppingBag size={16} />,
+                  run: () => window.open(buildEbayItemUrl(item.ebayListingId), '_blank', 'noopener,noreferrer'),
+                }
+              : null,
             inStock && actions.onSell
               ? {
                   key: 'sell',
                   label: 'Mark sold',
                   icon: <ShoppingBag size={16} />,
                   run: () => actions.onSell(item),
+                }
+              : null,
+            item.status === ItemStatus.SOLD && actions.onEditBuyer
+              ? {
+                  key: 'buyer',
+                  label: 'Buyer & eBay order',
+                  icon: <User size={16} />,
+                  run: () => actions.onEditBuyer?.(item),
+                }
+              : null,
+            (item.status === ItemStatus.SOLD || item.status === ItemStatus.GIFTED) && actions.onMarkUnsold
+              ? {
+                  key: 'unsold',
+                  label: item.status === ItemStatus.GIFTED ? 'Undo gift' : 'Mark Unsold / Return',
+                  icon: <RotateCcw size={16} />,
+                  run: () => actions.onMarkUnsold?.(item),
                 }
               : null,
             inStock && actions.onTrade

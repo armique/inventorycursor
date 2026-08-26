@@ -7258,6 +7258,13 @@ const InventoryList: React.FC<Props> = ({
                     onUpdate([{ ...it, ...patch }], undefined, {
                       skipActionLog: true,
                     }),
+                  onTogglePresence: (it) => togglePresence(it),
+                  onUnbundle: (it) => setBundleToDismantle(it),
+                  onEditBuyer: (it) => {
+                    addRecentItemId(it.id);
+                    setItemToEditBuyer(it);
+                  },
+                  onMarkUnsold: (it) => setItemToReturn(it),
                 }}
               />
               </div>
