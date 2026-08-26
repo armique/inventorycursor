@@ -40,6 +40,9 @@ export type KaTitleAlias = {
 };
 
 const MIN_EBAY_SCORE = 40;
+/** Below this, a title match is noise and never surfaced at all. */
+const BORDERLINE_EBAY_MIN = 18;
+const EBAY_BORDERLINE_DISMISSED_KEY = 'ebay_presence_borderline_dismissed_v1';
 /** Auto-link threshold for combined fuzzy score (0–1). */
 const MIN_KA_SIM = 0.36;
 /** Slightly looser when the user manually marks KA listed (teaching). */
@@ -421,6 +424,106 @@ function clearMaybeSoldChannel(
 }
 
 /**
+ * Apply one confirmed eBay listing match to an item — shared by the auto-sync path
+ * (applyEbayPresenceToItems) and the manual "confirm this borderline match" action.
+ */
+export function markItemListedOnEbay(
+  item: InventoryItem,
+  hit: ListingTitleHit,
+  listings: EbayMyListing[] = []
+): InventoryItem {
+  const syncedAt = new Date().toISOString();
+  const live = hit.price ?? findListingPrice(listings, hit.listingId || item.ebayListingId);
+  const cleared = clearMaybeSoldChannel(item.maybeSoldHint, 'ebay');
+  return {
+    ...item,
+    saleReady: true,
+    listedOnEbay: true,
+    listedViaParent: false,
+    ebayListingId: hit.listingId || item.ebayListingId,
+    liveEbayListPrice: live ?? item.liveEbayListPrice,
+    liveListingPriceSyncedAt: live != null ? syncedAt : item.liveListingPriceSyncedAt,
+    listingPresenceSyncedAt: syncedAt,
+    maybeSoldHint: cleared,
+    listingDisappearedAt: cleared ? item.listingDisappearedAt : undefined,
+    maybeSoldDismissedAt: cleared ? item.maybeSoldDismissedAt : undefined,
+  };
+}
+
+export type EbayPresenceBorderlineMatch = {
+  itemId: string;
+  itemName: string;
+  hit: ListingTitleHit;
+  score: number;
+};
+
+function loadDismissedEbayBorderline(): Set<string> {
+  try {
+    const raw = localStorage.getItem(EBAY_BORDERLINE_DISMISSED_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw) as string[];
+    return new Set(Array.isArray(parsed) ? parsed : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function borderlineDismissKey(itemId: string, listingId?: string): string {
+  return `${itemId}::${listingId || ''}`;
+}
+
+/** Remember that the user said "no, not this one" so the same weak guess doesn't nag again. */
+export function dismissEbayBorderlineMatch(itemId: string, listingId?: string): void {
+  const set = loadDismissedEbayBorderline();
+  set.add(borderlineDismissKey(itemId, listingId));
+  localStorage.setItem(EBAY_BORDERLINE_DISMISSED_KEY, JSON.stringify([...set].slice(-500)));
+}
+
+/**
+ * Items/listings that scored too low to auto-link (below MIN_EBAY_SCORE) but not
+ * nothing (above BORDERLINE_EBAY_MIN) — surfaced for the user to confirm or dismiss
+ * instead of being silently dropped like a pure-noise score would be.
+ */
+export function findBorderlineEbayMatches(
+  items: InventoryItem[],
+  titles: ListingTitleHit[],
+  confirmed: Map<string, { hit: ListingTitleHit; score: number }>
+): EbayPresenceBorderlineMatch[] {
+  const dismissed = loadDismissedEbayBorderline();
+  const usedTitleIdx = new Set<number>();
+  for (const m of confirmed.values()) {
+    const idx = titles.indexOf(m.hit);
+    if (idx >= 0) usedTitleIdx.add(idx);
+  }
+
+  type Pair = { itemId: string; itemName: string; titleIdx: number; score: number; hit: ListingTitleHit };
+  const pairs: Pair[] = [];
+  for (const item of items.filter(isListingPresenceEligible)) {
+    if (confirmed.has(item.id)) continue;
+    titles.forEach((hit, titleIdx) => {
+      if (usedTitleIdx.has(titleIdx)) return;
+      if (dismissed.has(borderlineDismissKey(item.id, hit.listingId))) return;
+      if (!listingHardwareCompatible(item.name, hit.title)) return;
+      const score = scoreListingTitleMatch(item.name, hit.title, undefined, item.ebaySku);
+      if (score >= BORDERLINE_EBAY_MIN && score < MIN_EBAY_SCORE) {
+        pairs.push({ itemId: item.id, itemName: item.name, titleIdx, score, hit });
+      }
+    });
+  }
+  pairs.sort((a, b) => b.score - a.score);
+  const usedItems = new Set<string>();
+  const usedTitles = new Set<number>();
+  const out: EbayPresenceBorderlineMatch[] = [];
+  for (const p of pairs) {
+    if (usedItems.has(p.itemId) || usedTitles.has(p.titleIdx)) continue;
+    usedItems.add(p.itemId);
+    usedTitles.add(p.titleIdx);
+    out.push({ itemId: p.itemId, itemName: p.itemName, hit: p.hit, score: p.score });
+  }
+  return out;
+}
+
+/**
  * Match eBay active listings against all eligible in-stock items.
  * Auto-marks matches as saleReady. Only clears / maybe-sold for items that were
  * previously listed or already on the Ready watchlist (never mass-unlists stock).
@@ -446,22 +549,7 @@ export function applyEbayPresenceToItems(
     const m = assigned.get(item.id);
     if (m) {
       if (item.isPC || item.isBundle) parentMatched.add(item.id);
-      const live =
-        m.hit.price ?? findListingPrice(listings, m.hit.listingId || item.ebayListingId);
-      const cleared = clearMaybeSoldChannel(item.maybeSoldHint, 'ebay');
-      return {
-        ...item,
-        saleReady: true,
-        listedOnEbay: true,
-        listedViaParent: false,
-        ebayListingId: m.hit.listingId || item.ebayListingId,
-        liveEbayListPrice: live ?? item.liveEbayListPrice,
-        liveListingPriceSyncedAt: live != null ? syncedAt : item.liveListingPriceSyncedAt,
-        listingPresenceSyncedAt: syncedAt,
-        maybeSoldHint: cleared,
-        listingDisappearedAt: cleared ? item.listingDisappearedAt : undefined,
-        maybeSoldDismissedAt: cleared ? item.maybeSoldDismissedAt : undefined,
-      };
+      return markItemListedOnEbay(item, m.hit, listings);
     }
 
     // Wrong auto-link: listing is still live but is a different product (e.g. another PC Bundle).

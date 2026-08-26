@@ -5,9 +5,10 @@ import { resolveItemSourceLinks } from '../utils/sourceLinks';
 import { canSplitItem, resolveIdenticalLotQty } from '../utils/splitParts';
 import { getContainerKind } from '../utils/containerMembership';
 import { hasEbaySaleSignals, resolveSalePlatform } from '../utils/salePlatform';
+import { getEbayPublishReadiness } from '../utils/ebayListingReadiness';
 
 /** Icon slots implemented in Flags — bump when adding a new flag button. */
-export const PRESENCE_FLAG_SLOT_COUNT = 18;
+export const PRESENCE_FLAG_SLOT_COUNT = 19;
 
 function shouldShowEbayOrderLinkInFlags(item: InventoryItem): boolean {
   if (item.status !== ItemStatus.SOLD && item.status !== ItemStatus.TRADED) return false;
@@ -32,6 +33,12 @@ export function countPresenceFlagsForItem(
     n += 1;
   }
   if (!item.parentContainerId) n += 1;
+
+  if (!item.parentContainerId && (item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED)) {
+    // Mutually exclusive: "listed on eBay" link, or "ready to publish" badge — never both.
+    if (item.listedOnEbay && item.ebayListingId) n += 1;
+    else if (getEbayPublishReadiness(item).ok) n += 1;
+  }
 
   n += 1; // presence cycle
   n += 1; // user photos

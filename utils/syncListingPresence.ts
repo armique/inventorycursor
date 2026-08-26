@@ -8,8 +8,11 @@ import { ensureKaListings } from '../services/kleinanzeigenListingIndex';
 import {
   applyEbayPresenceToItems,
   applyKaPresenceToItems,
+  assignEbayTitlesToItems,
+  findBorderlineEbayMatches,
   loadKaListingTitles,
   markPresenceMeta,
+  type EbayPresenceBorderlineMatch,
   type ListingTitleHit,
 } from './listingPresence';
 import { computePriceChangeHint, isListingPresenceEligible, isListingWatchCandidate } from './listingWatch';
@@ -28,6 +31,8 @@ export type ListingPresenceSyncResult = {
   ebayListingIds: string[];
   /** Active KA listing URLs from this sync. */
   kaListingUrls: string[];
+  /** Weak title guesses that didn't clear the auto-link bar — needs a human "yes/no". */
+  ebayBorderline: EbayPresenceBorderlineMatch[];
   kaError?: string;
   ebayError?: string;
 };
@@ -53,6 +58,7 @@ export async function syncListingPresence(
   let kaListingUrls: string[] = [];
   let kaError: string | undefined;
   let ebayError: string | undefined;
+  let ebayBorderline: EbayPresenceBorderlineMatch[] = [];
   const eligibleCount = items.filter(isListingPresenceEligible).length;
   const watchCount = items.filter(isListingWatchCandidate).length;
 
@@ -61,6 +67,14 @@ export async function syncListingPresence(
       const { listings } = await ensureEbayListings({ force: Boolean(opts?.forceEbay) });
       ebayTitleCount = listings.length;
       ebayListingIds = listings.map((l) => l.listingId).filter(Boolean);
+      const titles: ListingTitleHit[] = listings.map((l) => ({
+        title: l.title || '',
+        url: l.listingUrl,
+        listingId: l.listingId,
+        price: l.price != null && l.price > 0 ? l.price : undefined,
+      }));
+      const confirmed = assignEbayTitlesToItems(next, titles);
+      ebayBorderline = findBorderlineEbayMatches(next, titles, confirmed);
       next = applyEbayPresenceToItems(next, listings);
       ebayMatched = next.filter(
         (i) => isListingPresenceEligible(i) && i.listedOnEbay && !i.listedViaParent
@@ -130,6 +144,7 @@ export async function syncListingPresence(
     eligibleCount,
     priceHints,
     maybeSoldCount,
+    ebayBorderline,
     kaError: kaError || undefined,
     ebayError,
   };
