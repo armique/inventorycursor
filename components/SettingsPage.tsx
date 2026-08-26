@@ -10,7 +10,7 @@ import { buildElsterChecklist } from '../services/elsterChecklist';
 import { buildSteuerberaterBundle, downloadSteuerberaterBundle } from '../services/steuerberaterExport';
 import { buildGdprExportBlob, downloadGdprExport } from '../services/gdprExport';
 import { encryptBackupJson } from '../services/encryptedBackup';
-import { isCloudEnabled, getFirebaseConfig, signInWithGoogle, logOut, onAuthChange, getAuthErrorMessage } from '../services/firebaseService';
+import { isCloudEnabled, getFirebaseConfig, signInWithGoogle, logOut, onAuthChange, getAuthErrorMessage, setLocalDataOnlyMode } from '../services/firebaseService';
 import {
   analyzeInventoryPhotoArchive,
   archiveSinglePhotoUrl,
@@ -1513,9 +1513,19 @@ const SettingsPage: React.FC<Props> = ({
                       </div>
                    )}
                    {!isCloudEnabled() && (
-                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2">
-                         Cloud is not available in this build.
-                      </p>
+                      <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+                         <span>Cloud sync is turned off on this device.</span>
+                         <button
+                            type="button"
+                            onClick={() => {
+                               setLocalDataOnlyMode(false);
+                               window.location.reload();
+                            }}
+                            className="px-3 py-1.5 bg-amber-600 text-white rounded-lg font-bold text-[11px] uppercase hover:bg-amber-700"
+                         >
+                            Enable cloud sync
+                         </button>
+                      </div>
                    )}
                 </div>
 
@@ -1650,7 +1660,7 @@ const SettingsPage: React.FC<Props> = ({
 
                    {!isCloudEnabled() && (
                       <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2">
-                         Cloud is not available in this build.
+                         Cloud sync is turned off on this device — enable it above under Account first.
                       </p>
                    )}
                    {isCloudEnabled() && !user && (
