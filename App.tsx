@@ -142,6 +142,7 @@ import { localInventoryAheadOfRemote, inventoryLooksUnchanged, expenseListLooksU
 import { addRecentItemId } from './services/recentItemsService';
 import { mergeBusinessSettings } from './utils/mergeBusinessSettings';
 import { maxAssetTagNumber, formatAssetTag } from './utils/assetTag';
+import { recordMembershipChangeIfAny } from './utils/itemMovementHistory';
 import {
   markInvoiceBusinessProfileDone,
   stampInvoiceBusinessProfile,
@@ -2298,6 +2299,11 @@ const App: React.FC = () => {
             final = { ...final, costOrigin: oldItem.costOrigin };
           }
           final = recomputeRealizedProfit(final);
+          final = recordMembershipChangeIfAny(oldItem, final, (bundleId) => {
+            const bundleIdx = indexById.get(bundleId);
+            if (bundleIdx != null && nextItems[bundleIdx]) return nextItems[bundleIdx].name;
+            return currentById.get(bundleId)?.name;
+          });
           if (final.status === ItemStatus.SOLD || final.status === ItemStatus.TRADED || final.status === ItemStatus.GIFTED) {
             final = { ...final, storeVisible: false };
           }

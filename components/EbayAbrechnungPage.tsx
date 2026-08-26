@@ -58,6 +58,7 @@ import {
   backfillEbayTxLinkedSellDates,
   countEbayTxLinkedSellDateFixes,
 } from '../utils/backfillEbayTxLinkedSellDates';
+import { findOwnOrderFullRefundReverts } from '../utils/refundFeeAbsorption';
 import { downloadEbayTxCsvBackup, saveEbayTxCsvBackupToProject } from '../utils/ebayTxReportCsvExport';
 import {
   linkInventoryItemToEbayTx,
@@ -453,6 +454,7 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
   const matcherAutoBuiltRef = useRef(false);
   const matcherBuildAbortRef = useRef<AbortController | null>(null);
   const sellDateAutoFixKeyRef = useRef<string | null>(null);
+  const refundRevertAutoFixKeyRef = useRef<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const itemsRef = useRef(items);
   itemsRef.current = items;
@@ -950,6 +952,38 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
     }, 800);
     return () => clearTimeout(t);
   }, [busy, items, loading, onUpdate, report]);
+
+  // Auto-revert: an item's OWN order comes back fully refunded — unambiguous (it's that
+  // exact item's sale, no candidate to pick), so this applies without a confirm step. Same
+  // hydration-race debounce as the sell-date effect above; see that comment for why.
+  useEffect(() => {
+    if (!report?.rows?.length || !items.length || loading || busy) return;
+    const t = setTimeout(() => {
+      const updates = findOwnOrderFullRefundReverts(items, ledgers);
+      if (!updates.length) return;
+      const key = updates.map((item) => `${item.id}:${item.buyPrice}`).sort().join('|');
+      if (refundRevertAutoFixKeyRef.current === key) return;
+      refundRevertAutoFixKeyRef.current = key;
+      // Unlike the sell-date/matcher auto-fixes above, this touches buyPrice and status —
+      // keep it undoable (no skipUndo) since it's a real financial mutation, even though it
+      // applies without a confirm click.
+      onUpdate(updates, undefined, {
+        skipFieldPreserve: true,
+        skipMembershipSync: true,
+        skipContainerSync: true,
+        skipContainerSaleMetaSync: true,
+        flushCloud: true,
+        actionNote: {
+          action: 'Abrechnung refund revert',
+          details: `${updates.length} item(s) reverted to stock — order fully refunded (auto)`,
+        },
+      });
+      setLinkNote(
+        `Reverted ${updates.length} item${updates.length === 1 ? '' : 's'} to stock — order fully refunded (fee added to buy price).`
+      );
+    }, 800);
+    return () => clearTimeout(t);
+  }, [busy, items, ledgers, loading, onUpdate, report]);
 
   const matcherOrderCount = useMemo(() => {
     if (!report?.rows?.length) return 0;

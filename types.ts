@@ -151,6 +151,20 @@ export interface EbaySaleAdjustment {
   buyPriceDelta?: number;
 }
 
+/** Standalone ↔ bundle/PC membership change — see InventoryItem.movementHistory. */
+export type MovementEventType = 'added_to_bundle' | 'removed_from_bundle';
+
+export interface MovementEvent {
+  id: string;
+  /** ISO datetime this membership change was recorded. */
+  date: string;
+  type: MovementEventType;
+  /** The bundle/PC's id at the time of the change. */
+  bundleId?: string;
+  /** The bundle/PC's name at the time — kept even if the bundle is later renamed/deleted. */
+  bundleName?: string;
+}
+
 /** Why a completed eBay/sale cycle was closed so the item could return to stock. */
 export type ItemSaleCycleReason = 'erstattet' | 'return' | 'cancelled' | 'manual_unsold';
 
@@ -382,6 +396,12 @@ export interface InventoryItem extends AiAttribution, SourceLinks {
    * actually sold it.
    */
   pendingRefundFeeOrderIds?: string[];
+  /**
+   * Standalone ↔ bundle/PC membership history — recorded automatically (App.tsx handleUpdate)
+   * whenever parentContainerId changes. Audit trail so a bundle losing a child link is
+   * diagnosable/reversible after the fact. See utils/itemMovementHistory.ts.
+   */
+  movementHistory?: MovementEvent[];
   /**
    * Closed prior sales (refund / return / unsold). Live ebayOrderId is the current
    * sale only — so a resale can bind a new buyer while this array keeps history.
