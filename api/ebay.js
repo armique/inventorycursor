@@ -93,6 +93,9 @@ const EBAY_USER_SCOPES = [
   'https://api.ebay.com/oauth/api_scope/sell.inventory.readonly',
   'https://api.ebay.com/oauth/api_scope/sell.inventory',
   'https://api.ebay.com/oauth/api_scope/sell.finances',
+  // Read-only account policies/locations — lets Settings show a picklist of your real
+  // Business Policy names instead of asking you to paste raw policyIds.
+  'https://api.ebay.com/oauth/api_scope/sell.account.readonly',
 ].join(' ');
 
 function ebayAuthHost(env) {
@@ -450,7 +453,20 @@ async function ebayJsonGet(token, url) {
   }
   if (!ebayRes.ok) {
     const errText = await ebayRes.text();
-    const err = new Error(errText.slice(0, 300));
+    let message = errText.slice(0, 300);
+    try {
+      const parsed = JSON.parse(errText);
+      const first = parsed?.errors?.[0];
+      if (first) {
+        message = first.longMessage || first.message || message;
+        if (first.errorId === 1100 || ebayRes.status === 403) {
+          message += ' — reconnect eBay in Settings (new permissions were added).';
+        }
+      }
+    } catch {
+      /* not JSON — keep raw text */
+    }
+    const err = new Error(message);
     err.status = ebayRes.status;
     throw err;
   }
@@ -1095,15 +1111,18 @@ async function handleEbayFinances(req, res) {
 }
 
 /**
- * Business config that has no per-item equivalent — set once in eBay Seller Hub, referenced
- * by every publish call. There is no API to "discover the right one"; you set these directly.
+ * Business config that has no per-item equivalent — set once (in eBay Seller Hub for the
+ * policies themselves, then either as server env vars OR picked in Settings → eBay Selling,
+ * which sends them in the request body). Body values win when present; env vars are the
+ * fallback for a single-operator deploy that doesn't want to touch Settings at all.
  */
-function ebayPublishConfig() {
+function ebayPublishConfig(body) {
+  const b = body || {};
   return {
-    fulfillmentPolicyId: pickEnv('EBAY_FULFILLMENT_POLICY_ID'),
-    paymentPolicyId: pickEnv('EBAY_PAYMENT_POLICY_ID'),
-    returnPolicyId: pickEnv('EBAY_RETURN_POLICY_ID'),
-    merchantLocationKey: pickEnv('EBAY_MERCHANT_LOCATION_KEY'),
+    fulfillmentPolicyId: b.fulfillmentPolicyId || pickEnv('EBAY_FULFILLMENT_POLICY_ID'),
+    paymentPolicyId: b.paymentPolicyId || pickEnv('EBAY_PAYMENT_POLICY_ID'),
+    returnPolicyId: b.returnPolicyId || pickEnv('EBAY_RETURN_POLICY_ID'),
+    merchantLocationKey: b.merchantLocationKey || pickEnv('EBAY_MERCHANT_LOCATION_KEY'),
   };
 }
 
@@ -1117,11 +1136,11 @@ async function handleEbaySetupLocation(req, res) {
   try {
     const token = await ensureUserAccessToken(req);
     const { env } = ebayAppConfig();
-    const { merchantLocationKey } = ebayPublishConfig();
-    if (!merchantLocationKey) {
-      return res.status(503).json({ error: 'Missing EBAY_MERCHANT_LOCATION_KEY on server.' });
-    }
     const body = parseBody(req);
+    const { merchantLocationKey } = ebayPublishConfig(body);
+    if (!merchantLocationKey) {
+      return res.status(400).json({ error: 'merchantLocationKey required (env var or request body).' });
+    }
     const { line1, city, postalCode, country } = body;
     if (!line1 || !city || !postalCode) {
       return res.status(400).json({ error: 'line1, city, postalCode required.' });
@@ -1175,17 +1194,18 @@ async function handleEbayPublishItem(req, res) {
   try {
     const token = await ensureUserAccessToken(req);
     const { env, marketplace } = ebayAppConfig();
-    const { fulfillmentPolicyId, paymentPolicyId, returnPolicyId, merchantLocationKey } = ebayPublishConfig();
+    const body = parseBody(req);
+    const { fulfillmentPolicyId, paymentPolicyId, returnPolicyId, merchantLocationKey } = ebayPublishConfig(body);
     const missingPolicy = !fulfillmentPolicyId || !paymentPolicyId || !returnPolicyId || !merchantLocationKey;
     if (missingPolicy) {
-      return res.status(503).json({
+      return res.status(400).json({
         error:
-          'eBay Business Policies not configured on the server. Set EBAY_FULFILLMENT_POLICY_ID, ' +
-          'EBAY_PAYMENT_POLICY_ID, EBAY_RETURN_POLICY_ID, EBAY_MERCHANT_LOCATION_KEY (see .env.example).',
+          'eBay Business Policies not set. Pick them in Settings → eBay Selling, or set ' +
+          'EBAY_FULFILLMENT_POLICY_ID, EBAY_PAYMENT_POLICY_ID, EBAY_RETURN_POLICY_ID, ' +
+          'EBAY_MERCHANT_LOCATION_KEY on the server (see .env.example).',
       });
     }
 
-    const body = parseBody(req);
     const sku = String(body.sku || '').trim();
     const title = String(body.title || '').trim().slice(0, 80);
     const description = String(body.description || '').trim();
@@ -1277,6 +1297,51 @@ async function handleEbayPublishItem(req, res) {
   }
 }
 
+/**
+ * Lets Settings show a picklist of your real Business Policy names instead of asking you to
+ * paste raw policyIds. GET, returns { fulfillmentPolicies, paymentPolicies, returnPolicies }
+ * each as [{ id, name }], for the given marketplace (default EBAY_DE).
+ */
+async function handleEbayAccountPolicies(req, res) {
+  try {
+    const token = await ensureUserAccessToken(req);
+    const { env, marketplace } = ebayAppConfig();
+    const mp = (req.query?.marketplaceId && String(req.query.marketplaceId)) || marketplace || 'EBAY_DE';
+    const host = ebayApiHost(env);
+    const fetchList = async (path, listKey) => {
+      const data = await ebayJsonGet(token, `${host}/sell/account/v1/${path}?marketplace_id=${encodeURIComponent(mp)}`);
+      return (data[listKey] || []).map((p) => ({ id: p[`${listKey.slice(0, -1)}Id`], name: p.name }));
+    };
+    const [fulfillmentPolicies, paymentPolicies, returnPolicies] = await Promise.all([
+      fetchList('fulfillment_policy', 'fulfillmentPolicies'),
+      fetchList('payment_policy', 'paymentPolicies'),
+      fetchList('return_policy', 'returnPolicies'),
+    ]);
+    return res.status(200).json({ fulfillmentPolicies, paymentPolicies, returnPolicies });
+  } catch (e) {
+    return res.status(e.status || 500).json({ error: e instanceof Error ? e.message : 'Failed to load Business Policies' });
+  }
+}
+
+/** GET merchant inventory locations already registered on the account. */
+async function handleEbayAccountLocations(req, res) {
+  try {
+    const token = await ensureUserAccessToken(req);
+    const { env } = ebayAppConfig();
+    const data = await ebayJsonGet(token, `${ebayApiHost(env)}/sell/inventory/v1/location?limit=100`);
+    const locations = (data.locations || []).map((l) => ({
+      merchantLocationKey: l.merchantLocationKey,
+      name: l.name || l.merchantLocationKey,
+      address: [l.location?.address?.addressLine1, l.location?.address?.city, l.location?.address?.postalCode]
+        .filter(Boolean)
+        .join(', '),
+    }));
+    return res.status(200).json({ locations });
+  } catch (e) {
+    return res.status(e.status || 500).json({ error: e instanceof Error ? e.message : 'Failed to load locations' });
+  }
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') {
@@ -1299,5 +1364,7 @@ export default async function handler(req, res) {
   if (route === 'oauth_refresh') return handleEbayOAuthRefresh(req, res);
   if (route === 'setup_location') return handleEbaySetupLocation(req, res);
   if (route === 'publish_item') return handleEbayPublishItem(req, res);
+  if (route === 'account_policies') return handleEbayAccountPolicies(req, res);
+  if (route === 'account_locations') return handleEbayAccountLocations(req, res);
   return handleEbayOrder(req, res);
 }

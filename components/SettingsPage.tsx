@@ -51,6 +51,13 @@ import {
   disconnectEbayOAuth,
   fetchEbayAuthorizeUrl,
   getEbayConnectionStatus,
+  saveEbayConfig,
+  fetchEbayAccountPolicies,
+  fetchEbayAccountLocations,
+  createEbayMerchantLocation,
+  type EbayAccountPolicy,
+  type EbayAccountLocation,
+  type EbayConfig,
 } from '../services/ebayService';
 
 interface Props {
@@ -216,6 +223,16 @@ const SettingsPage: React.FC<Props> = ({
     () => businessSettings.ebaySellerUsername || getEbayConfig()?.username || 'rm4ik'
   );
   const [ebayConfigVersion, setEbayConfigVersion] = useState(0);
+  const [ebayPolicies, setEbayPolicies] = useState<{
+    fulfillmentPolicies: EbayAccountPolicy[];
+    paymentPolicies: EbayAccountPolicy[];
+    returnPolicies: EbayAccountPolicy[];
+  } | null>(null);
+  const [ebayLocations, setEbayLocations] = useState<EbayAccountLocation[]>([]);
+  const [ebayPoliciesLoading, setEbayPoliciesLoading] = useState(false);
+  const [ebayPoliciesError, setEbayPoliciesError] = useState<string | null>(null);
+  const [ebayNewLocation, setEbayNewLocation] = useState({ merchantLocationKey: '', line1: '', city: '', postalCode: '' });
+  const [ebayLocationBusy, setEbayLocationBusy] = useState(false);
   const [kaProfileUrl, setKaProfileUrl] = useState(() => {
     try {
       return (
@@ -1156,6 +1173,159 @@ const SettingsPage: React.FC<Props> = ({
                       set the RuName <strong>Accept URL</strong> to{' '}
                       <code className="bg-white px-1 rounded border">{typeof window !== 'undefined' ? `${window.location.origin}/auth/ebay/callback` : 'https://YOUR_DOMAIN/auth/ebay/callback'}</code>.
                    </p>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5 space-y-3">
+                   <div>
+                      <p className="text-sm font-black text-slate-900">eBay Selling — Business Policies & location</p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                         Required once before "Publish to eBay" (Listing Studio) works. Pulled straight from your
+                         eBay account — no need to hunt for raw policy IDs in Seller Hub.
+                      </p>
+                   </div>
+                   <div className="flex flex-wrap gap-2">
+                      <button
+                         type="button"
+                         disabled={ebayPoliciesLoading || !getEbayConnectionStatus().connected}
+                         onClick={async () => {
+                            setEbayPoliciesLoading(true);
+                            setEbayPoliciesError(null);
+                            try {
+                               const [policies, locations] = await Promise.all([
+                                  fetchEbayAccountPolicies(),
+                                  fetchEbayAccountLocations(),
+                               ]);
+                               setEbayPolicies(policies);
+                               setEbayLocations(locations);
+                            } catch (e) {
+                               setEbayPoliciesError(e instanceof Error ? e.message : 'Failed to load.');
+                            } finally {
+                               setEbayPoliciesLoading(false);
+                            }
+                         }}
+                         className="px-4 py-2 bg-slate-900 text-white rounded-xl font-bold text-xs uppercase hover:bg-slate-800 disabled:opacity-50 flex items-center gap-2"
+                      >
+                         {ebayPoliciesLoading ? <Loader2 size={14} className="animate-spin" /> : <ShoppingBag size={14} />}
+                         Load my Business Policies
+                      </button>
+                      {!getEbayConnectionStatus().connected && (
+                         <span className="text-[11px] text-slate-500 self-center">Connect eBay above first.</span>
+                      )}
+                   </div>
+                   {ebayPoliciesError && <p className="text-xs text-rose-600 font-semibold">{ebayPoliciesError}</p>}
+                   {ebayPolicies && (
+                      <div className="grid sm:grid-cols-3 gap-2">
+                         {(
+                            [
+                               { key: 'fulfillmentPolicyId' as const, label: 'Shipping policy', list: ebayPolicies.fulfillmentPolicies },
+                               { key: 'paymentPolicyId' as const, label: 'Payment policy', list: ebayPolicies.paymentPolicies },
+                               { key: 'returnPolicyId' as const, label: 'Return policy', list: ebayPolicies.returnPolicies },
+                            ] as const
+                         ).map(({ key, label, list }) => (
+                            <label key={key} className="block space-y-1">
+                               <span className="text-[9px] font-black uppercase text-slate-400">{label}</span>
+                               <select
+                                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-slate-900"
+                                  value={getEbayConfig()[key] || ''}
+                                  onChange={(e) => {
+                                     saveEbayConfig({ [key]: e.target.value } as Partial<EbayConfig>);
+                                     setEbayConfigVersion((v) => v + 1);
+                                  }}
+                               >
+                                  <option value="">— choose —</option>
+                                  {list.map((p) => (
+                                     <option key={p.id} value={p.id}>
+                                        {p.name}
+                                     </option>
+                                  ))}
+                               </select>
+                            </label>
+                         ))}
+                      </div>
+                   )}
+                   <div className="space-y-1.5">
+                      <span className="text-[9px] font-black uppercase text-slate-400">Inventory location</span>
+                      {ebayLocations.length > 0 && (
+                         <select
+                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-slate-900"
+                            value={getEbayConfig().merchantLocationKey || ''}
+                            onChange={(e) => {
+                               saveEbayConfig({ merchantLocationKey: e.target.value });
+                               setEbayConfigVersion((v) => v + 1);
+                            }}
+                         >
+                            <option value="">— choose —</option>
+                            {ebayLocations.map((l) => (
+                               <option key={l.merchantLocationKey} value={l.merchantLocationKey}>
+                                  {l.name} ({l.address})
+                               </option>
+                            ))}
+                         </select>
+                      )}
+                      {(!ebayLocations.length || !getEbayConfig().merchantLocationKey) && (
+                         <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-2">
+                            <p className="text-[11px] text-slate-500">
+                               No location picked yet — create one (any short slug + your address; not shown to buyers
+                               for a warehouse location).
+                            </p>
+                            <div className="grid grid-cols-2 gap-1.5">
+                               <input
+                                  className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold outline-none"
+                                  placeholder="Location key, e.g. home-1"
+                                  value={ebayNewLocation.merchantLocationKey}
+                                  onChange={(e) => setEbayNewLocation((s) => ({ ...s, merchantLocationKey: e.target.value }))}
+                               />
+                               <input
+                                  className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold outline-none"
+                                  placeholder="Street + number"
+                                  value={ebayNewLocation.line1}
+                                  onChange={(e) => setEbayNewLocation((s) => ({ ...s, line1: e.target.value }))}
+                               />
+                               <input
+                                  className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold outline-none"
+                                  placeholder="City"
+                                  value={ebayNewLocation.city}
+                                  onChange={(e) => setEbayNewLocation((s) => ({ ...s, city: e.target.value }))}
+                               />
+                               <input
+                                  className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold outline-none"
+                                  placeholder="Postal code"
+                                  value={ebayNewLocation.postalCode}
+                                  onChange={(e) => setEbayNewLocation((s) => ({ ...s, postalCode: e.target.value }))}
+                               />
+                            </div>
+                            <button
+                               type="button"
+                               disabled={
+                                  ebayLocationBusy ||
+                                  !ebayNewLocation.merchantLocationKey.trim() ||
+                                  !ebayNewLocation.line1.trim() ||
+                                  !ebayNewLocation.city.trim() ||
+                                  !ebayNewLocation.postalCode.trim()
+                               }
+                               onClick={async () => {
+                                  setEbayLocationBusy(true);
+                                  setEbayPoliciesError(null);
+                                  try {
+                                     await createEbayMerchantLocation(ebayNewLocation);
+                                     saveEbayConfig({ merchantLocationKey: ebayNewLocation.merchantLocationKey });
+                                     const locations = await fetchEbayAccountLocations();
+                                     setEbayLocations(locations);
+                                     setEbayConfigVersion((v) => v + 1);
+                                     showToast('eBay location created', 'success');
+                                  } catch (e) {
+                                     setEbayPoliciesError(e instanceof Error ? e.message : 'Could not create location.');
+                                  } finally {
+                                     setEbayLocationBusy(false);
+                                  }
+                               }}
+                               className="w-full px-3 py-2 bg-slate-900 text-white rounded-lg font-bold text-[11px] uppercase disabled:opacity-40"
+                            >
+                               {ebayLocationBusy ? 'Creating…' : 'Create location'}
+                            </button>
+                         </div>
+                      )}
+                   </div>
                 </div>
 
                 <details className="rounded-2xl border border-slate-200 bg-white p-4">

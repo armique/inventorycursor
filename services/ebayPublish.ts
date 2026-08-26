@@ -3,7 +3,7 @@
  * shipping resolution, and the actual inventory_item → offer → publish call.
  */
 import type { InventoryItem } from '../types';
-import { ensureFreshEbayToken } from './ebayService';
+import { ensureFreshEbayToken, getEbayConfig } from './ebayService';
 import {
   EBAY_CONDITION_ID,
   findEbayCategoryMapping,
@@ -74,6 +74,12 @@ export async function publishItemToEbay(item: InventoryItem): Promise<EbayPublis
       weightKg: item.shippingWeightKg,
       shippingCostEur: shippingTier.costEur,
       existingOfferId: item.ebayOfferId || undefined,
+      // Policy/location — from Settings → eBay Selling if picked there, else the server
+      // falls back to its own env vars.
+      fulfillmentPolicyId: getEbayConfig().fulfillmentPolicyId || undefined,
+      paymentPolicyId: getEbayConfig().paymentPolicyId || undefined,
+      returnPolicyId: getEbayConfig().returnPolicyId || undefined,
+      merchantLocationKey: getEbayConfig().merchantLocationKey || undefined,
     }),
   });
   const data = await res.json().catch(() => ({}));

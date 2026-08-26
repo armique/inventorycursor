@@ -21,6 +21,15 @@ export interface EbayConfig {
   /** Refresh-token expiry (epoch ms). */
   refreshExpiresAt?: number;
   connectedAt?: string;
+  /**
+   * Business Policy / location IDs for "Publish to eBay" — picked in Settings → eBay Selling
+   * from your real account (see fetchEbayAccountPolicies/Locations below), sent with every
+   * publish call. Falls back to server env vars if left unset here.
+   */
+  fulfillmentPolicyId?: string;
+  paymentPolicyId?: string;
+  returnPolicyId?: string;
+  merchantLocationKey?: string;
 }
 
 const DEFAULT_EBAY_USERNAME = 'rm4ik';
@@ -195,6 +204,63 @@ export async function fetchEbayAuthorizeUrl(): Promise<{ url: string; configured
     );
   }
   return { url: data.url, configured: data.configured !== false };
+}
+
+export type EbayAccountPolicy = { id: string; name: string };
+
+/** Your real Business Policy names/IDs from Seller Hub — for the Settings picklist. */
+export async function fetchEbayAccountPolicies(): Promise<{
+  fulfillmentPolicies: EbayAccountPolicy[];
+  paymentPolicies: EbayAccountPolicy[];
+  returnPolicies: EbayAccountPolicy[];
+}> {
+  const token = await ensureFreshEbayToken();
+  if (!token) throw new Error('Connect eBay first.');
+  const res = await fetch(`${PROXY_BASE}?route=account_policies&token=${encodeURIComponent(token)}`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(typeof data.error === 'string' ? data.error : 'Could not load Business Policies.');
+  }
+  return {
+    fulfillmentPolicies: data.fulfillmentPolicies || [],
+    paymentPolicies: data.paymentPolicies || [],
+    returnPolicies: data.returnPolicies || [],
+  };
+}
+
+export type EbayAccountLocation = { merchantLocationKey: string; name: string; address: string };
+
+/** Merchant inventory locations already registered on the account. */
+export async function fetchEbayAccountLocations(): Promise<EbayAccountLocation[]> {
+  const token = await ensureFreshEbayToken();
+  if (!token) throw new Error('Connect eBay first.');
+  const res = await fetch(`${PROXY_BASE}?route=account_locations&token=${encodeURIComponent(token)}`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(typeof data.error === 'string' ? data.error : 'Could not load locations.');
+  }
+  return data.locations || [];
+}
+
+/** Create a new merchant inventory location (idempotent — safe to call again with the same key). */
+export async function createEbayMerchantLocation(input: {
+  merchantLocationKey: string;
+  line1: string;
+  city: string;
+  postalCode: string;
+  country?: string;
+}): Promise<void> {
+  const token = await ensureFreshEbayToken();
+  if (!token) throw new Error('Connect eBay first.');
+  const res = await fetch(`${PROXY_BASE}?route=setup_location`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token, ...input }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(typeof data.error === 'string' ? data.error : 'Could not create location.');
+  }
 }
 
 /** Exchange authorization code from /auth/ebay/callback. */
