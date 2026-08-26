@@ -25,14 +25,14 @@ const SaleCycleHistory: React.FC<{ item: InventoryItem; compact?: boolean }> = (
       : `Returned ${count === 1 ? 'once' : `${count}×`} · last #${latest.ebayOrderId || '—'}`;
 
   return (
-    <div className={compact ? 'mt-1' : 'mt-2'}>
+    <span className={compact ? 'inline-flex flex-col items-start max-w-full' : 'block mt-2'}>
       <button
         type="button"
         onClick={(e) => {
           e.stopPropagation();
           setOpen((v) => !v);
         }}
-        className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wide text-indigo-800 bg-indigo-50 border border-indigo-200 rounded-lg px-2 py-1 hover:bg-indigo-100"
+        className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap text-[9px] font-black uppercase tracking-wide text-indigo-800 bg-indigo-50 border border-indigo-200 rounded-lg px-2 py-1 hover:bg-indigo-100"
         title={cycles.map(formatSaleCycleSummary).join('\n')}
       >
         <History size={10} className="shrink-0" />
@@ -67,7 +67,7 @@ const SaleCycleHistory: React.FC<{ item: InventoryItem; compact?: boolean }> = (
           ))}
         </ol>
       )}
-    </div>
+    </span>
   );
 };
 

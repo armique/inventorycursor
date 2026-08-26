@@ -21,6 +21,13 @@ export function formatEURPrefix(amount: number): string {
   return `€${formatEUR(amount)}`;
 }
 
+/** Signed EUR like Abrechnung table cells: −€12,29 / €48,00 / — */
+export function formatSignedEUR(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return '—';
+  const sign = n < 0 ? '−' : '';
+  return `${sign}€${formatEUR(Math.abs(n))}`;
+}
+
 /**
  * Locale-tolerant number parser for user inputs.
  * Accepts both comma and dot decimals ("19,04" and "19.04").

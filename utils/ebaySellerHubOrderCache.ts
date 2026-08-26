@@ -40,9 +40,15 @@ export function financialEventsFromHubPayout(
 ): EbayOrderFinancialEvent[] {
   const events: EbayOrderFinancialEvent[] = [];
   const sale = payout.buyerTotalEur ?? payout.itemGrossEur;
+  const net = payout.netPayoutEur;
+  const zeroFee =
+    sale != null &&
+    net != null &&
+    Math.abs(sale - net) < 0.02;
   if (sale != null && sale > 0) {
     events.push(hubEvent(order, 'sale', roundMoney(sale), 'Bestellung'));
   }
+  if (zeroFee) return events;
   if (payout.transactionFeeEur != null && payout.transactionFeeEur >= 0.01) {
     events.push(
       hubEvent(order, 'fee', -roundMoney(payout.transactionFeeEur), 'Transaktionsgebühren')
@@ -58,6 +64,9 @@ export function financialEventsFromHubPayout(
   }
   if (payout.otherFeeEur != null && payout.otherFeeEur >= 0.01) {
     events.push(hubEvent(order, 'fee', -roundMoney(payout.otherFeeEur), 'Weitere Gebühren'));
+  }
+  if (payout.refundEur != null && payout.refundEur >= 0.01) {
+    events.push(hubEvent(order, 'refund', -roundMoney(payout.refundEur), 'Rückerstattung'));
   }
   return events;
 }

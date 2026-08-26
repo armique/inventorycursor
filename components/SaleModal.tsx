@@ -139,7 +139,12 @@ const SaleModal: React.FC<Props> = ({
   const [hubClipboardReading, setHubClipboardReading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [ebayPanelTab, setEbayPanelTab] = useState<'details' | 'match'>('details');
   const didLiveOrderFetchRef = useRef(false);
+
+  useEffect(() => {
+    setEbayPanelTab('details');
+  }, [item.id]);
 
   const rematchOrderSuggestions = useCallback((): EbayOrderMatch[] => {
     try {
@@ -1267,6 +1272,47 @@ const SaleModal: React.FC<Props> = ({
 
           {platformSold === 'ebay.de' && (
             <div className="space-y-2">
+              {isEditBuyer && (
+                <div
+                  className="flex gap-1 p-0.5 rounded-xl bg-slate-100 border border-slate-200"
+                  role="tablist"
+                  aria-label="eBay order sections"
+                >
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={ebayPanelTab === 'details'}
+                    onClick={() => setEbayPanelTab('details')}
+                    className={`flex-1 py-2 min-h-[40px] rounded-lg text-[9px] font-extrabold uppercase tracking-wide transition-colors ${
+                      ebayPanelTab === 'details'
+                        ? 'bg-white text-slate-900 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    Buyer & order
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={ebayPanelTab === 'match'}
+                    onClick={() => setEbayPanelTab('match')}
+                    className={`flex-1 py-2 min-h-[40px] rounded-lg text-[9px] font-extrabold uppercase tracking-wide transition-colors inline-flex items-center justify-center gap-1 ${
+                      ebayPanelTab === 'match'
+                        ? 'bg-white text-indigo-900 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    Match order
+                    {orderMatchSuggestions.length > 0 ? (
+                      <span className="min-w-[1rem] px-1 py-0.5 rounded-full bg-indigo-600 text-white text-[8px] font-black tabular-nums leading-none">
+                        {orderMatchSuggestions.length}
+                      </span>
+                    ) : null}
+                  </button>
+                </div>
+              )}
+
+              {(!isEditBuyer || ebayPanelTab === 'match') && (
               <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-2.5 space-y-2">
                 <div className="flex items-center gap-1.5">
                   <Receipt size={12} className="text-indigo-600 shrink-0" />
@@ -1290,7 +1336,9 @@ const SaleModal: React.FC<Props> = ({
                   <p className="text-[10px] text-indigo-900/70 leading-snug">
                     {orderRefreshLoading
                       ? 'Fetching recent eBay orders…'
-                      : 'No recent orders in cache yet. Wait for fetch, or paste an Order ID below and click Load. Order-first bind is also in eBay Orders.'}
+                      : isEditBuyer
+                        ? 'No recent orders in cache yet. Wait for fetch, or switch to Buyer & order to paste an Order ID and click Load.'
+                        : 'No recent orders in cache yet. Wait for fetch, or paste an Order ID below and click Load. Order-first bind is also in eBay Orders.'}
                   </p>
                 ) : (
                   <div className="space-y-1.5">
@@ -1412,7 +1460,10 @@ const SaleModal: React.FC<Props> = ({
                   </div>
                 )}
               </div>
+              )}
 
+              {(!isEditBuyer || ebayPanelTab === 'details') && (
+              <>
               <div className="rounded-xl border border-amber-100 bg-amber-50/50 p-2.5 space-y-2">
                 <div className="flex items-center gap-1.5">
                   <ExternalLink size={12} className="text-amber-700 shrink-0" />
@@ -1620,6 +1671,8 @@ const SaleModal: React.FC<Props> = ({
                 >
                   {orderIdLookupMessage}
                 </p>
+              )}
+              </>
               )}
             </div>
           )}

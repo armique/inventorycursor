@@ -65,7 +65,7 @@ export function applyEbayOrderMatchToItem(
       item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED ? ItemStatus.SOLD : item.status,
     originalSellPrice,
     sellPrice: sellForBooks,
-    sellDate: order.creationDate || item.sellDate || new Date().toISOString().split('T')[0],
+    sellDate: item.sellDate || order.creationDate || undefined,
     platformSold: shouldCorrectSalePlatformToEbay(item) ? 'ebay.de' : item.platformSold || 'ebay.de',
     paymentType: shouldCorrectSalePlatformToEbay(item) ? 'ebay.de' : item.paymentType || 'ebay.de',
     profit: parseFloat(profit.toFixed(2)),

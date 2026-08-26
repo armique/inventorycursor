@@ -1,12 +1,13 @@
 import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowRight, X } from 'lucide-react';
+import { ArrowRight, Check, X, AlertTriangle } from 'lucide-react';
 import {
   type HubBreakdownReplaceReason,
   type HubBreakdownReplaceRow,
   type HubBreakdownSnapshot,
 } from '../utils/replaceItemSaleProceedsFromHub';
 import { formatEUR } from '../utils/formatMoney';
+import { roundMoney } from '../services/financialAggregation';
 
 const REASON: Record<HubBreakdownReplaceReason, string> = {
   screenshot: 'screenshot split',
@@ -20,7 +21,7 @@ const FIELDS: Array<{ key: keyof HubBreakdownSnapshot; label: string }> = [
   { key: 'total', label: 'Buyer total' },
   { key: 'ads', label: 'Ads' },
   { key: 'ebay', label: 'eBay fee' },
-  { key: 'ship', label: 'Label' },
+  { key: 'ship', label: 'Delivery' },
   { key: 'refund', label: 'Refund' },
   { key: 'net', label: 'Net' },
   { key: 'profit', label: 'Margin' },
@@ -33,6 +34,49 @@ function moneyText(value: number | null | undefined): string {
 
 function fieldChanged(before: number | null | undefined, after: number | null | undefined): boolean {
   return Math.abs((before ?? 0) - (after ?? 0)) >= 0.02;
+}
+
+function marginVerifyBanner(row: HubBreakdownReplaceRow) {
+  const buy = roundMoney(Number(row.nextItem.buyPrice) || 0);
+  const net = row.after.net;
+  if (net == null || !Number.isFinite(net)) {
+    return (
+      <div className="mx-3 mt-2 mb-1 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-900">
+        <AlertTriangle size={14} className="shrink-0 mt-0.5" aria-hidden />
+        <span>Net payout unknown — cannot verify margin = net − buy.</span>
+      </div>
+    );
+  }
+  const expected = roundMoney(net - buy);
+  const afterMargin = row.after.profit ?? expected;
+  const ok = Math.abs(expected - afterMargin) < 0.02;
+  return (
+    <div
+      className={`mx-3 mt-2 mb-1 flex items-start gap-2 rounded-lg border px-2.5 py-2 text-[11px] font-semibold tabular-nums ${
+        ok
+          ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+          : 'border-amber-200 bg-amber-50 text-amber-950'
+      }`}
+    >
+      {ok ? (
+        <Check size={14} strokeWidth={2.75} className="shrink-0 mt-0.5 text-emerald-600" aria-hidden />
+      ) : (
+        <AlertTriangle size={14} className="shrink-0 mt-0.5 text-amber-600" aria-hidden />
+      )}
+      <span>
+        Net €{formatEUR(net)} − Buy €{formatEUR(buy)} ={' '}
+        <strong>€{formatEUR(expected)}</strong>
+        {ok ? (
+          <span className="text-emerald-700"> · matches Margin after apply ✓</span>
+        ) : (
+          <span className="text-amber-800">
+            {' '}
+            · after apply margin €{formatEUR(afterMargin)} (mismatch)
+          </span>
+        )}
+      </span>
+    </div>
+  );
 }
 
 type Props = {
@@ -102,6 +146,7 @@ const HubSplitApplyModal: React.FC<Props> = ({ rows, applying = false, onClose, 
                   {row.orderId} · {REASON[row.reason]}
                 </p>
               </div>
+              {marginVerifyBanner(row)}
               <div className="divide-y divide-slate-100">
                 {FIELDS.map((field) => {
                   const before = row.before[field.key] as number | null;

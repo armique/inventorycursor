@@ -30,7 +30,7 @@ describe('splitParts', () => {
     expect(buildPartName('Arctic Liquid Freezer II 360', 'Radiator', { radiatorMm: 360 })).toBe(
       'Arctic LF II 360 Rad'
     );
-    expect(buildPartName('Corsair H100i RGB Platinum 240', 'Fans', { fanQty: 2 })).toMatch(
+    expect(buildPartName('Corsair H100i RGB Platinum 240', 'Fans', { qty: 2 })).toMatch(
       /Fans ×2$/
     );
     expect(buildPartName('NZXT Kraken 240', 'OVP', { shortLabel: 'OVP' })).toMatch(/OVP$/);
@@ -149,11 +149,100 @@ describe('splitParts', () => {
       { ...source, name: 'x8/Kingston NV2 1TB SSD', quantity: 8 },
       drafts
     );
-    expect(parent.isBundle).toBe(true);
-    expect(parent.quantity).toBeUndefined();
+    expect(parent?.isBundle).toBe(true);
+    expect(parent?.quantity).toBeUndefined();
     expect(children).toHaveLength(8);
     expect(children.every((c) => c.buyPrice === 25)).toBe(true);
     expect(children.every((c) => c.name === 'Kingston NV2 1TB SSD')).toBe(true);
-    expect(Number(parent.buyPrice)).toBe(200);
+    expect(Number(parent?.buyPrice)).toBe(200);
+  });
+
+  it('standalone identical split deletes the source instead of leaving a €0 husk', () => {
+    const source: InventoryItem = {
+      id: 'ram-1',
+      name: '2x16GB Corsair Vengeance DDR4',
+      buyPrice: 40,
+      buyDate: '2026-01-01',
+      category: 'Components',
+      subCategory: 'RAM',
+      status: ItemStatus.IN_STOCK,
+      comment1: '',
+      comment2: '',
+    };
+    const drafts = buildIdenticalCopyDrafts(source, 2);
+    const { parent, children } = buildSplitApplyItems(source, drafts, [], { standalone: true });
+    expect(parent).toBeNull();
+    expect(children).toHaveLength(2);
+    expect(children.every((c) => c.parentContainerId === undefined)).toBe(true);
+    expect(Number(children.reduce((s, c) => s + c.buyPrice, 0))).toBe(40);
+  });
+
+  it('cable-only split never wraps into a bundle and never nests a same-named remainder', () => {
+    const source: InventoryItem = {
+      id: 'psu-1',
+      name: 'Corsair RM850x PSU',
+      buyPrice: 60,
+      buyDate: '2026-01-01',
+      category: 'Components',
+      subCategory: 'PSU',
+      status: ItemStatus.IN_STOCK,
+      comment1: '',
+      comment2: '',
+    };
+    const sel = defaultSplitSelection(source);
+    sel.enabled.cable = true;
+    sel.cables = [{ id: 'c0', type: 'cpu', qty: 1 }];
+    const drafts = buildSplitDrafts(source, sel);
+    // Even with the "As bundle" toggle (the default), a cable-only extraction should not
+    // wrap the PSU in a Bundle or create a remainder child named after the PSU itself.
+    const { parent, children } = buildSplitApplyItems(source, drafts, [], { standalone: false });
+    expect(parent?.isBundle).toBeFalsy();
+    expect(parent?.id).toBe(source.id);
+    expect(children).toHaveLength(1);
+    expect(children.some((c) => c.name === source.name)).toBe(false);
+    expect(children.every((c) => c.parentContainerId === undefined)).toBe(true);
+  });
+
+  it('standalone mode expands a multi-qty cable line into N separate single items', () => {
+    const source: InventoryItem = {
+      id: 'psu-2',
+      name: 'Corsair RM850x PSU',
+      buyPrice: 60,
+      buyDate: '2026-01-01',
+      category: 'Components',
+      subCategory: 'PSU',
+      status: ItemStatus.IN_STOCK,
+      comment1: '',
+      comment2: '',
+    };
+    const sel = defaultSplitSelection(source);
+    sel.enabled.cable = true;
+    sel.cables = [{ id: 'c0', type: 'cpu', qty: 3 }];
+    const drafts = buildSplitDrafts(source, sel);
+    const { children } = buildSplitApplyItems(source, drafts, [], { standalone: true });
+    expect(children).toHaveLength(3);
+    expect(children.every((c) => c.quantity == null)).toBe(true);
+    expect(children.every((c) => c.name.includes('CPU'))).toBe(true);
+  });
+
+  it('a zero-qty cable line is dropped and never becomes a draft', () => {
+    const source: InventoryItem = {
+      id: 'aio-2',
+      name: 'NZXT Kraken 240 RGB',
+      buyPrice: 60,
+      buyDate: '2026-01-01',
+      category: 'Components',
+      subCategory: 'Cooling',
+      status: ItemStatus.IN_STOCK,
+      comment1: '',
+      comment2: '',
+    };
+    // defaultSplitSelection pre-loads every cable type at qty 0 for cooling-ish items —
+    // the user only has to bump the ones actually present.
+    const sel = defaultSplitSelection(source);
+    expect(sel.cables.length).toBeGreaterThan(1);
+    expect(sel.cables.every((c) => c.qty === 0)).toBe(true);
+    const drafts = buildSplitDrafts(source, sel);
+    expect(drafts.filter((d) => d.presetId === 'cable')).toHaveLength(0);
   });
 });

@@ -7,6 +7,7 @@ import { ItemStatus, type InventoryItem } from '../types';
 import type { EbayOrderFinancialEvent, EbayOrderRecord } from '../services/ebayOrderIndex';
 import {
   applyHubBreakdownReplacePlan,
+  applyHubPayoutBreakdownToSoldItem,
   buildHubBreakdownReplacePlan,
   hubBreakdownActionDetails,
   hubBreakdownItemsToSave,
@@ -325,6 +326,7 @@ const refundOnlyHub: EbayOrderRecord = {
   netTotal: 6.77,
   financialEvents: [
     hubEvent('03-15053-36524', 11.77, 'sale', 'Bestellung'),
+    hubEvent('03-15053-36524', -3.75, 'fee', 'Transaktionsgebühren'),
     hubEvent('03-15053-36524', -5, 'refund', 'Erstattet'),
   ],
 };
@@ -367,7 +369,7 @@ assert.equal(shot.nextItem.customer?.name, 'buyer1');
   assert.equal(afterHub.profit, expectedMargin, 'stored profit stamped to pocket margin');
 
   const stale: InventoryItem = { ...afterHub, profit: 999 };
-  const healed = healRealizedProfitsFromSaleProceeds([stale], 'SmallBusiness');
+  const healed = healRealizedProfitsFromSaleProceeds([stale]);
   assert.equal(healed.length, 1);
   assert.equal(healed[0].profit, expectedMargin);
 }
@@ -420,6 +422,245 @@ assert.equal(shot.nextItem.customer?.name, 'buyer1');
   assert.equal(multiPlan[0].after.sell, 100);
   assert.equal(multiPlan[0].after.net, 80);
   assert.notEqual(multiPlan[0].after.total, 150);
+}
+
+{
+  const bundleOrder: EbayOrderRecord = {
+    orderId: '408-14793-62151',
+    creationDate: '2024-06-19',
+    buyer: { username: 'ropah-3038' },
+    lineItems: [
+      { sku: 'ssd-a', title: '120GB SSD SATA', lineItemCost: 24.37 },
+      { sku: 'ssd-b', title: 'Samsung SSD 850 EVO 120GB', lineItemCost: 5.67 },
+    ],
+    grossTotal: 30.04,
+    netTotal: 28.04,
+    sources: ['hub'],
+    importedAt: '2026-08-22T00:00:00.000Z',
+    financialEvents: [
+      hubEvent('408-14793-62151', 30.04, 'sale', 'Bestellung'),
+      hubEvent('408-14793-62151', -1.2, 'fee', 'Transaktionsgebühren'),
+      hubEvent('408-14793-62151', -0.8, 'fee', 'Anzeigengebühr Basis'),
+    ],
+  };
+  const bundleParent: InventoryItem = {
+    id: 'bundle-ssd-2x',
+    name: '2x 120GB Samsung SSD 840/850 EVO',
+    buyPrice: 14.79,
+    buyDate: '2024-06-01',
+    sellDate: '2024-06-19',
+    category: 'Mixed Bundle',
+    status: ItemStatus.SOLD,
+    comment1: '',
+    comment2: '',
+    isBundle: true,
+    componentIds: ['part-a', 'part-b'],
+    ebayOrderId: '408-14793-62151',
+    platformSold: 'ebay.de',
+    paymentType: 'ebay.de',
+    ebayUsername: 'ropah-3038',
+  };
+  const partA: InventoryItem = {
+    id: 'part-a',
+    name: '120GB SSD SATA',
+    buyPrice: 12,
+    buyDate: '2024-06-01',
+    sellDate: '2024-06-19',
+    sellPrice: 24.37,
+    category: 'Components',
+    subCategory: 'SSD/HDD',
+    status: ItemStatus.SOLD,
+    comment1: '',
+    comment2: '',
+    parentContainerId: 'bundle-ssd-2x',
+    ebayOrderId: '408-14793-62151',
+  };
+  const partB: InventoryItem = {
+    id: 'part-b',
+    name: 'Samsung SSD 850 EVO 120GB',
+    buyPrice: 2.79,
+    buyDate: '2024-06-01',
+    sellDate: '2024-06-19',
+    sellPrice: 5.67,
+    category: 'Components',
+    subCategory: 'SSD/HDD',
+    status: ItemStatus.SOLD,
+    comment1: '',
+    comment2: '',
+    parentContainerId: 'bundle-ssd-2x',
+    ebayOrderId: '408-14793-62151',
+  };
+  const catalog = [bundleParent, partA, partB];
+  const plan = buildHubBreakdownReplacePlan(catalog, [bundleOrder], 'SmallBusiness');
+  assert.equal(plan.length, 1, 'only bundle shell gets hub row, not each part');
+  assert.equal(plan[0].itemId, 'bundle-ssd-2x');
+  assert.equal(plan[0].after.total, 30.04);
+  assert.equal(plan[0].after.net, 28.04);
+  const split = saleColumnSplit(plan[0].nextItem, { displaySellEur: 30.04 });
+  assert.ok(split);
+  assert.equal(split!.totalEur, 30.04);
+  assert.equal(split!.netEur, 28.04);
+
+  const wrongHubApplied: InventoryItem = {
+    ...bundleParent,
+    sellPrice: 24.37,
+    ebayOrderLineKey: '408-14793-62151::ssd-a',
+    saleProceeds: {
+      capturedAt: '2026-08-22T00:00:00.000Z',
+      source: 'ebay_seller_hub',
+      buyerTotalEur: 24.37,
+      transactionFeeEur: 1.6,
+      netPayoutEur: 22.77,
+      feesEstimated: false,
+    },
+  };
+  const fixPlan = buildHubBreakdownReplacePlan(
+    [wrongHubApplied, partA, partB],
+    [bundleOrder],
+    'SmallBusiness'
+  );
+  assert.equal(fixPlan.length, 1, 'wrong half-order hub data should be re-offered');
+  assert.equal(fixPlan[0].after.total, 30.04);
+  assert.equal(fixPlan[0].after.net, 28.04);
+}
+
+{
+  const labelOrder: EbayOrderRecord = {
+    orderId: '08-14793-62551',
+    creationDate: '2026-06-19',
+    buyer: { username: 'repo1-2058', fullName: 'Raphael Otto' },
+    lineItems: [
+      { sku: 'ssd-a', title: '120GB SSD SATA', lineItemCost: 24.37 },
+      { sku: 'ssd-b', title: 'Samsung SSD 850 EVO 120GB', lineItemCost: 5.67 },
+    ],
+    grossTotal: 39.85,
+    netTotal: 17.79,
+    sources: ['hub'],
+    importedAt: '2026-08-22T00:00:00.000Z',
+    financialEvents: [
+      hubEvent('08-14793-62551', 39.85, 'sale', 'Bestellung'),
+      hubEvent('08-14793-62551', -1.2, 'fee', 'Transaktionsgebühren'),
+      hubEvent('08-14793-62551', -0.8, 'fee', 'Anzeigengebühr Basis'),
+      hubEvent('08-14793-62551', -6.19, 'fee', 'Versandetikett'),
+      hubEvent('08-14793-62551', -13.87, 'fee', 'Transaktionsgebühren'),
+    ],
+  };
+  const labelParent: InventoryItem = {
+    id: 'bundle-ssd-label',
+    name: '2x 120GB Samsung SSD 840/850 EVO',
+    buyPrice: 14.79,
+    buyDate: '2024-06-01',
+    sellDate: '2026-06-19',
+    category: 'Mixed Bundle',
+    status: ItemStatus.SOLD,
+    comment1: '',
+    comment2: '',
+    isBundle: true,
+    componentIds: ['part-a', 'part-b'],
+    ebayOrderId: '08-14793-62551',
+    platformSold: 'ebay.de',
+    paymentType: 'ebay.de',
+    ebayUsername: 'repo1-2058',
+    sellPrice: 30.04,
+  };
+  const labelPartA: InventoryItem = {
+    id: 'part-a',
+    name: '120GB SSD SATA',
+    buyPrice: 12,
+    buyDate: '2024-06-01',
+    sellDate: '2026-06-19',
+    sellPrice: 24.37,
+    category: 'Components',
+    subCategory: 'SSD/HDD',
+    status: ItemStatus.SOLD,
+    comment1: '',
+    comment2: '',
+    parentContainerId: 'bundle-ssd-label',
+    ebayOrderId: '08-14793-62551',
+  };
+  const labelPartB: InventoryItem = {
+    id: 'part-b',
+    name: 'Samsung SSD 850 EVO 120GB',
+    buyPrice: 2.79,
+    buyDate: '2024-06-01',
+    sellDate: '2026-06-19',
+    sellPrice: 5.67,
+    category: 'Components',
+    subCategory: 'SSD/HDD',
+    status: ItemStatus.SOLD,
+    comment1: '',
+    comment2: '',
+    parentContainerId: 'bundle-ssd-label',
+    ebayOrderId: '08-14793-62551',
+  };
+  const labelPlan = buildHubBreakdownReplacePlan(
+    [labelParent, labelPartA, labelPartB],
+    [labelOrder],
+    'SmallBusiness'
+  );
+  assert.equal(labelPlan.length, 1);
+  assert.equal(labelPlan[0].after.net, 30.04);
+  const labelSplit = saleColumnSplit(labelPlan[0].nextItem);
+  assert.equal(labelSplit?.totalEur, 39.85);
+  assert.equal(labelSplit?.shippingEur, 6.19);
+  assert.equal(labelSplit?.netEur, 30.04);
+}
+
+{
+  // Hub parsed one lump eBay fee; item already has ads + shipping + eBay that sum to the same net.
+  const lumpedHub: EbayOrderRecord = {
+    orderId: '19-15037-10451',
+    creationDate: '2026-08-01',
+    buyer: { username: 'buyer-xt' },
+    lineItems: [{ sku: null, title: 'AMD Radeon RX 6500 XT', lineItemCost: 101.22 }],
+    grossTotal: 101.22,
+    netTotal: 76.43,
+    sources: ['hub'],
+    importedAt: '2026-08-22T00:00:00.000Z',
+    financialEvents: [
+      hubEvent('19-15037-10451', 101.22, 'sale', 'Bestellung'),
+    ],
+  };
+  const detailedScreenshot: InventoryItem = {
+    ...screenshotItem,
+    id: 'rx-6500-xt',
+    name: 'AMD Radeon RX 6500 XT',
+    buyPrice: 41.2,
+    sellPrice: 101.22,
+    ebayOrderId: '19-15037-10451',
+    ebayOrderLineKey: '19-15037-10451::AMD',
+    ebayUsername: 'buyer-xt',
+    ebaySku: 'RX-6500',
+    ebayListingId: '123',
+    customer: { name: 'buyer-xt', address: 'DE' },
+    feeAmount: 24.79,
+    sellerPaidShipping: true,
+    sellerShippingAmount: 6.19,
+    saleProceeds: {
+      capturedAt: '2026-08-02T00:00:00.000Z',
+      source: 'ebay_screenshot',
+      buyerTotalEur: 101.22,
+      transactionFeeEur: 6.56,
+      adFeeEur: 12.04,
+      shippingLabelEur: 6.19,
+      refundEur: 0,
+      netPayoutEur: 76.43,
+      feesEstimated: false,
+    },
+  };
+  const lumpPlan = buildHubBreakdownReplacePlan([detailedScreenshot], [lumpedHub], 'SmallBusiness');
+  assert.equal(lumpPlan.length, 0);
+  const applied = applyHubPayoutBreakdownToSoldItem(
+    detailedScreenshot,
+    lumpedHub,
+    lumpedHub.lineItems[0],
+    'SmallBusiness',
+    [detailedScreenshot]
+  );
+  assert.equal(applied.saleProceeds?.transactionFeeEur, 6.56);
+  assert.equal(applied.saleProceeds?.adFeeEur, 12.04);
+  assert.equal(applied.saleProceeds?.shippingLabelEur, 6.19);
+  assert.equal(applied.saleProceeds?.netPayoutEur, 76.43);
 }
 
 console.log('verify-hub-breakdown-replace: ok');

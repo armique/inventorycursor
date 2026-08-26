@@ -53,10 +53,35 @@ function hasFeeBreakdown(order: EbayOrderRecord): boolean {
 
 let memOrders: EbayOrderRecord[] | null = null;
 let memMeta: EbayHubArchiveMeta | null = null;
+let memOrdersByNormId: Map<string, EbayOrderRecord> | null = null;
 let hydrated = false;
 let hydratePromise: Promise<HubArchiveHydrateResult> | null = null;
 let persistChain: Promise<void> = Promise.resolve();
 let lastPersist: HubArchivePersistResult = { ok: true, via: 'memory' };
+
+function orderIdLookupKeys(orderId: string): string[] {
+  const raw = orderId.trim().toLowerCase();
+  if (!raw) return [];
+  const compact = raw.replace(/[\s_]/g, '');
+  return compact === raw ? [raw] : [raw, compact];
+}
+
+function indexMemOrders(orders: EbayOrderRecord[]): void {
+  const map = new Map<string, EbayOrderRecord>();
+  for (const order of orders) {
+    for (const key of orderIdLookupKeys(order.orderId)) {
+      if (!map.has(key)) map.set(key, order);
+    }
+  }
+  memOrdersByNormId = map;
+}
+
+function adoptMemArchive(orders: EbayOrderRecord[], meta: EbayHubArchiveMeta): void {
+  memOrders = orders;
+  memMeta = meta;
+  hydrated = true;
+  indexMemOrders(orders);
+}
 
 function emptyMeta(): EbayHubArchiveMeta {
   return { updatedAt: '', count: 0 };
@@ -188,10 +213,17 @@ async function writePersist(orders: EbayOrderRecord[], meta: EbayHubArchiveMeta)
   }
 }
 
+let archiveNotifyFrame = 0;
+
+/** Coalesce burst Hub writes into one listener tick per frame (avoids update-depth cascades). */
 function notifyArchiveUpdated(): void {
   if (typeof window === 'undefined') return;
-  window.dispatchEvent(new Event('ebay-hub-archive-updated'));
-  window.dispatchEvent(new Event('ebay-order-index-updated'));
+  if (archiveNotifyFrame) return;
+  archiveNotifyFrame = window.requestAnimationFrame(() => {
+    archiveNotifyFrame = 0;
+    window.dispatchEvent(new Event('ebay-hub-archive-updated'));
+    window.dispatchEvent(new Event('ebay-order-index-updated'));
+  });
 }
 
 function applySnapshot(
@@ -199,9 +231,7 @@ function applySnapshot(
   meta: EbayHubArchiveMeta,
   source: HubArchiveHydrateResult['source']
 ): HubArchiveHydrateResult {
-  memOrders = orders;
-  memMeta = meta;
-  hydrated = true;
+  adoptMemArchive(orders, meta);
   return { source, count: orders.length };
 }
 
@@ -223,22 +253,18 @@ function loadRaw(): { orders: EbayOrderRecord[]; meta: EbayHubArchiveMeta } {
   if (memOrders && memMeta) return { orders: memOrders, meta: memMeta };
   const fromLs = readLocalStorageDump();
   if (fromLs) {
-    memOrders = fromLs.orders;
-    memMeta = fromLs.meta;
-    return { orders: memOrders, meta: memMeta };
+    adoptMemArchive(fromLs.orders, fromLs.meta);
+    return { orders: memOrders!, meta: memMeta! };
   }
   // Do not cache an empty snapshot until IndexedDB hydrate finishes — otherwise a
   // later IDB restore cannot replace the in-memory "empty" ledger.
   if (!hydrated) return { orders: [], meta: emptyMeta() };
-  memOrders = [];
-  memMeta = emptyMeta();
-  return { orders: memOrders, meta: memMeta };
+  adoptMemArchive([], emptyMeta());
+  return { orders: memOrders!, meta: memMeta! };
 }
 
 function saveRaw(orders: EbayOrderRecord[], meta: EbayHubArchiveMeta): void {
-  memOrders = orders;
-  memMeta = meta;
-  hydrated = true;
+  adoptMemArchive(orders, meta);
   persistChain = persistChain.then(() => writePersist(orders, meta));
   notifyArchiveUpdated();
 }
@@ -407,6 +433,18 @@ export function backfillHubTitlesFromOrderIndex(): { filled: number } {
 export function mergeHubOrderRecords(existing: EbayOrderRecord, incoming: EbayOrderRecord): EbayOrderRecord {
   const financialEvents = mergeFinancialEvents(existing.financialEvents, incoming.financialEvents || []);
   const eventNet = sumFinancialEventNet(financialEvents);
+  const existingFees = (existing.financialEvents || []).filter((e) => e.kind === 'fee').length;
+  const incomingFees = (incoming.financialEvents || []).filter((e) => e.kind === 'fee').length;
+  const grossTotal =
+    incoming.grossTotal != null &&
+    (incoming.grossTotal > (existing.grossTotal ?? 0) + 0.01 || incomingFees >= existingFees)
+      ? incoming.grossTotal
+      : existing.grossTotal ?? incoming.grossTotal;
+  const netTotal =
+    incoming.netTotal != null &&
+    (incomingFees >= existingFees || existing.netTotal == null)
+      ? incoming.netTotal
+      : existing.netTotal ?? eventNet ?? incoming.netTotal;
   return {
     orderId: existing.orderId,
     creationDate: incoming.creationDate || existing.creationDate,
@@ -418,8 +456,8 @@ export function mergeHubOrderRecords(existing: EbayOrderRecord, incoming: EbayOr
       phone: incoming.buyer.phone || existing.buyer.phone,
     },
     lineItems: mergeHubLineItems(existing.lineItems, incoming.lineItems),
-    grossTotal: incoming.grossTotal ?? existing.grossTotal,
-    netTotal: incoming.netTotal ?? eventNet ?? existing.netTotal,
+    grossTotal,
+    netTotal,
     feeTotal: incoming.feeTotal ?? existing.feeTotal,
     shippingCost: incoming.shippingCost ?? existing.shippingCost,
     taxTotal: incoming.taxTotal ?? existing.taxTotal,
@@ -490,9 +528,7 @@ export function upsertHubArchiveOrders(
 }
 
 export function clearHubArchiveIndex(): void {
-  memOrders = [];
-  memMeta = emptyMeta();
-  hydrated = true;
+  adoptMemArchive([], emptyMeta());
   lastPersist = { ok: true, via: 'memory' };
   try {
     localStorage.removeItem(STORAGE_KEY);
@@ -507,7 +543,10 @@ export function clearHubArchiveIndex(): void {
 export function findHubArchiveOrderById(orderId: string): EbayOrderRecord | null {
   const key = orderId.trim().toLowerCase();
   if (!key) return null;
-  return loadRaw().orders.find((o) => o.orderId.trim().toLowerCase() === key) ?? null;
+  loadRaw();
+  const map = memOrdersByNormId;
+  if (!map) return null;
+  return map.get(key) ?? map.get(key.replace(/[\s_]/g, '')) ?? null;
 }
 
 export function getHubArchiveStats(): EbayHubArchiveStats {

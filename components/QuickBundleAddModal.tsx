@@ -5,9 +5,11 @@ import { formatEUR } from '../utils/formatMoney';
 import { buildContainerTitle } from '../utils/buildTitle';
 import { isMixedBundleContainer } from '../utils/containerTaxonomy';
 import { isInventoryContainer } from '../utils/containerMembership';
+import { isRealizedDisposal } from '../utils/itemDisposition';
+import { archiveActiveSaleAndClear, itemHasActiveSaleSnapshot } from '../utils/itemSaleCycle';
 import ItemThumbnail from './ItemThumbnail';
 import { itemMatchesBuilderSearch } from '../utils/builderSlotMatch';
-import { todayLocalDateKey } from '../utils/calendarDate';
+import { averageDateKey } from '../utils/calendarDate';
 import { resplitContainerBuyPrices } from '../utils/containerBuyPriceRecalc';
 import { AddOptionTile } from './addFlowShared';
 
@@ -133,6 +135,11 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
     return ids;
   }, [seed, seedIsContainer, items]);
 
+  /** Sold/traded/gifted containers can also absorb standalone items that were already
+   *  sold on their own — the merge archives that item's prior sale into ebaySaleCycles
+   *  (see updatedNew below) before restamping it under the container's sale. */
+  const containerIsSold = seedIsContainer && isRealizedDisposal(seed);
+
   const baseEligible = useMemo(() => {
     const allowDefective = kind === 'mixed';
     const out: InventoryItem[] = [];
@@ -142,12 +149,16 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
       if (item.isPC || item.isBundle || isInventoryContainer(item)) continue;
       if (item.parentContainerId && item.parentContainerId !== seed.id) continue;
       if (alreadyInSeed.has(item.id)) continue;
-      if (item.status !== ItemStatus.IN_STOCK && item.status !== ItemStatus.ORDERED) continue;
+      const statusOk =
+        item.status === ItemStatus.IN_STOCK ||
+        item.status === ItemStatus.ORDERED ||
+        (containerIsSold && isRealizedDisposal(item));
+      if (!statusOk) continue;
       if (!allowDefective && item.isDefective) continue;
       out.push(item);
     }
     return out;
-  }, [items, seed.id, alreadyInSeed, kind]);
+  }, [items, seed.id, alreadyInSeed, kind, containerIsSold]);
 
   const categoryOptions = useMemo(() => {
     const map = new Map<string, Set<string>>();
@@ -333,11 +344,35 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
         delete (parent as { subCategory?: string }).subCategory;
       }
 
-      const updatedNew = selectedItems.map((comp) => ({
-        ...comp,
-        status: ItemStatus.IN_COMPOSITION,
-        parentContainerId: seed.id,
-      }));
+      // Adding to an already-sold container: the new part joins as Sold (not In
+      // Composition) so it shows up correctly in the Sold tab alongside its siblings.
+      // sellPrice starts at 0 — the container's total didn't change, so the split across
+      // parts needs the "Recalculate component sell prices" action (Calculator icon) to
+      // redistribute it; setting a guessed number here would just be a second source of
+      // truth to keep in sync with that recalc.
+      //
+      // A candidate that was already sold on its own (see baseEligible above) carries its
+      // own buyer/order/proceeds — archiving that into ebaySaleCycles first (the same
+      // history trail used elsewhere for restock/return flows) keeps it recoverable
+      // instead of silently overwriting it with the container's sale.
+      const updatedNew = selectedItems.map((comp) => {
+        const base = itemHasActiveSaleSnapshot(comp)
+          ? archiveActiveSaleAndClear(comp, 'manual_unsold', { status: comp.status })
+          : comp;
+        return {
+          ...base,
+          parentContainerId: seed.id,
+          ...(isRealizedDisposal(seed)
+            ? {
+                status: seed.status,
+                sellDate: seed.sellDate,
+                sellPrice: 0,
+                ...(seed.platformSold ? { platformSold: seed.platformSold } : {}),
+                ...(seed.paymentType ? { paymentType: seed.paymentType } : {}),
+              }
+            : { status: ItemStatus.IN_COMPOSITION }),
+        };
+      });
 
       if (resplitLotCost && priorLotTotal > 0 && allParts.length > 0) {
         const mergedForSplit = [
@@ -379,7 +414,7 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
       category: isMixed ? 'Mixed Bundle' : 'Bundle',
       status: ItemStatus.IN_STOCK,
       buyPrice: buyTotal,
-      buyDate: todayLocalDateKey(),
+      buyDate: averageDateKey(parts.map((i) => i.buyDate)),
       comment1: isMixed
         ? `Mixed Bundle (${parts.length} items)${defectiveCount ? ` · ${defectiveCount} defekt` : ''}.`
         : `Bundle (${parts.length} items).`,

@@ -18,17 +18,14 @@ body,
 }
 
 /*
- * Inventory virtual list: while the finger/wheel is moving, hide non-essential
- * under-name chrome so paint stays cheap. Visibility (not display) keeps row
- * height stable with fixed virtualizer estimates.
- * pointer-events: none prevents accidental OVP / sell / delete hits that were
- * flushing inventory to the cloud mid-scroll.
+ * Inventory virtual list: while scrolling, hide non-essential under-name chrome
+ * (price-analyzer chips, sale-cycle badges) so paint stays cheap.
+ * PC / Bundle / Mixed type badges stay visible — they must not flicker mid-scroll.
+ * Only defer heavy under-name widgets — do not block the whole tbody (that made scroll feel dead).
  */
-tbody.inv-is-scrolling {
-  pointer-events: none;
-}
 tbody.inv-is-scrolling [data-scroll-defer] {
   visibility: hidden;
+  pointer-events: none;
 }
 
 /* Home-indicator / notch padding — used by bottom nav, sheets, sale modal, etc. */
@@ -41,6 +38,16 @@ tbody.inv-is-scrolling [data-scroll-defer] {
   }
   .pb-safe-min {
     padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px));
+  }
+
+  /* eBay Abrechnung — ~20% larger type/controls for 2K screens (≈125% browser zoom). */
+  .ebay-abrechnung-ui {
+    zoom: 1.2;
+  }
+
+  /* Inventory list — +15% scale (matches ~115% browser zoom on this page only). */
+  .inventory-ui {
+    zoom: 1.15;
   }
 }
 

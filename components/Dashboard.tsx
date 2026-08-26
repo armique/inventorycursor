@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, lazy, Suspense } from 'react';
+import React, { useMemo, useState, useEffect, lazy, Suspense, useDeferredValue } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { formatEUR } from '../utils/formatMoney';
 import {
@@ -21,9 +21,10 @@ import {
   shouldSkipForAggregatedSaleLine,
   shouldSkipForInventoryCostLine,
   shouldSkipContainerForPurchaseCogs,
+  resolvedSaleRevenue,
 } from '../services/financialAggregation';
 import { toLocalCalendarDateKey, yearMonthKeyFromDate, currentLocalYearMonth } from '../utils/calendarDate';
-import { countSalesByPlatform, formatItemSalePlatform, groupSalesByPlatform, PLATFORM_GROUP_LABEL, buildPlatformReconciliation, buildEbayTagFixUpdates, sumRevenueByPlatform, countOrdersByPlatform, groupItemsByMarketplaceOrder, countMissingExplicitSalePlatform, type PlatformGroupKey } from '../utils/salePlatform';
+import { countSalesByPlatform, formatItemSalePlatform, groupSalesByPlatform, PLATFORM_GROUP_LABEL, buildPlatformReconciliation, buildEbayTagFixUpdates, sumRevenueByPlatform, countOrdersByPlatform, groupItemsByMarketplaceOrder, countMissingExplicitSalePlatform, sumDedupedSaleRevenue, sumDedupedSaleProfit, type PlatformGroupKey } from '../utils/salePlatform';
 import { ADD_OPTIONS, AddOptionTile } from './addFlowShared';
 import { summarizeEbayMarketplaceCosts } from '../utils/ebayMarketplaceStats';
 
@@ -152,6 +153,9 @@ const Dashboard: React.FC<Props> = ({
   const customStart = dashboardPreferences.customStart;
   const customEnd = dashboardPreferences.customEnd;
   const tasks = dashboardPreferences.tasks;
+  /** Defer heavy rollups while cloud/inventory props catch up so clicks stay responsive after launch. */
+  const statsItems = useDeferredValue(items);
+  const statsExpenses = useDeferredValue(expenses);
 
   const setTimeFilter = (v: string) =>
     onDashboardPreferencesChange({ ...dashboardPreferences, timeFilter: v });
@@ -187,8 +191,8 @@ const Dashboard: React.FC<Props> = ({
     orderGroups?: ReturnType<typeof groupItemsByMarketplaceOrder>;
   }) => {
     const sold = p.items;
-    const revenue = p.revenue ?? roundMoney(sold.reduce((acc, i) => acc + (Number(i.sellPrice) || 0), 0));
-    const itemProfit = p.itemProfit ?? roundMoney(sold.reduce((acc, i) => acc + calculateItemProfit(i), 0));
+    const revenue = p.revenue ?? roundMoney(sold.reduce((acc, i) => acc + resolvedSaleRevenue(i), 0));
+    const itemProfit = p.itemProfit ?? roundMoney(sumDedupedSaleProfit(sold, taxMode, items));
     const expTotal = p.expTotal ?? roundMoney(p.scopeExpenses.reduce((acc, e) => acc + Number(e.amount), 0));
     const netProfit = p.netProfit ?? roundMoney(itemProfit - expTotal);
     setFinancialDetailModal({
@@ -232,6 +236,28 @@ const Dashboard: React.FC<Props> = ({
   const [mainTab, setMainTab] = useState<DashboardMainTab>('overview');
   const [profitTab, setProfitTab] = useState<'month' | 'category'>('month');
   const [showMoreSections, setShowMoreSections] = useState(false);
+  const [analyticsReady, setAnalyticsReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const enable = () => {
+      if (!cancelled) setAnalyticsReady(true);
+    };
+    if (typeof requestIdleCallback !== 'undefined') {
+      const id = requestIdleCallback(enable, { timeout: 3000 });
+      return () => {
+        cancelled = true;
+        cancelIdleCallback(id);
+      };
+    }
+    const t = setTimeout(enable, 1500);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, []);
+
+  const isEmbeddedWorkspaceTab = mainTab === 'dealwatch';
 
   /** Enabled widgets only, in order (subset of DASHBOARD_WIDGET_IDS). */
   const visibleWidgets = useMemo((): WidgetId[] => {
@@ -272,7 +298,7 @@ const Dashboard: React.FC<Props> = ({
 
   useEffect(() => {
     if (!visibleWidgets.includes('profitByMonth') && visibleWidgets.includes('profitByCategory')) {
-      setProfitTab('category');
+      setProfitTab((prev) => (prev === 'category' ? prev : 'category'));
     }
   }, [visibleWidgets]);
 
@@ -323,13 +349,13 @@ const Dashboard: React.FC<Props> = ({
   // ... (Date Logic remains same)
   const availableYears = useMemo(() => {
     const years = new Set<number>();
-    items.forEach(item => {
+    statsItems.forEach(item => {
       if (item.sellDate) years.add(new Date(item.sellDate).getFullYear());
       if (item.buyDate) years.add(new Date(item.buyDate).getFullYear());
     });
-    expenses.forEach(e => years.add(new Date(e.date).getFullYear()));
+    statsExpenses.forEach(e => years.add(new Date(e.date).getFullYear()));
     return Array.from(years).sort((a: number, b: number) => Number(b) - Number(a));
-  }, [items, expenses]);
+  }, [statsItems, statsExpenses]);
 
   const { startDate, endDate } = useMemo((): { startDate: Date; endDate: Date } => {
     const end = new Date();
@@ -379,7 +405,7 @@ const Dashboard: React.FC<Props> = ({
   const filteredItems = useMemo(() => {
     const startKey = toLocalCalendarDateKey(startDate);
     const endKey = toLocalCalendarDateKey(endDate);
-    return items.filter((item) => {
+    return statsItems.filter((item) => {
       const raw =
         isRealizedDisposal(item) ? item.sellDate : item.buyDate;
       if (!raw) return false;
@@ -387,18 +413,18 @@ const Dashboard: React.FC<Props> = ({
       if (!k) return false;
       return k >= startKey && k <= endKey;
     });
-  }, [items, startDate, endDate]);
+  }, [statsItems, startDate, endDate]);
 
   const filteredExpenses = useMemo(() => {
     const startKey = toLocalCalendarDateKey(startDate);
     const endKey = toLocalCalendarDateKey(endDate);
-    return expenses.filter((e) => {
+    return statsExpenses.filter((e) => {
       if (!e.date) return false;
       const k = toLocalCalendarDateKey(e.date);
       if (!k) return false;
       return k >= startKey && k <= endKey;
     });
-  }, [expenses, startDate, endDate]);
+  }, [statsExpenses, startDate, endDate]);
 
   /** Betriebsausgaben only — excludes filament stock (COGS flows via print item buyPrice). */
   const filteredOperatingExpenses = useMemo(
@@ -411,9 +437,9 @@ const Dashboard: React.FC<Props> = ({
       filteredItems.filter(
         (i) =>
           isRealizedDisposal(i) &&
-          !shouldSkipForAggregatedSaleLine(i, items)
+          !shouldSkipForAggregatedSaleLine(i, statsItems)
       ),
-    [filteredItems, items]
+    [filteredItems, statsItems]
   );
 
   const periodLabel = useMemo(() => {
@@ -428,15 +454,11 @@ const Dashboard: React.FC<Props> = ({
   const stats = useMemo(() => {
     const soldForStats = soldInPeriod;
     const inStockForValue = filteredItems.filter(
-      (i) => i.status === ItemStatus.IN_STOCK && !shouldSkipForInventoryCostLine(i, items)
+      (i) => i.status === ItemStatus.IN_STOCK && !shouldSkipForInventoryCostLine(i, statsItems)
     );
 
-    const totalTurnover = roundMoney(
-      soldForStats.reduce((acc: number, i) => acc + (Number(i.sellPrice) || 0), 0)
-    );
-    const grossProfit = roundMoney(
-      soldForStats.reduce((acc: number, i) => acc + calculateItemProfit(i), 0)
-    );
+    const totalTurnover = roundMoney(sumDedupedSaleRevenue(soldForStats, statsItems));
+    const grossProfit = roundMoney(sumDedupedSaleProfit(soldForStats, taxMode, statsItems));
 
     const totalExpenses = roundMoney(
       filteredOperatingExpenses.reduce((acc: number, e) => acc + Number(e.amount), 0)
@@ -447,8 +469,8 @@ const Dashboard: React.FC<Props> = ({
     );
 
     const today = new Date();
-    const globalInStock = items.filter(
-      (i) => i.status === ItemStatus.IN_STOCK && !shouldSkipForInventoryCostLine(i, items)
+    const globalInStock = statsItems.filter(
+      (i) => i.status === ItemStatus.IN_STOCK && !shouldSkipForInventoryCostLine(i, statsItems)
     );
     const deathPileItems = globalInStock.filter((i) => {
       const buyDate = new Date(i.buyDate);
@@ -461,8 +483,8 @@ const Dashboard: React.FC<Props> = ({
     );
 
     const totalInventoryValue = roundMoney(
-      items
-        .filter((i) => i.status === ItemStatus.IN_STOCK && !shouldSkipForInventoryCostLine(i, items))
+      statsItems
+        .filter((i) => i.status === ItemStatus.IN_STOCK && !shouldSkipForInventoryCostLine(i, statsItems))
         .reduce((acc, i) => acc + Number(i.buyPrice || 0), 0)
     );
     return {
@@ -475,17 +497,16 @@ const Dashboard: React.FC<Props> = ({
       deathPileCount: deathPileItems.length,
       deathPileValue,
     };
-  }, [soldInPeriod, filteredItems, filteredOperatingExpenses, items, taxMode]);
+  }, [soldInPeriod, filteredItems, filteredOperatingExpenses, statsItems, taxMode]);
 
   const gameStats = useMemo(() => {
-    const soldForRollup = items.filter(
+    const soldForRollup = statsItems.filter(
       (i) =>
         isRealizedDisposal(i) &&
-        !shouldSkipForAggregatedSaleLine(i, items)
+        !shouldSkipForAggregatedSaleLine(i, statsItems)
     );
     const allTimeProfit = roundMoney(
-      soldForRollup.reduce((acc: number, i) => acc + calculateItemProfit(i), 0) -
-        sumOperatingExpenseAmount(expenses)
+      sumDedupedSaleProfit(soldForRollup, taxMode, statsItems) - sumOperatingExpenseAmount(statsExpenses)
     );
 
     const currentLevel = LEVELS.slice().reverse().find((l) => allTimeProfit >= l.min) || LEVELS[0];
@@ -499,18 +520,14 @@ const Dashboard: React.FC<Props> = ({
       (i) => !!i.sellDate && yearMonthKeyFromDate(i.sellDate) === thisYearMonth
     );
     const currentMonthExpenses = filterOperatingExpenses(
-      expenses.filter((e) => !!e.date && yearMonthKeyFromDate(e.date) === thisYearMonth)
+      statsExpenses.filter((e) => !!e.date && yearMonthKeyFromDate(e.date) === thisYearMonth)
     );
-    const monthSaleProfit = roundMoney(
-      currentMonthItems.reduce((acc: number, i) => acc + calculateItemProfit(i), 0)
-    );
+    const monthSaleProfit = roundMoney(sumDedupedSaleProfit(currentMonthItems, taxMode, statsItems));
     const monthExpensesTotal = roundMoney(
       currentMonthExpenses.reduce((acc: number, e) => acc + Number(e.amount || 0), 0)
     );
     const monthProfit = roundMoney(monthSaleProfit - monthExpensesTotal);
-    const monthRevenue = roundMoney(
-      currentMonthItems.reduce((acc: number, i) => acc + (Number(i.sellPrice) || 0), 0)
-    );
+    const monthRevenue = roundMoney(sumDedupedSaleRevenue(currentMonthItems, statsItems));
     const goalProgress = Math.min((monthlyGoal > 0 ? (monthProfit / monthlyGoal) * 100 : 0), 100);
 
     return {
@@ -526,7 +543,7 @@ const Dashboard: React.FC<Props> = ({
       allTimeSoldCount: soldForRollup.length,
       goalProgress,
     };
-  }, [items, expenses, monthlyGoal, taxMode]);
+  }, [statsItems, statsExpenses, monthlyGoal, taxMode]);
 
   const chartData = useMemo(() => {
     // Explicitly convert Date objects to timestamps (number) to safely use in arithmetic
@@ -560,13 +577,13 @@ const Dashboard: React.FC<Props> = ({
           const sold = filteredItems.filter(
             (i) =>
               isRealizedDisposal(i) &&
-              !shouldSkipForAggregatedSaleLine(i, items) &&
+              !shouldSkipForAggregatedSaleLine(i, statsItems) &&
               i.sellDate &&
               new Date(i.sellDate).getFullYear() === year
           );
           const exps = filteredOperatingExpenses.filter(e => new Date(e.date).getFullYear() === year);
-          const revenue = roundMoney(sold.reduce((acc: number, i) => acc + (Number(i.sellPrice) || 0), 0));
-          const itemProfit = roundMoney(sold.reduce((acc: number, i) => acc + calculateItemProfit(i), 0));
+          const revenue = sumDedupedSaleRevenue(sold, statsItems);
+          const itemProfit = roundMoney(sumDedupedSaleProfit(sold, taxMode, statsItems));
           const expTotal = roundMoney(exps.reduce((acc: number, e) => acc + Number(e.amount), 0));
           
           data.push({
@@ -591,13 +608,13 @@ const Dashboard: React.FC<Props> = ({
           const sold = filteredItems.filter(
             (i) =>
               isRealizedDisposal(i) &&
-              !shouldSkipForAggregatedSaleLine(i, items) &&
+              !shouldSkipForAggregatedSaleLine(i, statsItems) &&
               !!i.sellDate &&
               toLocalCalendarDateKey(i.sellDate) === dayStr
           );
           const exps = filteredOperatingExpenses.filter((e) => toLocalCalendarDateKey(e.date) === dayStr);
-          const revenue = roundMoney(sold.reduce((acc: number, i) => acc + (Number(i.sellPrice) || 0), 0));
-          const itemProfit = roundMoney(sold.reduce((acc: number, i) => acc + calculateItemProfit(i), 0));
+          const revenue = sumDedupedSaleRevenue(sold, statsItems);
+          const itemProfit = roundMoney(sumDedupedSaleProfit(sold, taxMode, statsItems));
           const expTotal = roundMoney(exps.reduce((acc: number, e) => acc + Number(e.amount), 0));
 
           const profitVal = roundMoney(itemProfit - expTotal);
@@ -620,12 +637,12 @@ const Dashboard: React.FC<Props> = ({
        }
     }
     return data;
-  }, [filteredItems, filteredOperatingExpenses, startDate, endDate, timeFilter, taxMode, items]);
+  }, [filteredItems, filteredOperatingExpenses, startDate, endDate, timeFilter, taxMode, statsItems]);
 
   // NEW: Category Pie Chart Data
   const categoryData = useMemo(() => {
-    const inStock = items.filter(
-      (i) => i.status === ItemStatus.IN_STOCK && !shouldSkipForInventoryCostLine(i, items)
+    const inStock = statsItems.filter(
+      (i) => i.status === ItemStatus.IN_STOCK && !shouldSkipForInventoryCostLine(i, statsItems)
     );
     const grouped = inStock.reduce((acc: Record<string, number>, item) => {
       const currentVal = Number(acc[item.category] || 0);
@@ -637,7 +654,7 @@ const Dashboard: React.FC<Props> = ({
     return Object.entries(grouped)
       .map(([name, value]) => ({ name, value: roundMoney(Number(value)) }))
       .sort((a, b) => b.value - a.value);
-  }, [items]);
+  }, [statsItems]);
 
   type ProfitRollupRow = {
     name: string;
@@ -651,49 +668,46 @@ const Dashboard: React.FC<Props> = ({
 
   // Profit by category — sale margin per category (expenses are period-wide; see month / P&L strip for net)
   const profitByCategory = useMemo((): ProfitRollupRow[] => {
-    const byCat: Record<string, { items: InventoryItem[]; saleProfit: number }> = {};
+    const byCat: Record<string, InventoryItem[]> = {};
     soldInPeriod.forEach((i) => {
       const cat = i.category || 'Other';
-      if (!byCat[cat]) byCat[cat] = { items: [], saleProfit: 0 };
-      byCat[cat].items.push(i);
-      byCat[cat].saleProfit += calculateItemProfit(i);
+      if (!byCat[cat]) byCat[cat] = [];
+      byCat[cat].push(i);
     });
     return Object.entries(byCat)
-      .map(([name, g]) => {
-        const saleProfit = roundMoney(g.saleProfit);
+      .map(([name, catItems]) => {
+        const saleProfit = roundMoney(sumDedupedSaleProfit(catItems, taxMode, statsItems));
         return {
           name,
           saleProfit,
           expenses: 0,
           netProfit: saleProfit,
-          items: g.items,
+          items: catItems,
           scopeExpenses: [] as Expense[],
         };
       })
       .sort((a, b) => b.saleProfit - a.saleProfit);
-  }, [soldInPeriod, taxMode]);
+  }, [soldInPeriod, taxMode, statsItems]);
 
   // Profit by month — sale profit minus expenses dated that month
   const profitByMonth = useMemo((): ProfitRollupRow[] => {
-    const byMonth: Record<string, { items: InventoryItem[]; saleProfit: number; revenue: number }> = {};
+    const byMonth: Record<string, InventoryItem[]> = {};
     soldInPeriod.forEach((i) => {
       if (!i.sellDate) return;
       const key = yearMonthKeyFromDate(i.sellDate);
       if (!key) return;
-      if (!byMonth[key]) byMonth[key] = { items: [], saleProfit: 0, revenue: 0 };
-      byMonth[key].items.push(i);
-      byMonth[key].saleProfit += calculateItemProfit(i);
-      byMonth[key].revenue += Number(i.sellPrice) || 0;
+      if (!byMonth[key]) byMonth[key] = [];
+      byMonth[key].push(i);
     });
     filteredOperatingExpenses.forEach((e) => {
       const key = yearMonthKeyFromDate(e.date);
       if (!key) return;
-      if (!byMonth[key]) byMonth[key] = { items: [], saleProfit: 0, revenue: 0 };
+      if (!byMonth[key]) byMonth[key] = [];
     });
     return Object.entries(byMonth)
-      .map(([name, g]) => {
-        const saleProfit = roundMoney(g.saleProfit);
-        const revenue = roundMoney(g.revenue);
+      .map(([name, monthItems]) => {
+        const saleProfit = roundMoney(sumDedupedSaleProfit(monthItems, taxMode, statsItems));
+        const revenue = sumDedupedSaleRevenue(monthItems, statsItems);
         const scopeExpenses = filteredOperatingExpenses.filter((e) => yearMonthKeyFromDate(e.date) === name);
         const expenses = roundMoney(scopeExpenses.reduce((acc, e) => acc + Number(e.amount), 0));
         return {
@@ -702,12 +716,12 @@ const Dashboard: React.FC<Props> = ({
           saleProfit,
           expenses,
           netProfit: roundMoney(saleProfit - expenses),
-          items: g.items,
+          items: monthItems,
           scopeExpenses,
         };
       })
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [soldInPeriod, filteredOperatingExpenses, taxMode]);
+  }, [soldInPeriod, filteredOperatingExpenses, taxMode, statsItems]);
 
   const periodInsights = useMemo(() => {
     const count = soldInPeriod.length;
@@ -721,8 +735,8 @@ const Dashboard: React.FC<Props> = ({
         bestSale = i;
       }
     });
-    const inStockCount = items.filter(
-      (i) => i.status === ItemStatus.IN_STOCK && !shouldSkipForInventoryCostLine(i, items)
+    const inStockCount = statsItems.filter(
+      (i) => i.status === ItemStatus.IN_STOCK && !shouldSkipForInventoryCostLine(i, statsItems)
     ).length;
     return {
       soldCount: count,
@@ -736,7 +750,7 @@ const Dashboard: React.FC<Props> = ({
       platformOrders: countOrdersByPlatform(soldInPeriod),
       missingPlatformCount: countMissingExplicitSalePlatform(soldInPeriod),
     };
-  }, [soldInPeriod, stats.grossProfit, items, taxMode]);
+  }, [soldInPeriod, stats.grossProfit, statsItems, taxMode]);
 
   const ebayFeeStats = useMemo(
     () => summarizeEbayMarketplaceCosts(soldInPeriod),
@@ -771,9 +785,9 @@ const Dashboard: React.FC<Props> = ({
         key === 'unknown'
           ? 'No platform selected — set Sold on in Inventory → Sold tab. Items may still infer eBay from order ID until you confirm; use “Fix eBay tags” if needed.'
           : key === 'ebay' && orderStats.orderCount !== orderStats.itemCount
-            ? `${orderStats.orderCount} eBay orders split across ${orderStats.itemCount} inventory items (e.g. bundle parts). Compare order count to eBay “Stückzahl verkauft”; revenue is the sum of all parts.`
+            ? `${orderStats.orderCount} eBay orders split across ${orderStats.itemCount} inventory items (e.g. bundle shells). Compare order count to eBay “Stückzahl verkauft”; revenue is Hub Gesamtbetrag on each sale.`
             : key === 'ebay'
-              ? 'Compare order count to eBay “Stückzahl verkauft”. Revenue = sum of sell prices on each inventory row.'
+              ? 'Compare order count to eBay “Stückzahl verkauft”. Revenue = Hub Gesamtbetrag (buyer total) on each sale.'
               : key === 'inPerson'
                 ? 'Local pickup / in-person sales — not counted on eBay or Kleinanzeigen.'
                 : undefined,
@@ -811,56 +825,59 @@ const Dashboard: React.FC<Props> = ({
     const now = new Date();
     const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const prevKey = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`;
-    const soldPrev = items.filter(
+    const soldPrev = statsItems.filter(
       (i) =>
         isRealizedDisposal(i) &&
-        !shouldSkipForAggregatedSaleLine(i, items) &&
+        !shouldSkipForAggregatedSaleLine(i, statsItems) &&
         i.sellDate &&
         yearMonthKeyFromDate(i.sellDate) === prevKey
     );
-    const salePrev = roundMoney(soldPrev.reduce((acc, i) => acc + calculateItemProfit(i), 0));
+    const salePrev = roundMoney(sumDedupedSaleProfit(soldPrev, taxMode, statsItems));
     const expPrev = roundMoney(
-      expenses
+      statsExpenses
         .filter((e) => yearMonthKeyFromDate(e.date) === prevKey)
         .reduce((acc, e) => acc + Number(e.amount), 0)
     );
     const netPrev = roundMoney(salePrev - expPrev);
     const delta = roundMoney(stats.netProfit - netPrev);
     return { netPrev, delta };
-  }, [timeFilter, stats.netProfit, items, expenses, taxMode]);
+  }, [timeFilter, stats.netProfit, statsItems, statsExpenses, taxMode]);
 
   // Tax report summary (by year)
   const [taxReportYear, setTaxReportYear] = useState(() => new Date().getFullYear());
-  const taxSummary = useMemo(() => calculateTaxSummary(items, expenses, taxReportYear, taxMode), [items, expenses, taxReportYear, taxMode]);
+  const taxSummary = useMemo(
+    () => calculateTaxSummary(statsItems, statsExpenses, taxReportYear, taxMode),
+    [statsItems, statsExpenses, taxReportYear, taxMode]
+  );
   const taxYears = useMemo(() => {
     const years = new Set<number>();
-    items.forEach(i => { if (i.buyDate) years.add(new Date(i.buyDate).getFullYear()); if (i.sellDate) years.add(new Date(i.sellDate).getFullYear()); });
-    expenses.forEach(e => years.add(new Date(e.date).getFullYear()));
+    statsItems.forEach(i => { if (i.buyDate) years.add(new Date(i.buyDate).getFullYear()); if (i.sellDate) years.add(new Date(i.sellDate).getFullYear()); });
+    statsExpenses.forEach(e => years.add(new Date(e.date).getFullYear()));
     return Array.from(years).sort((a, b) => b - a);
-  }, [items, expenses]);
+  }, [statsItems, statsExpenses]);
 
   // Todo from data: items needing attention
   const todoFromData = useMemo(() => {
-    const inStock = items.filter(i => i.status === ItemStatus.IN_STOCK);
+    const inStock = statsItems.filter(i => i.status === ItemStatus.IN_STOCK);
     const noImage = inStock.filter(i => !i.imageUrl || (typeof i.imageUrl === 'string' && !i.imageUrl.trim()));
     const hiddenFromStore = inStock.filter(i => i.storeVisible === false);
     return [
       { id: 'no-image', label: 'Items without image', count: noImage.length, href: '/panel/inventory' },
       { id: 'hidden-store', label: 'Items hidden from store', count: hiddenFromStore.length, href: '/panel/store-management' },
     ].filter(t => t.count > 0);
-  }, [items]);
+  }, [statsItems]);
 
   // Recent Activity Data
   const activityFeed = useMemo(() => {
     const actions: { type: string; date: string; item: string; amount: number; itemId?: string }[] = [];
-    items.forEach((i) => {
-      if (i.buyDate && !shouldSkipContainerForPurchaseCogs(i, items)) {
+    statsItems.forEach((i) => {
+      if (i.buyDate && !shouldSkipContainerForPurchaseCogs(i, statsItems)) {
         actions.push({ type: 'BOUGHT', date: i.buyDate, item: i.name, amount: -Number(i.buyPrice), itemId: i.id });
       }
       if (
         i.sellDate &&
         isRealizedDisposal(i) &&
-        !shouldSkipForAggregatedSaleLine(i, items)
+        !shouldSkipForAggregatedSaleLine(i, statsItems)
       ) {
         const type =
           i.status === ItemStatus.GIFTED
@@ -868,10 +885,10 @@ const Dashboard: React.FC<Props> = ({
             : i.status === ItemStatus.TRADED
               ? 'TRADED'
               : 'SOLD';
-        actions.push({ type, date: i.sellDate, item: i.name, amount: Number(i.sellPrice || 0), itemId: i.id });
+        actions.push({ type, date: i.sellDate, item: i.name, amount: resolvedSaleRevenue(i), itemId: i.id });
       }
     });
-    expenses.forEach(e => {
+    statsExpenses.forEach(e => {
       actions.push({
         type: isFilamentStockExpense(e.category) ? 'STOCK' : 'EXPENSE',
         date: e.date,
@@ -885,7 +902,7 @@ const Dashboard: React.FC<Props> = ({
       const timeB = new Date(b.date).getTime();
       return timeB - timeA;
     }).slice(0, 5);
-  }, [items, expenses]);
+  }, [statsItems, statsExpenses]);
 
   if (items.length === 0 && expenses.length === 0) {
     const emptyCreate = ADD_OPTIONS.filter((o) => o.group === 'create').slice(0, 6);
@@ -939,18 +956,19 @@ const Dashboard: React.FC<Props> = ({
   return (
     <>
     <div className={`h-full min-h-0 w-full animate-in fade-in ${
-      mainTab === 'dealwatch'
+      isEmbeddedWorkspaceTab
         ? 'flex flex-col overflow-hidden pb-2'
         : 'overflow-y-auto space-y-3 sm:space-y-4 lg:space-y-6 xl:space-y-7 pb-8 lg:pb-10 xl:px-1'
     }`}>
       {/* Header + period filters */}
-      <header className={`flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between ${mainTab === 'dealwatch' ? 'shrink-0 mb-3' : ''}`}>
+      <header className={`flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between ${isEmbeddedWorkspaceTab ? 'shrink-0 mb-3' : ''}`}>
         <div className="min-w-0">
           <h1 className="text-xl sm:text-2xl lg:text-3xl xl:text-4xl font-black text-slate-900 tracking-tight">Dashboard</h1>
           <p className="text-xs sm:text-sm lg:text-base text-slate-500 truncate mt-0.5">
             {items.length} items · {expenses.length} expenses · {periodLabel}
           </p>
         </div>
+        {!isEmbeddedWorkspaceTab && (
         <div className="flex flex-wrap items-center gap-2 lg:gap-3">
           <div className="flex flex-wrap items-center gap-1.5">
             <AddOptionTile
@@ -1052,14 +1070,15 @@ const Dashboard: React.FC<Props> = ({
             <Settings2 size={16} className="lg:w-5 lg:h-5" />
           </button>
         </div>
+        )}
       </header>
 
       {/* Overview vs charts vs Dealwatch */}
-      <div className={`flex rounded-xl lg:rounded-2xl border border-slate-200 bg-white p-1 lg:p-1.5 w-full sm:w-auto ${mainTab === 'dealwatch' ? 'shrink-0 mb-3' : ''}`}>
+      <div className={`flex rounded-xl lg:rounded-2xl border border-slate-200 bg-white p-1 lg:p-1.5 w-full overflow-x-auto ${isEmbeddedWorkspaceTab ? 'shrink-0 mb-3' : ''}`}>
         <button
           type="button"
           onClick={() => setMainTab('overview')}
-          className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 lg:px-6 py-2.5 lg:py-3 rounded-lg lg:rounded-xl text-xs lg:text-sm font-black uppercase tracking-wide transition-all min-h-[44px] ${
+          className={`shrink-0 inline-flex items-center justify-center gap-2 px-4 lg:px-6 py-2.5 lg:py-3 rounded-lg lg:rounded-xl text-xs lg:text-sm font-black uppercase tracking-wide transition-all min-h-[44px] ${
             mainTab === 'overview' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
           }`}
         >
@@ -1069,7 +1088,7 @@ const Dashboard: React.FC<Props> = ({
         <button
           type="button"
           onClick={() => setMainTab('charts')}
-          className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 lg:px-6 py-2.5 lg:py-3 rounded-lg lg:rounded-xl text-xs lg:text-sm font-black uppercase tracking-wide transition-all min-h-[44px] ${
+          className={`shrink-0 inline-flex items-center justify-center gap-2 px-4 lg:px-6 py-2.5 lg:py-3 rounded-lg lg:rounded-xl text-xs lg:text-sm font-black uppercase tracking-wide transition-all min-h-[44px] ${
             mainTab === 'charts' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
           }`}
         >
@@ -1079,7 +1098,7 @@ const Dashboard: React.FC<Props> = ({
         <button
           type="button"
           onClick={() => setMainTab('dealwatch')}
-          className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 lg:px-6 py-2.5 lg:py-3 rounded-lg lg:rounded-xl text-xs lg:text-sm font-black uppercase tracking-wide transition-all min-h-[44px] ${
+          className={`shrink-0 inline-flex items-center justify-center gap-2 px-4 lg:px-6 py-2.5 lg:py-3 rounded-lg lg:rounded-xl text-xs lg:text-sm font-black uppercase tracking-wide transition-all min-h-[44px] ${
             mainTab === 'dealwatch' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
           }`}
         >
@@ -1109,7 +1128,7 @@ const Dashboard: React.FC<Props> = ({
           className="w-full grid grid-cols-2 lg:grid-cols-4 gap-px bg-slate-100 border-b border-slate-100 hover:bg-slate-50/50 transition-colors text-left"
         >
           {[
-            { label: 'Revenue', value: `€${formatEUR(stats.totalTurnover)}`, tone: 'text-slate-900' },
+            { label: `Revenue · ${periodLabel}`, value: `€${formatEUR(stats.totalTurnover)}`, tone: 'text-slate-900' },
             { label: 'Sale profit', value: `€${formatEUR(stats.grossProfit)}`, tone: 'text-blue-700' },
             { label: 'Operating exp.', value: `−€${formatEUR(stats.totalExpenses)}`, tone: 'text-red-600' },
             { label: 'Net profit', value: `€${formatEUR(stats.netProfit)}`, tone: stats.netProfit >= 0 ? 'text-emerald-700' : 'text-red-600' },
@@ -1317,8 +1336,8 @@ const Dashboard: React.FC<Props> = ({
               <p className="font-bold">Why eBay totals may differ from Seller Hub</p>
               <ul className="list-disc list-inside space-y-1 text-amber-900/90">
                 <li>
-                  App eBay revenue: <strong>€{formatEUR(periodInsights.platformRevenue.ebay)}</strong> ({periodInsights.platformSales.ebay} sales) — sum of{' '}
-                  <strong>sell prices</strong> tagged or detected as eBay for {periodLabel}.
+                  App eBay revenue: <strong>€{formatEUR(periodInsights.platformRevenue.ebay)}</strong> ({periodInsights.platformSales.ebay} sales) — Hub{' '}
+                  <strong>Gesamtbetrag</strong> (buyer total) tagged or detected as eBay for {periodLabel}.
                 </li>
                 {platformReconciliation.needingTagRevenue > 0 && (
                   <li>
@@ -1390,7 +1409,7 @@ const Dashboard: React.FC<Props> = ({
                 ))}
               </ul>
               <p className="text-[11px] text-slate-500">
-                Compare <strong>{ebayMonthlyReconciliation.orderStats.orderCount}</strong> to eBay Seller Hub “Stückzahl” for the same period. Revenue here is net sell prices stored per item (after fees if you used screenshot parse).
+                Compare <strong>{ebayMonthlyReconciliation.orderStats.orderCount}</strong> to eBay Seller Hub “Stückzahl” for the same period. Revenue here is Hub Gesamtbetrag (what the buyer paid), not Bestelleinnahmen.
               </p>
             </div>
           )}
@@ -1670,16 +1689,18 @@ const Dashboard: React.FC<Props> = ({
         </div>
       )}
 
+      {analyticsReady && (
       <Suspense fallback={null}>
         <DashboardAnalyticsPanel
-          items={items}
-          expenses={expenses}
+          items={statsItems}
+          expenses={statsExpenses}
           range={{ start: startDate, end: endDate }}
           rangeLabel={periodLabel}
           profitGoal={monthlyGoal}
           taxMode={taxMode}
         />
       </Suspense>
+      )}
       </>
       )}
 

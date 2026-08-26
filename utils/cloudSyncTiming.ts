@@ -17,7 +17,15 @@ export const LOCAL_PERSIST_DEBOUNCE_MS = 400;
 export const STORE_CATALOG_DEBOUNCE_MS = 1500;
 
 /** Ignore remote snapshots briefly after a successful local push (echo suppression). */
-export const REMOTE_APPLY_SUPPRESS_MS = 400;
+export const REMOTE_APPLY_SUPPRESS_MS = 2000;
+
+/** Longer debounce for large inventories so cloud I/O does not block the UI. */
+export function inventoryCloudDebounceMs(itemCount: number): number {
+  if (itemCount > 1500) return 2500;
+  if (itemCount > 500) return 1200;
+  if (itemCount > 100) return 600;
+  return WRITE_DEBOUNCE_MS;
+}
 
 /**
  * If remote meta.updatedAt is newer than lastLocalPushAt by more than this,

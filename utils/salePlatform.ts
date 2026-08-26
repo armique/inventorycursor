@@ -1,6 +1,12 @@
-import type { InventoryItem, Platform } from '../types';
+import type { InventoryItem, Platform, TaxMode } from '../types';
 import { ItemStatus } from '../types';
-import { roundMoney } from '../services/financialAggregation';
+import {
+  computeItemProfitBeforeOverhead,
+  resolveSaleProfitParts,
+  resolvedSaleRevenue,
+  roundMoney,
+} from '../services/financialAggregation';
+import { calculateSaleProfit } from './saleProfit';
 import { expandUpdatesWithContainerSaleMeta } from './containerSaleCascade';
 
 const PLATFORM_LABELS: Record<string, string> = {
@@ -149,7 +155,7 @@ export function sumRevenueByPlatform(sold: InventoryItem[]): PlatformRevenueTota
     unknown: 0,
   };
   for (const key of Object.keys(totals) as PlatformGroupKey[]) {
-    totals[key] = roundMoney(groups[key].reduce((acc, i) => acc + (Number(i.sellPrice) || 0), 0));
+    totals[key] = sumDedupedSaleRevenue(groups[key]);
   }
   return totals;
 }
@@ -206,10 +212,10 @@ export function buildPlatformReconciliation(sold: InventoryItem[]): PlatformReco
     unknownRevenue: platformRevenue.unknown,
     misclassifiedEbay,
     misclassifiedEbayRevenue: roundMoney(
-      misclassifiedEbay.reduce((acc, i) => acc + (Number(i.sellPrice) || 0), 0)
+      misclassifiedEbay.reduce((acc, i) => acc + resolvedSaleRevenue(i), 0)
     ),
     needingTag,
-    needingTagRevenue: roundMoney(needingTag.reduce((acc, i) => acc + (Number(i.sellPrice) || 0), 0)),
+    needingTagRevenue: roundMoney(needingTag.reduce((acc, i) => acc + resolvedSaleRevenue(i), 0)),
     zeroSellPrice,
   };
 }
@@ -244,6 +250,61 @@ export type MarketplaceOrderGroup = {
   revenue: number;
 };
 
+/** True when every row in an eBay order group carries the same order-level buyer total. */
+export function isDuplicateOrderLevelGross(group: InventoryItem[]): boolean {
+  if (group.length < 2) return false;
+  if (!group[0]!.ebayOrderId?.trim()) return false;
+  const amounts = group.map((i) => resolvedSaleRevenue(i));
+  const max = Math.max(...amounts);
+  if (!amounts.every((a) => Math.abs(a - max) < 0.02)) return false;
+  const buyerTotals = group
+    .map((i) => i.saleProceeds?.buyerTotalEur)
+    .filter((v): v is number => v != null && Number.isFinite(v) && v >= 0.01);
+  return buyerTotals.length === group.length && buyerTotals.every((v) => Math.abs(v - max) < 0.02);
+}
+
+/** Revenue for one marketplace-order group — avoids counting duplicate order-level gross on every Abrechnung line. */
+export function dedupeOrderGroupRevenue(group: InventoryItem[]): number {
+  if (!group.length) return 0;
+  if (group.length === 1) return resolvedSaleRevenue(group[0]!);
+  if (isDuplicateOrderLevelGross(group)) {
+    return roundMoney(Math.max(...group.map((i) => resolvedSaleRevenue(i))));
+  }
+  return roundMoney(group.reduce((acc, i) => acc + resolvedSaleRevenue(i), 0));
+}
+
+/**
+ * Profit for one marketplace-order group.
+ * When Abrechnung copied the full order gross onto every linked SKU, sum of per-line profits
+ * is massively inflated — recompute once as (order net/gross − sum of EKs − fees).
+ */
+export function dedupeOrderGroupProfit(group: InventoryItem[], taxMode: TaxMode): number {
+  if (!group.length) return 0;
+  if (group.length === 1) return computeItemProfitBeforeOverhead(group[0]!, taxMode);
+  if (!isDuplicateOrderLevelGross(group)) {
+    return roundMoney(group.reduce((acc, i) => acc + computeItemProfitBeforeOverhead(i, taxMode), 0));
+  }
+  const buySum = roundMoney(group.reduce((acc, i) => acc + (Number(i.buyPrice) || 0), 0));
+  const { sell, fee } = resolveSaleProfitParts(group[0]!);
+  return roundMoney(calculateSaleProfit(sell, buySum, fee, taxMode));
+}
+
+/** Sum sale revenue once per marketplace order (bundle splits still sum part prices). */
+export function sumDedupedSaleRevenue(items: InventoryItem[], allItems?: InventoryItem[]): number {
+  const groups = groupItemsByMarketplaceOrder(items, allItems);
+  return roundMoney(groups.reduce((acc, g) => acc + g.revenue, 0));
+}
+
+/** Sum sale profit once per marketplace order (mirrors revenue dedupe for Abrechnung duplicates). */
+export function sumDedupedSaleProfit(
+  items: InventoryItem[],
+  taxMode: TaxMode,
+  allItems?: InventoryItem[]
+): number {
+  const groups = groupItemsByMarketplaceOrder(items, allItems);
+  return roundMoney(groups.reduce((acc, g) => acc + dedupeOrderGroupProfit(g.items, taxMode), 0));
+}
+
 export function groupItemsByMarketplaceOrder(
   items: InventoryItem[],
   allItems?: InventoryItem[]
@@ -270,7 +331,7 @@ export function groupItemsByMarketplaceOrder(
     } else {
       label = first.name;
     }
-    const revenue = roundMoney(groupItems.reduce((acc, i) => acc + (Number(i.sellPrice) || 0), 0));
+    const revenue = dedupeOrderGroupRevenue(groupItems);
     return { key, label, items: groupItems, revenue };
   });
 }

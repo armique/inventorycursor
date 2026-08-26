@@ -39,16 +39,14 @@ import { hubOrderDisplayTitle } from '../utils/ebayHubOrderTitle';
 import { formatEUR } from '../utils/formatMoney';
 import { matchesEbayToolSearch } from '../utils/ebayToolSearch';
 import {
-  applyHubPayoutBreakdownToSoldItem,
   buildHubBreakdownReplacePlan,
   hubBreakdownActionDetails,
   hubBreakdownItemsToSave,
   hubOrderIdFromItem,
-  pickHubLineForItem,
   type HubBreakdownReplaceRow,
 } from '../utils/replaceItemSaleProceedsFromHub';
-import { applyEbayOrderMatchToItem } from '../utils/applyEbayOrderMatch';
-import { lineItemClaimKey } from '../utils/ebayOrderLinkAnalysis';
+import { linkInventoryItemToEbayOrder } from '../utils/linkInventoryItemToEbayOrder';
+import { pickHubLineForItem } from '../utils/replaceItemSaleProceedsFromHub';
 import HubLedgerOrderList from './HubLedgerOrderList';
 import HubSplitApplyModal from './HubSplitApplyModal';
 import { getParentContainer, shouldHideContainerChildInList, computeSoldTabMargin } from '../services/financialAggregation';
@@ -273,9 +271,10 @@ const EbayStorePullHubArchiveTab: React.FC<Props> = ({ items, taxMode, onUpdate,
     if (!plan.length) return;
     const detailsByItemId: Record<string, string> = {};
     for (const row of plan) detailsByItemId[row.itemId] = hubBreakdownActionDetails(row);
-    const toSave = hubBreakdownItemsToSave(plan).map((item) => ({
+    const plannedIds = new Set(plan.map((row) => row.itemId));
+    const toSave = hubBreakdownItemsToSave(plan, items).map((item) => ({
       ...item,
-      profit: computeSoldTabMargin(item),
+      profit: plannedIds.has(item.id) ? computeSoldTabMargin(item) : item.profit,
     }));
     onUpdate(toSave, undefined, {
       skipMembershipSync: true,
@@ -327,21 +326,12 @@ const EbayStorePullHubArchiveTab: React.FC<Props> = ({ items, taxMode, onUpdate,
     const line = pickHubLineForItem(order, item);
     setApplyingOrderId(order.orderId);
     try {
-      let next = item;
-      if (item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED) {
-        next = applyEbayOrderMatchToItem(
-          item,
-          { order, lineItem: line, matchScore: 900, matchKind: 'title' },
-          taxMode
-        );
-      } else {
-        next = {
-          ...item,
-          ebayOrderId: order.orderId,
-          ebayOrderLineKey: lineItemClaimKey(order.orderId, line),
-        };
-      }
-      next = applyHubPayoutBreakdownToSoldItem(next, order, line, taxMode);
+      const next = linkInventoryItemToEbayOrder(
+        item,
+        { order, lineItem: line, matchScore: 900, matchKind: 'title' },
+        taxMode,
+        items
+      );
       onUpdate([next], undefined, {
         skipMembershipSync: true,
         skipContainerSync: true,

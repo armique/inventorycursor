@@ -2,11 +2,13 @@
  * One-time Seller Hub dump: every order from FROM date (default 2025-01-01)
  * into data/ebay-orders/ebay-order-archive.json (local DB on this PC, gitignored).
  *
- * Uses the already-logged-in debug Chrome (CDP 9222). Resumes if the file exists.
+ * Uses Chrome with remote debugging (CDP 9222) — your normal profile by default.
+ * Resumes if the file exists.
  * Re-scrapes rows that are missing a sale date, junk buyer names, or cancel/refund status.
  *
- *   npm run chrome:cdp          # once — log into eBay.de in that window
- *   npm run ebay:hub-archive    # full dump (hours if you have many orders)
+ *   scripts/Start-Chrome-Hub.bat   # or npm run chrome:cdp — close other Chrome first
+ *   npm run ebay:hub-sync          # incremental sync (Chrome must already be running)
+ *   npm run ebay:hub-sync:chrome   # start Chrome + sync in one step
  *   npm run ebay:hub-archive -- --limit 3   # smoke test
  *
  * Then in the app: eBay Tools → Sales sync → Load Hub JSON (full dump) or Fetch new Hub orders.
@@ -33,7 +35,12 @@ import {
   looksLikeJunkPerson,
   extractHubListingTitle,
   hubOrderRowsFromUnknown,
+  EBAY_SELLER_HUB_ORDERS_URL,
 } from '../lib/ebaySellerHubPayout.js';
+import {
+  createBackgroundScrapePage,
+  inspectHubBrowser,
+} from './hub-scrape-browser.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -381,11 +388,14 @@ function hasFeeSplit(payout) {
   );
 }
 
-function looksLoggedOut(text) {
+function looksLoggedOut(text, url = '') {
+  const u = String(url || '');
+  if (/accounts\.google\.com|signin\.ebay\.(de|com)/i.test(u)) return true;
   if (!text) return false;
-  if (/Vom Käufer bezahlt|Bestelleinnahmen|Transaktionsgebühren|Ihr Verkaufserlös|Lieferadresse/i.test(text)) {
+  if (/Vom Käufer bezahlt|Bestelleinnahmen|Transaktionsgebühren|Ihr Verkaufserlös|Lieferadresse|Verkaufsprotokoll|Bestellungen/i.test(text)) {
     return false;
   }
+  if (/Weiter zu eBay|Über Google anmelden|Google Konten/i.test(text)) return true;
   return /Einloggen|Sign in|Anmelden, um fortzufahren/i.test(text) && !/Bestellung/i.test(text);
 }
 
@@ -662,8 +672,11 @@ async function collectOrderIds(page, minNeeded = 0, options = {}) {
       }
       await sleep(1600);
       const body = await collectPageText(page);
-      if (looksLoggedOut(body)) {
-        throw new Error('eBay Chrome window is not logged in. Sign into eBay.de there, then re-run.');
+      const pageUrl = page.url();
+      if (looksLoggedOut(body, pageUrl)) {
+        throw new Error(
+          'eBay login required. In Chrome, open the Seller Hub tab, sign into eBay.de, then refresh Inventory Pro.'
+        );
       }
       const sizeBefore = byId.size;
       let lastSize = byId.size;
@@ -688,6 +701,15 @@ async function collectOrderIds(page, minNeeded = 0, options = {}) {
         log(`  … no new orders on ${range} offset ${offset} — next range`);
         break;
       }
+    }
+  }
+  if (byId.size === 0) {
+    const pageUrl = page.url();
+    const body = await collectPageText(page);
+    if (looksLoggedOut(body, pageUrl)) {
+      throw new Error(
+        'eBay login required. In Chrome, open the Seller Hub tab, sign into eBay.de, then refresh Inventory Pro.'
+      );
     }
   }
   return [...byId.values()];
@@ -756,7 +778,24 @@ async function main() {
   ]);
   log(`Resume file: ${doneIds.size} order(s) already saved → ${OUT_JSON}`);
 
-  const page = await ctx.newPage();
+  const preflight = await inspectHubBrowser(browser);
+  if (preflight.loginInProgress) {
+    const loginMsg =
+      'eBay sign-in is in progress. Finish logging in in Chrome, then click Retry Hub sync in the panel.';
+    if (INCREMENTAL) {
+      emitIncrementalJson({
+        ok: false,
+        code: 'ebay_login_in_progress',
+        error: loginMsg,
+        hint: 'Hub sync uses a background tab and will not interrupt sign-in once you are logged in.',
+        openUrl: EBAY_SELLER_HUB_ORDERS_URL,
+      });
+      process.exit(0);
+    }
+    throw new Error(loginMsg);
+  }
+
+  const { page, owned: pageOwned } = await createBackgroundScrapePage(browser, ctx);
   const jsonBag = [];
   attachJsonHarvest(page, jsonBag);
 
@@ -833,8 +872,28 @@ async function main() {
       }
       await sleep(ORDER_PAUSE_MS);
     }
+  } catch (e) {
+    const error = e instanceof Error ? e.message : String(e);
+    if (
+      INCREMENTAL &&
+      /login required|login in progress|not logged in|Sign into eBay/i.test(error)
+    ) {
+      const code = /login in progress/i.test(error) ? 'ebay_login_in_progress' : 'ebay_login_required';
+      emitIncrementalJson({
+        ok: false,
+        code,
+        error,
+        hint:
+          code === 'ebay_login_in_progress'
+            ? 'Complete sign-in in Chrome, then click Retry Hub sync in the panel.'
+            : 'Sign into eBay.de in the Seller Hub Chrome tab, then click Retry Hub sync.',
+        openUrl: EBAY_SELLER_HUB_ORDERS_URL,
+      });
+      process.exit(0);
+    }
+    throw e;
   } finally {
-    await page.close().catch(() => {});
+    if (pageOwned) await page.close().catch(() => {});
   }
 
   writeArchive(archive);

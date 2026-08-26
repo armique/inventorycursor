@@ -4,7 +4,7 @@ import {
   Package, Settings, RefreshCw, Trash2, CloudUpload, LayoutDashboard,
   Loader2, Cloud, CheckCircle2, X, Receipt, History, Globe, Layers,
   Printer, LayoutTemplate, PackageSearch, ChevronDown, ChevronLeft, ChevronRight, Plus, Images,
-  CircuitBoard, Radar, Coins, ShoppingBag, ShoppingCart,
+  CircuitBoard, Radar, Coins, ShoppingBag, ShoppingCart, FileSpreadsheet,
 } from 'lucide-react';
 import PanelBreadcrumbs from './PanelBreadcrumbs';
 import { usePanelLocale } from '../context/PanelLocaleContext';
@@ -27,8 +27,10 @@ import { defaultGamificationState, type GamificationState } from '../utils/gamif
 import { useGamificationEvents } from '../hooks/useGamificationEvents';
 import GamificationEventLayer from './gamification/GamificationEventLayer';
 import { useStaleDealCount } from '../hooks/useInboxAlerts';
-import { loadEbayOrderIndex } from '../services/ebayOrderIndex';
+import { useHubArchiveCacheTick } from '../hooks/useHubArchiveCacheTick';
+import { loadOrdersForSalesSync } from '../services/ebaySalesSync';
 import { countOpenEbayOrderLines } from '../utils/ebayOpenOrders';
+import { scheduleBackgroundWork } from '../services/backgroundPersistence';
 
 interface SyncState {
   status: 'idle' | 'pending' | 'syncing' | 'success' | 'error';
@@ -47,6 +49,7 @@ interface PanelLayoutProps {
   onForcePush?: () => void;
   backupBannerDismissed?: boolean;
   onDismissBackupBanner?: () => void;
+  tabDataStale?: boolean;
   items?: InventoryItem[];
   expenses?: Expense[];
   businessSettings?: BusinessSettings;
@@ -55,7 +58,7 @@ interface PanelLayoutProps {
   updateGamification?: (updater: (prev: GamificationState) => GamificationState) => void;
 }
 
-const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, authReady = false, isAdmin = false, syncState = { status: 'idle', lastSynced: null }, onForcePush, backupBannerDismissed = true, onDismissBackupBanner, items = [], expenses = [], businessSettings = { companyName: '', ownerName: '', address: '', taxMode: 'SmallBusiness' }, onUpdateItems, gamification, updateGamification }) => {
+const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, authReady = false, isAdmin = false, syncState = { status: 'idle', lastSynced: null }, onForcePush, backupBannerDismissed = true, onDismissBackupBanner, tabDataStale = false, items = [], expenses = [], businessSettings = { companyName: '', ownerName: '', address: '', taxMode: 'SmallBusiness' }, onUpdateItems, gamification, updateGamification }) => {
   const location = useLocation();
   const { locale, setLocale } = usePanelLocale();
   const { openSettings } = useSettingsModal();
@@ -80,18 +83,34 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   }, [sidebarCollapsed]);
   /** Deals unresolved for 3+ days — flagged on Inventory, since the Inbox lives there. */
   const staleDealCount = useStaleDealCount();
-  const [orderCacheTick, setOrderCacheTick] = React.useState(0);
+  const orderCacheTick = useHubArchiveCacheTick();
+  const [openEbayOrderCount, setOpenEbayOrderCount] = React.useState(0);
+  const ebayClaimFpRef = React.useRef({ fp: '', count: 0, tick: -1 });
   React.useEffect(() => {
-    const bump = () => setOrderCacheTick((n) => n + 1);
-    window.addEventListener('ebay-order-index-updated', bump);
-    return () => window.removeEventListener('ebay-order-index-updated', bump);
-  }, []);
-  const openEbayOrderCount = React.useMemo(() => {
-    try {
-      return countOpenEbayOrderLines(items, loadEbayOrderIndex().orders);
-    } catch {
-      return 0;
-    }
+    let cancelled = false;
+    const run = () => {
+      if (cancelled) return;
+      let fp = String(items.length);
+      for (const item of items) {
+        if (item.ebayOrderId) fp += `|${item.id}:${item.ebayOrderId}`;
+      }
+      const prev = ebayClaimFpRef.current;
+      if (prev.fp === fp && prev.tick === orderCacheTick) {
+        return;
+      }
+      let count = 0;
+      try {
+        count = countOpenEbayOrderLines(items, loadOrdersForSalesSync());
+      } catch {
+        count = 0;
+      }
+      ebayClaimFpRef.current = { fp, count, tick: orderCacheTick };
+      if (!cancelled) setOpenEbayOrderCount(count);
+    };
+    scheduleBackgroundWork(run);
+    return () => {
+      cancelled = true;
+    };
   }, [items, orderCacheTick]);
   const mobileRedirectSignIn = prefersRedirectSignIn();
 
@@ -111,6 +130,10 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
       body.style.overscrollBehaviorY = prevOverscroll;
     };
   }, []);
+
+  // eBay order sync now runs from the Abrechnung page itself (where new orders are
+  // reviewed and linked), not as a global banner on every page — see
+  // components/EbayAbrechnungPage.tsx.
 
   const gamificationState = gamification ?? defaultGamificationState();
   const updateGamificationState = updateGamification ?? (() => {});
@@ -134,7 +157,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
 
   /** Inventory/trash use internal scroll + docked bulk bar; eBay tools / EST / bulk entry use full-width workspace layout. */
   const isDockedPanelPage =
-    /^\/panel\/(inventory|trash|ebay-store-pull|ebay-orders|est|dealwatch|add-bulk|3d-print)(\/|$)/.test(location.pathname);
+    /^\/panel\/(inventory|trash|ebay-store-pull|ebay-orders|ebay-abrechnung|est|dealwatch|add-bulk|3d-print)(\/|$)/.test(location.pathname);
   /** Stock list: no breadcrumb / locale / settings strip — ACTIVE|SOLD|INBOX is the first row. */
   const hidePanelChrome = location.pathname.startsWith('/panel/inventory');
 
@@ -263,6 +286,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
     },
     { to: '/panel/sell-today', icon: <ShoppingBag size={18} />, label: 'Sell today' },
     { to: '/panel/ebay-orders', icon: <ShoppingCart size={18} />, label: 'eBay Orders', count: openEbayOrderCount, countTitle: 'Open eBay orders to bind' },
+    { to: '/panel/ebay-abrechnung', icon: <FileSpreadsheet size={18} />, label: 'eBay Abrechnung' },
     { to: '/panel/3d-print', icon: <Printer size={18} />, label: '3D Print' },
     { to: '/panel/dealwatch', icon: <Radar size={18} />, label: 'Dealwatch' },
     { to: '/panel/reinvest', icon: <Coins size={18} />, label: 'Reinvest' },
@@ -480,7 +504,8 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
           !location.pathname.startsWith('/panel/edit') &&
           !location.pathname.startsWith('/panel/dealwatch') &&
           !location.pathname.startsWith('/panel/3d-print') &&
-          !location.pathname.startsWith('/panel/ebay-store-pull') && (
+          !location.pathname.startsWith('/panel/ebay-store-pull') &&
+          !location.pathname.startsWith('/panel/ebay-abrechnung') && (
           <div className="md:hidden mb-4">
             <GlobalSearch items={items} expenses={expenses} businessSettings={businessSettings} />
           </div>
@@ -508,6 +533,16 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
                 <span>{cloudSyncBadgeLabel(syncState)}</span>
               </button>
             )}
+          </div>
+        )}
+        {tabDataStale && (
+          <div className="mb-6 flex items-start gap-4 p-4 rounded-2xl bg-red-50 border border-red-200 text-red-900">
+            <RefreshCw className="shrink-0 mt-0.5 text-red-600" size={20}/>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold">Newer data was saved in another tab or window.</p>
+              <p className="text-xs mt-1">This tab has stopped saving to avoid overwriting it. Reload this tab to pick up the latest data before making more changes here.</p>
+              <button type="button" onClick={() => window.location.reload()} className="inline-block mt-2 text-xs font-black uppercase tracking-widest text-red-700 hover:text-red-900 underline">Reload now</button>
+            </div>
           </div>
         )}
         {!isCloudEnabled && !backupBannerDismissed && onDismissBackupBanner && (
@@ -648,4 +683,4 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   );
 };
 
-export default PanelLayout;
+export default React.memo(PanelLayout);

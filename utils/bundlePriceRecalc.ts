@@ -55,7 +55,8 @@ export function suggestBundleComponentPrices(
   // Prefer the container's own sell; when that was cleared / never set (proportional child
   // sales), fall back to the sum of part sells so recalc still has a total to redistribute.
   const childrenSellSum = children.reduce((sum, c) => sum + (Number(c.sellPrice) || 0), 0);
-  const containerSell = Number(container.sellPrice) || childrenSellSum || 0;
+  const containerSell =
+    Number(container.saleProceeds?.buyerTotalEur) || Number(container.sellPrice) || childrenSellSum || 0;
   if (!children.length || containerSell <= 0) return [];
 
   // Bundle children are already excluded from groupSalesByVariant's standalone pool, so this

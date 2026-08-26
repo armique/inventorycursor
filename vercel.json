@@ -21,6 +21,7 @@
     { "source": "/api/ebay-purchases", "destination": "/api/ebay?route=purchases" },
     { "source": "/api/ebay-listings", "destination": "/api/ebay?route=listings" },
     { "source": "/api/ebay-hub-archive-sync", "destination": "/api/ebay-seller-hub-fetch?route=archive-sync" },
+    { "source": "/api/ebay-hub-preflight", "destination": "/api/ebay-seller-hub-fetch?route=hub-preflight" },
     { "source": "/api/ebay-hub-browser-ingest", "destination": "/api/ebay-seller-hub-fetch?route=browser-ingest" },
     { "source": "/sitemap.xml", "destination": "/api/sitemap.xml" },
     { "source": "/(.*)", "has": [{ "type": "header", "key": "accept", "value": ".*text/html.*" }], "destination": "/index.html" }

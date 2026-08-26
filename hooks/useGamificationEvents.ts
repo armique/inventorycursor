@@ -78,8 +78,11 @@ export function useGamificationEvents({
   // Read the latest gamification state inside the items-diff effect without making it a
   // dependency — the % split and cushion state shouldn't retrigger a full item-list rescan.
   const gamificationRef = useRef(gamification);
+  const digestWeekQueuedRef = useRef<string | null>(null);
   useEffect(() => {
     gamificationRef.current = gamification;
+    const week = gamification.lastDigestShownWeek;
+    if (week) digestWeekQueuedRef.current = week;
   }, [gamification]);
 
   // "Deal closed" (money in) + purchase debit (money out) — fires only for changes that happened
@@ -148,12 +151,16 @@ export function useGamificationEvents({
   useEffect(() => {
     if (!eventsArmed || !allowProactiveEvents) return;
     const week = localWeekKey();
-    if (gamification.lastDigestShownWeek === week) return;
+    if (gamification.lastDigestShownWeek === week || digestWeekQueuedRef.current === week) return;
     if (!items.some((i) => isRealizedSale(i))) return;
-    setQueue((q) => [...q, { kind: 'digest-ready', id: `digest-${week}` }]);
-    updateGamification((prev) => ({ ...prev, lastDigestShownWeek: week }));
+    digestWeekQueuedRef.current = week;
+    const digestId = `digest-${week}`;
+    setQueue((q) => (q.some((e) => e.id === digestId) ? q : [...q, { kind: 'digest-ready', id: digestId }]));
+    updateGamification((prev) =>
+      prev.lastDigestShownWeek === week ? prev : { ...prev, lastDigestShownWeek: week },
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, gamification.lastDigestShownWeek, eventsArmed, allowProactiveEvents]);
+  }, [items.length, gamification.lastDigestShownWeek, eventsArmed, allowProactiveEvents]);
 
   const current = queue[0] ?? null;
 

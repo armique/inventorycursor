@@ -12,6 +12,7 @@ const LABELS: Record<string, string> = {
   builder: 'Builder',
   'ebay-store-pull': 'eBay Store Pull',
   'ebay-orders': 'eBay Orders',
+  'ebay-abrechnung': 'eBay Abrechnung',
   dealwatch: 'Dealwatch',
   reinvest: 'Reinvest',
   'card-gallery': 'Card gallery',

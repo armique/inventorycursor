@@ -46,26 +46,12 @@ import {
 } from '../utils/exportDateRange';
 import { withDealwatchplaceCredentials } from '../utils/marketplaceCredentialsSync';
 import { saveKaProfileUrl } from '../utils/listingPresence';
+import { buildFullBackupPayload, downloadFullBackupJson, type BackupData } from '../utils/fullBackupExport';
 import {
   disconnectEbayOAuth,
   fetchEbayAuthorizeUrl,
   getEbayConnectionStatus,
 } from '../services/ebayService';
-
-export interface BackupData {
-  inventory: InventoryItem[];
-  trash: InventoryItem[];
-  expenses: Expense[];
-  settings: BusinessSettings;
-  goals: { monthly: number };
-  categories: Record<string, string[]>;
-  categoryFields: Record<string, string[]>;
-  /** Dashboard widgets, tasks, time filter (optional in older backups). */
-  dashboard?: DashboardPreferences;
-  actionHistory?: ActionHistoryEntry[];
-  bulkImports?: BulkImportRecord[];
-  exportedAt: string;
-}
 
 interface Props {
   items: InventoryItem[];
@@ -529,26 +515,20 @@ const SettingsPage: React.FC<Props> = ({
   };
 
   const handleExportBackup = () => {
-    const backup: BackupData = {
-      inventory: items,
-      trash,
-      expenses: expenses || [],
-      settings: businessSettings,
-      goals: { monthly: monthlyGoal },
-      categories,
-      categoryFields,
-      ...(dashboardPreferences ? { dashboard: dashboardPreferences } : {}),
-      ...(actionHistory.length ? { actionHistory } : {}),
-      ...(bulkImports.length ? { bulkImports } : {}),
-      exportedAt: new Date().toISOString(),
-    };
-    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `deinventory-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadFullBackupJson(
+      buildFullBackupPayload({
+        items,
+        trash,
+        expenses,
+        businessSettings,
+        monthlyGoal,
+        categories,
+        categoryFields,
+        dashboardPreferences,
+        actionHistory,
+        bulkImports,
+      })
+    );
     showToast('Backup downloaded', 'success');
   };
 
@@ -762,19 +742,22 @@ const SettingsPage: React.FC<Props> = ({
     e.target.value = '';
   };
 
-  const buildBackupPayload = useCallback(() => ({
-    inventory: items,
-    trash,
-    expenses: expenses || [],
-    settings: businessSettings,
-    goals: { monthly: monthlyGoal },
-    categories,
-    categoryFields,
-    ...(dashboardPreferences ? { dashboard: dashboardPreferences } : {}),
-    ...(actionHistory.length ? { actionHistory } : {}),
-    ...(bulkImports.length ? { bulkImports } : {}),
-    exportedAt: new Date().toISOString(),
-  }), [items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields, dashboardPreferences, actionHistory, bulkImports]);
+  const buildBackupPayload = useCallback(
+    () =>
+      buildFullBackupPayload({
+        items,
+        trash,
+        expenses,
+        businessSettings,
+        monthlyGoal,
+        categories,
+        categoryFields,
+        dashboardPreferences,
+        actionHistory,
+        bulkImports,
+      }),
+    [items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields, dashboardPreferences, actionHistory, bulkImports]
+  );
 
   const handleSaveGitHubConfig = () => {
     const config = getStoredConfig();

@@ -12,6 +12,7 @@ import {
   type EbayHubArchiveCloudMeta,
 } from './firebaseService';
 import {
+  backfillHubTitlesFromOrderIndex,
   flushHubArchivePersist,
   getHubArchiveStats,
   getHubIncrementalFromDate,
@@ -26,6 +27,19 @@ import {
   isHubBrowserDump,
   parseHubBrowserDump,
 } from '../utils/hubBrowserDump';
+import { todayLocalDateKey } from '../utils/calendarDate';
+
+const HUB_DAILY_BOOT_PARSE_KEY = 'ebay_hub_daily_boot_parse_v1';
+
+function hubBootParseRanToday(): boolean {
+  if (typeof localStorage === 'undefined') return false;
+  return localStorage.getItem(HUB_DAILY_BOOT_PARSE_KEY) === todayLocalDateKey();
+}
+
+function markHubBootParseDone(): void {
+  if (typeof localStorage === 'undefined') return;
+  localStorage.setItem(HUB_DAILY_BOOT_PARSE_KEY, todayLocalDateKey());
+}
 
 export interface HubArchiveSyncResult {
   ok: boolean;
@@ -232,6 +246,191 @@ export async function pollHubBrowserIngestInbox(): Promise<HubArchiveSyncResult 
   } catch {
     return null;
   }
+}
+
+export type HubAppVisitSyncOutcome =
+  | { status: 'skipped'; reason: 'already_ran' | 'already_parsed_today' | 'offline' }
+  | {
+      status: 'ok';
+      mode: 'scrape' | 'cloud' | 'inbox';
+      added: number;
+      merged: number;
+      scraped: number;
+      total: number;
+      listed?: number;
+      upToDate?: boolean;
+    }
+  | { status: 'error'; code?: string; error?: string; hint?: string };
+
+export interface HubPreflightResult {
+  ok?: boolean;
+  code?: string;
+  cdpAvailable?: boolean;
+  loginInProgress?: boolean;
+  hubReady?: boolean;
+  tabs?: string[];
+  hint?: string;
+  openUrl?: string;
+}
+
+/** Check Chrome tabs before scraping — skip when eBay/Google sign-in is in progress. */
+export async function fetchHubPreflight(): Promise<HubPreflightResult> {
+  try {
+    const res = await fetch('/api/ebay-hub-preflight', { method: 'GET' });
+    return (await res.json().catch(() => ({}))) as HubPreflightResult;
+  } catch {
+    return { ok: false, cdpAvailable: false, loginInProgress: false, hubReady: false, tabs: [] };
+  }
+}
+
+/** @deprecated use HubAppVisitSyncOutcome */
+export type HubBootSyncOutcome = HubAppVisitSyncOutcome;
+
+/** True when this browser can reach the local Hub scrape API (localhost dev server). */
+export function isLocalHubScrapeAvailable(): boolean {
+  if (typeof window === 'undefined') return false;
+  const host = window.location.hostname;
+  return host === 'localhost' || host === '127.0.0.1' || import.meta.env.DEV;
+}
+
+let hubAppVisitSyncRan = false;
+
+export function resetHubAppVisitSyncForRetry() {
+  hubAppVisitSyncRan = false;
+}
+
+/**
+ * Run once per page load when the user opens the panel (/panel).
+ * - Local dev: incremental Seller Hub scrape (skips ~950+ known IDs from IndexedDB).
+ * - Live/deployed: pull the Hub ledger from Firebase (scraped on local dev, pushed to cloud).
+ */
+export async function runHubSyncOnAppVisit(options?: { force?: boolean }): Promise<HubAppVisitSyncOutcome> {
+  if (hubAppVisitSyncRan) {
+    return { status: 'skipped', reason: 'already_ran' };
+  }
+
+  await hydrateHubArchiveIndex();
+
+  if (isLocalHubScrapeAvailable()) {
+    if (!options?.force && hubBootParseRanToday()) {
+      hubAppVisitSyncRan = true;
+      return { status: 'skipped', reason: 'already_parsed_today' };
+    }
+
+    const preflight = await fetchHubPreflight();
+    if (preflight.loginInProgress) {
+      return {
+        status: 'error',
+        code: 'ebay_login_in_progress',
+        error: 'Finish signing into eBay in Chrome first.',
+        hint:
+          preflight.hint ||
+          'Complete Google/eBay login in the Seller Hub tab. Hub sync waits until you click Retry — it will not interrupt sign-in.',
+      };
+    }
+
+    hubAppVisitSyncRan = true;
+
+    const inbox = await pollHubBrowserIngestInbox();
+    if (inbox?.ok && ((inbox.added ?? 0) > 0 || (inbox.merged ?? 0) > 0)) {
+      const filled = backfillHubTitlesFromOrderIndex();
+      if (filled.filled) await flushHubArchivePersist();
+      markHubBootParseDone();
+      return {
+        status: 'ok',
+        mode: 'inbox',
+        added: inbox.added ?? 0,
+        merged: inbox.merged ?? 0,
+        scraped: inbox.scraped ?? 0,
+        total: inbox.total ?? loadHubArchiveIndex().orders.length,
+      };
+    }
+
+    const result = await fetchNewHubOrdersFromSellerHub();
+    if (result.ok) {
+      const filled = backfillHubTitlesFromOrderIndex();
+      if (filled.filled) await flushHubArchivePersist();
+      const added = result.added ?? 0;
+      const merged = result.merged ?? 0;
+      const total = result.total ?? loadHubArchiveIndex().orders.length;
+      const listed = result.listed ?? 0;
+      if (added === 0 && merged === 0 && listed === 0) {
+        return {
+          status: 'error',
+          code: 'hub_empty',
+          error: 'Seller Hub returned no orders. Sign into eBay.de in the Seller Hub Chrome tab first.',
+          hint: 'Use the other Chrome tab (Seller Hub / Bestellungen), complete sign-in, then press F5 on this panel.',
+        };
+      }
+      markHubBootParseDone();
+      return {
+        status: 'ok',
+        mode: 'scrape',
+        added,
+        merged,
+        scraped: result.scraped ?? 0,
+        total,
+        listed,
+        upToDate: added === 0 && merged === 0 && listed > 0,
+      };
+    }
+    if (result.code === 'cdp_unavailable' || result.code === 'network') {
+      if (isCloudEnabled()) {
+        const cloud = await pullHubArchiveFromCloud();
+        if (cloud.pulled > 0) {
+          const filled = backfillHubTitlesFromOrderIndex();
+          if (filled.filled) await flushHubArchivePersist();
+          return {
+            status: 'ok',
+            mode: 'cloud',
+            added: cloud.pulled,
+            merged: 0,
+            scraped: 0,
+            total: loadHubArchiveIndex().orders.length,
+          };
+        }
+      }
+      return {
+        status: 'error',
+        code: result.code,
+        error: result.error || 'Could not reach Chrome for Seller Hub scrape.',
+        hint:
+          result.hint ||
+          'Double-click "Inventory Pro" on your Desktop, then open the panel again.',
+      };
+    }
+    if (result.code !== 'local_only') {
+      return { status: 'error', code: result.code, error: result.error, hint: result.hint };
+    }
+  } else {
+    hubAppVisitSyncRan = true;
+  }
+
+  if (isCloudEnabled()) {
+    const cloud = await pullHubArchiveFromCloud();
+    if (cloud.error) {
+      return { status: 'error', error: cloud.error };
+    }
+    if (cloud.pulled > 0) {
+      const filled = backfillHubTitlesFromOrderIndex();
+      if (filled.filled) await flushHubArchivePersist();
+      return {
+        status: 'ok',
+        mode: 'cloud',
+        added: cloud.pulled,
+        merged: 0,
+        scraped: 0,
+        total: loadHubArchiveIndex().orders.length,
+      };
+    }
+  }
+
+  return { status: 'skipped', reason: 'offline' };
+}
+
+/** @deprecated use runHubSyncOnAppVisit */
+export async function runHubBootIncrementalSync(): Promise<HubAppVisitSyncOutcome> {
+  return runHubSyncOnAppVisit();
 }
 
 export async function fetchNewHubOrdersFromSellerHub(options?: {

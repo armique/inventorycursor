@@ -10,12 +10,14 @@ import {
   harvestPayoutFromCapturedPayload,
   payoutFromHubVisionJson,
   applyBusinessTxFeePolicy,
+  reconcileHubPayoutFees,
   extractHubOrderLifecycle,
   parseGermanHubDate,
   extractHubListingTitle,
   hubOrderRowsFromUnknown,
 } from '../lib/ebaySellerHubPayout.js';
 import { saleFieldsFromHubPayout } from '../utils/ebaySellerHubSaleFields';
+import { hubReconciledFeeSplit, saleProceedsRows } from '../utils/saleProceeds';
 import { hubOrderRecordFromDetailText, parseHubBrowserDump, hubOrdersFromBrowserDump, HUB_BROWSER_DUMP_KIND } from '../utils/hubBrowserDump';
 import { applyEbayOrderMatchToItem } from '../utils/applyEbayOrderMatch';
 import { financialEventsFromHubPayout } from '../utils/ebaySellerHubOrderCache';
@@ -339,11 +341,123 @@ assert.equal(unlabeled, 'Integral 16GB DDR4 3200MHz RAM Kit');
 assert.equal(extractHubListingTitle(SAMPLE), '');
 
 const preFee = applyBusinessTxFeePolicy({ ...payout, transactionFeeEur: 11.29 }, '2025-06-30');
-assert.equal(preFee.transactionFeeEur, 0);
+assert.equal(preFee.transactionFeeEur, null);
 const postFee = applyBusinessTxFeePolicy({ ...payout, transactionFeeEur: 11.29 }, '2025-07-01');
 assert.equal(postFee.transactionFeeEur, 11.29);
 
+{
+  const zeroFee = reconcileHubPayoutFees({
+    buyerTotalEur: 30.04,
+    netPayoutEur: 30.04,
+    transactionFeeEur: 1.2,
+    adFeeEur: 0.8,
+    rawMatched: true,
+  });
+  assert.equal(zeroFee.netPayoutEur, 30.04);
+  assert.equal(zeroFee.transactionFeeEur, null);
+  assert.equal(zeroFee.adFeeEur, null);
+}
+
 const empty = parseEbaySellerHubPayoutText('hello world');
 assert.equal(payoutLooksComplete(empty), false);
+
+const RECEIPT_NO_REFUND = `
+Vom Käufer bezahlt
+Zwischensumme
+130,94 €
+Versand
+10,49 €
+Gesamtbetrag
+141,43 €
+
+Ihr Verkaufserlös
+Gesamtbetrag
+141,43 €
+Verkaufskosten
+Transaktionsgebühren
+-8,95 €
+Versandetikett
+-6,19 €
+Anzeigengebühr Basis
+-13,46 €
+Bestelleinnahmen
+112,83 €
+`;
+const receipt = parseEbaySellerHubPayoutText(RECEIPT_NO_REFUND);
+assert.equal(receipt.itemGrossEur, 130.94);
+assert.equal(receipt.buyerShippingEur, 10.49);
+assert.equal(receipt.buyerTotalEur, 141.43, 'seller Gesamtbetrag is an echo, not a second payment');
+assert.equal(receipt.refundEur, null);
+assert.equal(receipt.transactionFeeEur, 8.95);
+assert.equal(receipt.shippingLabelEur, 6.19);
+assert.equal(receipt.adFeeEur, 13.46);
+assert.equal(receipt.netPayoutEur, 112.83);
+assert.equal(Math.round((141.43 - 8.95 - 6.19 - 13.46) * 100) / 100, 112.83);
+const receiptFields = saleFieldsFromHubPayout(receipt);
+assert.equal(receiptFields.sellPrice, 141.43);
+assert.equal(receiptFields.feeAmount, 28.6);
+assert.equal(receiptFields.saleProceeds.netPayoutEur, 112.83);
+assert.equal(receiptFields.saleProceeds.refundEur, null);
+
+const RECEIPT_PARTIAL_REFUND = `
+Vom Käufer bezahlt
+Zwischensumme
+16,56 €
+Versand
+6,19 €
+Rückerstattung
+-9,00 €
+Gesamtbetrag
+13,75 €
+
+Ihr Verkaufserlös
+Gesamtbetrag
+13,75 €
+Verkaufskosten
+Transaktionsgebühren
+-1,36 €
+Versandetikett
+-6,19 €
+Anzeigengebühr Basis
+-1,80 €
+Bestelleinnahmen
+4,40 €
+`;
+const partialReceipt = parseEbaySellerHubPayoutText(RECEIPT_PARTIAL_REFUND);
+assert.equal(partialReceipt.itemGrossEur, 16.56);
+assert.equal(partialReceipt.buyerShippingEur, 6.19);
+assert.equal(partialReceipt.refundEur, 9);
+assert.equal(partialReceipt.buyerTotalEur, 13.75, 'Gesamtbetrag is already after Rückerstattung');
+assert.equal(partialReceipt.transactionFeeEur, 1.36);
+assert.equal(partialReceipt.shippingLabelEur, 6.19);
+assert.equal(partialReceipt.adFeeEur, 1.8);
+assert.equal(partialReceipt.netPayoutEur, 4.4, 'Bestelleinnahmen is final net — do not subtract refund again');
+assert.equal(Math.round((16.56 + 6.19 - 9) * 100) / 100, 13.75);
+assert.equal(Math.round((13.75 - 1.36 - 6.19 - 1.8) * 100) / 100, 4.4);
+
+const partialLife = extractHubOrderLifecycle(RECEIPT_PARTIAL_REFUND);
+assert.equal(partialLife.status, 'refunded_partial');
+assert.equal(partialLife.refundEur, 9);
+
+const partialOrder = hubOrderRecordFromDetailText('03-99999-00001', RECEIPT_PARTIAL_REFUND);
+assert.equal(partialOrder.grossTotal, 13.75);
+assert.equal(partialOrder.netTotal, 4.4);
+assert.ok((partialOrder.financialEvents || []).some((e) => e.transactionType === 'Rückerstattung'));
+const partialSplit = hubReconciledFeeSplit(partialOrder);
+assert.equal(partialSplit.buyerTotalEur, 13.75);
+assert.equal(partialSplit.refundEur, 9);
+assert.equal(partialSplit.transactionFeeEur, 1.36);
+assert.equal(partialSplit.adFeeEur, 1.8);
+assert.equal(partialSplit.shippingLabelEur, 6.19);
+assert.equal(partialSplit.netPayoutEur, 4.4);
+
+const partialFields = saleFieldsFromHubPayout(partialReceipt);
+assert.equal(partialFields.sellPrice, 13.75);
+assert.equal(partialFields.saleProceeds.netPayoutEur, 4.4);
+assert.equal(partialFields.saleProceeds.refundEur, 9);
+const partialRowLabels = saleProceedsRows(partialFields.saleProceeds).map((r) => r.label);
+assert.ok(partialRowLabels.includes('Rückerstattung'));
+assert.ok(!partialRowLabels.includes('Erstattet'));
+assert.ok(partialRowLabels.indexOf('Rückerstattung') < partialRowLabels.indexOf('Vom Käufer bezahlt'));
 
 console.log('verify-ebay-seller-hub-payout: ok');

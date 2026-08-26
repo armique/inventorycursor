@@ -1,54 +1,68 @@
 import React from 'react';
 import { formatEUR } from '../utils/formatMoney';
 import type { SaleColumnSplit } from '../utils/saleProceeds';
+import {
+  INV_MONEY_DEDUCTION_AD,
+  INV_MONEY_DEDUCTION_EBAY,
+  INV_MONEY_DEDUCTION_OTHER,
+  INV_MONEY_DEDUCTION_REFUND,
+  INV_MONEY_DEDUCTION_SHIPPING,
+  INV_MONEY_LEDGER,
+  INV_MONEY_RECEIVED,
+  invMoneyNetClass,
+} from './inventoryMoneyColumnStyles';
 
 type Props = {
   split: SaleColumnSplit;
   /**
-   * When false, marketplace fee rows are not counted toward “N deductions”
-   * (ship / refund still count). Kept for parity with the Price breakdown toggle.
+   * When false, marketplace fee rows are hidden (ship / refund still shown).
+   * Kept for parity with the Price breakdown toggle.
    */
   showFees: boolean;
+  /** When true, every deduction line (shipping, refund, eBay/ad/other fees) is hidden —
+   *  only the sell price and the net pocket value remain. Overrides showFees. */
+  hideDeductions?: boolean;
   className?: string;
 };
 
-function countDeductions(split: SaleColumnSplit, showFees: boolean): number {
-  let n = 0;
-  if (showFees && split.adFeeEur >= 0.01) n += 1;
-  if (showFees && split.ebayFeeEur >= 0.01) n += 1;
-  if (showFees && split.otherFeeEur >= 0.01) n += 1;
-  if (split.shippingEur >= 0.01) n += 1;
-  if (split.refundEur >= 0.01) n += 1;
-  return n;
-}
-
 /**
- * Sell-cell pair (variant K): buyer paid + net income, same type size, monochrome.
- * Fee detail stays in the Sell click popover — only a quiet deduction count here.
+ * Sell cell: total received, colored deductions, then net income (Bestelleinnahmen).
  */
-export function SellSplitLedger({ split, showFees, className = '' }: Props) {
+export function SellSplitLedger({ split, showFees, hideDeductions = false, className = '' }: Props) {
   const netEur = split.netEur;
-  const deductions = countDeductions(split, showFees);
-  const hasNet = netEur != null && Number.isFinite(netEur);
+  const hasDistinctNet =
+    netEur != null && Number.isFinite(netEur) && Math.abs(split.totalEur - netEur) >= 0.02;
 
   return (
     <div
-      className={`flex w-full min-w-[5.5rem] max-w-[6.75rem] flex-col gap-0.5 tabular-nums text-[11px] leading-snug ${className}`.trim()}
+      className={`${INV_MONEY_LEDGER} max-w-[6.75rem] ${className}`.trim()}
       title={
-        hasNet
-          ? 'Buyer paid and net income (Bestelleinnahmen). Click for full fee breakdown. Margin is in the Margin column.'
+        hasDistinctNet
+          ? 'Total received and net income (Bestelleinnahmen). Click for full fee breakdown. Margin is in the Margin column.'
           : 'Buyer paid. Click for fee breakdown when available.'
       }
     >
-      <span className="font-semibold text-slate-900">€{formatEUR(split.totalEur)}</span>
-      {hasNet ? (
-        <span className="font-semibold text-slate-900">
-          {netEur! < 0 ? '−' : ''}€{formatEUR(Math.abs(netEur!))} net
+      <span className={INV_MONEY_RECEIVED}>€{formatEUR(split.totalEur)}</span>
+      {!hideDeductions && split.shippingEur >= 0.01 ? (
+        <span className={INV_MONEY_DEDUCTION_SHIPPING}>
+          −€{formatEUR(split.shippingEur)} delivery
         </span>
       ) : null}
-      {deductions > 0 ? (
-        <span className="font-medium text-slate-400">
-          {deductions} deduction{deductions === 1 ? '' : 's'}
+      {!hideDeductions && showFees && split.ebayFeeEur >= 0.01 ? (
+        <span className={INV_MONEY_DEDUCTION_EBAY}>−€{formatEUR(split.ebayFeeEur)} eBay</span>
+      ) : null}
+      {!hideDeductions && showFees && split.adFeeEur >= 0.01 ? (
+        <span className={INV_MONEY_DEDUCTION_AD}>−€{formatEUR(split.adFeeEur)} ads</span>
+      ) : null}
+      {!hideDeductions && showFees && split.otherFeeEur >= 0.01 ? (
+        <span className={INV_MONEY_DEDUCTION_OTHER}>−€{formatEUR(split.otherFeeEur)} other</span>
+      ) : null}
+      {!hideDeductions && split.refundEur >= 0.01 ? (
+        <span className={INV_MONEY_DEDUCTION_REFUND}>−€{formatEUR(split.refundEur)} refund</span>
+      ) : null}
+      {hasDistinctNet ? (
+        <span className={invMoneyNetClass(netEur)}>
+          {netEur! < 0 ? '−' : ''}€{formatEUR(Math.abs(netEur!))}
         </span>
       ) : null}
     </div>

@@ -11,7 +11,7 @@ import {
 import { InventoryItem, ItemUpdateOptions, TaxMode } from '../types';
 import { loadOrdersForSalesSync, runEbaySalesSync, peekEbaySalesSync, invalidateEbaySalesSyncPeekCache } from '../services/ebaySalesSync';
 import { hydrateHubArchiveIndex } from '../services/ebayHubArchiveIndex';
-import { applyEbayOrderMatchToItem } from '../utils/applyEbayOrderMatch';
+import { linkInventoryItemToEbayOrder } from '../utils/linkInventoryItemToEbayOrder';
 import { applyEbaySaleAdjustmentToItem, isRestockAfterRefundAdjustment, getAdjustmentSuggestionLabel, getAdjustmentSuggestionBadgeClass, summarizeAdjustmentSuggestions, isRefundLikeAdjustmentKind } from '../utils/ebaySaleAdjustments';
 import {
   buildOrderLinkAnalysis,
@@ -303,7 +303,7 @@ const EbaySalesSyncPanel: React.FC<Props> = ({
               ? `${label} · +€${formatEUR(fee)} EK · #${oid}`
               : `${label} · #${oid}`;
         } else {
-          updated.set(row.item.id, applyEbayOrderMatchToItem(current, row.match, taxMode));
+          updated.set(row.item.id, linkInventoryItemToEbayOrder(current, row.match, taxMode, items));
           detailsByItemId[row.item.id] = `${kindLabel(row.kind, row)} · #${row.match.order?.orderId || '—'}`;
         }
       }

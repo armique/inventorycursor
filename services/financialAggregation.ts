@@ -13,21 +13,68 @@ export function roundMoney(n: number): number {
   return Math.round((x + Number.EPSILON) * 100) / 100;
 }
 
-export function getChildren(container: InventoryItem, items: InventoryItem[]): InventoryItem[] {
+/**
+ * Prebuilt O(1) lookups over an items array (QW7). Build once per items identity and pass to
+ * the helpers below — otherwise each call falls back to a full array scan (O(N) per call,
+ * O(N²) per filter pass). All maps preserve first-match semantics of the original scans.
+ */
+export type InventoryLookup = {
+  itemById: Map<string, InventoryItem>;
+  childrenByParentId: Map<string, InventoryItem[]>;
+  containerByComponentId: Map<string, InventoryItem>;
+};
+
+export function buildInventoryLookup(items: InventoryItem[]): InventoryLookup {
+  const itemById = new Map<string, InventoryItem>();
+  const childrenByParentId = new Map<string, InventoryItem[]>();
+  const containerByComponentId = new Map<string, InventoryItem>();
+  for (const i of items) {
+    // First-wins mirrors items.find(...) on duplicate ids.
+    if (!itemById.has(i.id)) itemById.set(i.id, i);
+    if (i.parentContainerId) {
+      const arr = childrenByParentId.get(i.parentContainerId);
+      if (arr) arr.push(i);
+      else childrenByParentId.set(i.parentContainerId, [i]);
+    }
+  }
+  for (const i of items) {
+    if ((i.isBundle || i.isPC) && i.componentIds?.length) {
+      for (const cid of i.componentIds) {
+        if (!containerByComponentId.has(cid)) containerByComponentId.set(cid, i);
+      }
+    }
+  }
+  return { itemById, childrenByParentId, containerByComponentId };
+}
+
+export function getChildren(
+  container: InventoryItem,
+  items: InventoryItem[],
+  lookup?: InventoryLookup
+): InventoryItem[] {
   const byIds = (container.componentIds || [])
-    .map((id) => items.find((i) => i.id === id))
+    .map((id) => (lookup ? lookup.itemById.get(id) : items.find((i) => i.id === id)))
     .filter((x): x is InventoryItem => !!x)
     // Stale componentIds on an older shell must not steal parts that now belong
     // to another PC/bundle (historical compose ran twice on the same sale).
     .filter((c) => !c.parentContainerId || c.parentContainerId === container.id);
   if (byIds.length > 0) return byIds;
+  if (lookup) return lookup.childrenByParentId.get(container.id) || [];
   return items.filter((i) => i.parentContainerId === container.id);
 }
 
 /** Sold bundle/PC where sell price & profit live on each component. */
-export function isSoldWithProportionalChildren(container: InventoryItem, items: InventoryItem[]): boolean {
-  if (!container.isBundle && !container.isPC) return false;
-  const children = getChildren(container, items);
+export function isSoldWithProportionalChildren(
+  container: InventoryItem,
+  items: InventoryItem[],
+  lookup?: InventoryLookup
+): boolean {
+  const isContainer =
+    container.isBundle ||
+    container.isPC ||
+    Boolean(container.componentIds && container.componentIds.length > 0);
+  if (!isContainer) return false;
+  const children = getChildren(container, items, lookup);
   if (children.length === 0) return false;
   if (container.status !== ItemStatus.SOLD) return false;
   return children.every((c) => c.status === ItemStatus.SOLD && !!c.sellDate);
@@ -36,6 +83,30 @@ export function isSoldWithProportionalChildren(container: InventoryItem, items: 
 /** Omit container row when components carry all sales (avoids double revenue). */
 export function shouldSkipContainerRow(item: InventoryItem, items: InventoryItem[]): boolean {
   return isSoldWithProportionalChildren(item, items);
+}
+
+/**
+ * Nested part of a sold PC/bundle whose checkout total lives on the parent.
+ * Dashboard / tax must count the parent Gesamtbetrag once — not child item prices.
+ */
+export function shouldSkipSoldContainerChildForSaleTotals(
+  item: InventoryItem,
+  items: InventoryItem[],
+  lookup?: InventoryLookup
+): boolean {
+  if (!item.parentContainerId) return false;
+  const parent =
+    lookup?.itemById.get(item.parentContainerId) ??
+    items.find((row) => row.id === item.parentContainerId);
+  if (!parent) return false;
+  return isSoldWithProportionalChildren(parent, items, lookup);
+}
+
+/** Buyer Gesamtbetrag for a sale line — Hub total wins over a drifted sellPrice. */
+export function resolvedSaleRevenue(item: InventoryItem): number {
+  const buyer = item.saleProceeds?.buyerTotalEur;
+  if (buyer != null && Number.isFinite(buyer) && buyer >= 0.01) return roundMoney(buyer);
+  return roundMoney(Number(item.sellPrice) || 0);
 }
 
 /** Component inside a bundle/PC — stock and sales are on the parent row. */
@@ -67,11 +138,18 @@ export function isOrphanSoldContainerShell(container: InventoryItem, items: Inve
   return getChildren(container, items).length === 0;
 }
 
-export function getParentContainer(item: InventoryItem, items: InventoryItem[]): InventoryItem | undefined {
+export function getParentContainer(
+  item: InventoryItem,
+  items: InventoryItem[],
+  lookup?: InventoryLookup
+): InventoryItem | undefined {
   if (item.parentContainerId) {
-    const direct = items.find((i) => i.id === item.parentContainerId);
+    const direct = lookup
+      ? lookup.itemById.get(item.parentContainerId)
+      : items.find((i) => i.id === item.parentContainerId);
     if (direct) return direct;
   }
+  if (lookup) return lookup.containerByComponentId.get(item.id);
   return items.find(
     (p) =>
       (p.isBundle || p.isPC) &&
@@ -83,10 +161,11 @@ export function getParentContainer(item: InventoryItem, items: InventoryItem[]):
 export function shouldHideContainerChildInList(
   item: InventoryItem,
   items: InventoryItem[],
-  _opts?: { showInComposition?: boolean }
+  _opts?: { showInComposition?: boolean },
+  lookup?: InventoryLookup
 ): boolean {
   if (item.isBundle || item.isPC) return false;
-  const parent = getParentContainer(item, items);
+  const parent = getParentContainer(item, items, lookup);
   if (!parent || (!parent.isBundle && !parent.isPC)) return false;
   return true;
 }
@@ -143,9 +222,13 @@ export function inventorySubcategoryAliasesMatch(a: string, b: string): boolean 
 }
 
 /** Part nested under a sold/traded/gifted PC/bundle (status often stays IN_COMPOSITION). */
-export function isPartOfRealizedContainer(item: InventoryItem, items: InventoryItem[]): boolean {
+export function isPartOfRealizedContainer(
+  item: InventoryItem,
+  items: InventoryItem[],
+  lookup?: InventoryLookup
+): boolean {
   if (item.isBundle || item.isPC) return false;
-  const parent = getParentContainer(item, items);
+  const parent = getParentContainer(item, items, lookup);
   return Boolean(parent && (parent.isPC || parent.isBundle) && isRealizedDisposal(parent));
 }
 
@@ -155,11 +238,15 @@ export function isPartOfRealizedContainer(item: InventoryItem, items: InventoryI
  */
 
 /** Active tab (and Active search): stock/ordered, plus composition only under Active parents. */
-export function itemMatchesActiveInventoryTab(item: InventoryItem, items: InventoryItem[]): boolean {
+export function itemMatchesActiveInventoryTab(
+  item: InventoryItem,
+  items: InventoryItem[],
+  lookup?: InventoryLookup
+): boolean {
   if (item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED) return true;
   if (item.status !== ItemStatus.IN_COMPOSITION) return false;
   // Parts under a sold/traded/gifted PC must not leak into Active search/results.
-  return !isPartOfRealizedContainer(item, items);
+  return !isPartOfRealizedContainer(item, items, lookup);
 }
 
 export function shouldSurfaceSoldContainerPartInList(
@@ -167,21 +254,23 @@ export function shouldSurfaceSoldContainerPartInList(
   items: InventoryItem[],
   statusFilter: string,
   categoryFilter: string,
-  subCategoryFilter: string
+  subCategoryFilter: string,
+  lookup?: InventoryLookup
 ): boolean {
   if (statusFilter !== 'SOLD') return false;
   if (categoryFilter === 'ALL' && !subCategoryFilter) return false;
   if (!matchesInventoryCategoryPin(item, categoryFilter, subCategoryFilter)) return false;
-  return isPartOfRealizedContainer(item, items);
+  return isPartOfRealizedContainer(item, items, lookup);
 }
 
 /** Sell/disposition date for a nested part when drilling sold category pins. */
 export function soldContainerPartDispositionDate(
   item: InventoryItem,
-  items: InventoryItem[]
+  items: InventoryItem[],
+  lookup?: InventoryLookup
 ): string | undefined {
   if (item.sellDate) return item.sellDate;
-  const parent = getParentContainer(item, items);
+  const parent = getParentContainer(item, items, lookup);
   return parent?.sellDate;
 }
 
@@ -205,11 +294,12 @@ export function containerOrChildMatchesSearch(
   item: InventoryItem,
   items: InventoryItem[],
   query: string,
-  matchesFn: (item: InventoryItem, query: string) => boolean
+  matchesFn: (item: InventoryItem, query: string) => boolean,
+  lookup?: InventoryLookup
 ): boolean {
   if (matchesFn(item, query)) return true;
   if (!item.isBundle && !item.isPC) return false;
-  return getChildren(item, items).some((c) => matchesFn(c, query));
+  return getChildren(item, items, lookup).some((c) => matchesFn(c, query));
 }
 
 export type SoldContainerDisplayTotals = {
@@ -224,7 +314,11 @@ export type SoldContainerDisplayTotals = {
  * For sold bundles/PCs with proportional children, sums child fees.
  */
 export function getItemDisplayFeeAmount(item: InventoryItem, items: InventoryItem[]): number {
-  if ((item.isPC || item.isBundle) && isRealizedDisposal(item)) {
+  const isContainer =
+    item.isPC ||
+    item.isBundle ||
+    Boolean(item.componentIds && item.componentIds.length > 0);
+  if (isContainer && isRealizedDisposal(item)) {
     const children = getChildren(item, items);
     if (children.length > 0 && isSoldWithProportionalChildren(item, items)) {
       return roundMoney(children.reduce((s, c) => s + (Number(c.feeAmount) || 0), 0));
@@ -238,7 +332,11 @@ export function getItemDisplayFeeAmount(item: InventoryItem, items: InventoryIte
  * For sold bundles/PCs with proportional children, sums child shipping amounts.
  */
 export function getItemDisplayShippingAmount(item: InventoryItem, items: InventoryItem[]): number {
-  if ((item.isPC || item.isBundle) && isRealizedDisposal(item)) {
+  const isContainer =
+    item.isPC ||
+    item.isBundle ||
+    Boolean(item.componentIds && item.componentIds.length > 0);
+  if (isContainer && isRealizedDisposal(item)) {
     const children = getChildren(item, items);
     if (children.length > 0 && isSoldWithProportionalChildren(item, items)) {
       return roundMoney(children.reduce((s, c) => s + getSellerShippingDeduction(c), 0));
@@ -266,10 +364,23 @@ export function getSoldContainerDisplayTotals(
     };
   }
   if (isSoldWithProportionalChildren(container, items)) {
-    const sellPrice = children.reduce((s, c) => s + (Number(c.sellPrice) || 0), 0);
-    const profit = children.reduce((s, c) => s + computeItemProfitBeforeOverhead(c, taxMode), 0);
+    const childrenSum = roundMoney(children.reduce((s, c) => s + (Number(c.sellPrice) || 0), 0));
+    const hubBuyerTotal = container.saleProceeds?.buyerTotalEur;
+    const parentSell = Number(container.sellPrice) || 0;
+    const sellPrice =
+      hubBuyerTotal != null && hubBuyerTotal > childrenSum + 0.02
+        ? roundMoney(hubBuyerTotal)
+        : parentSell > childrenSum + 0.02
+          ? roundMoney(parentSell)
+          : childrenSum;
+    const childBuy = roundMoney(children.reduce((s, c) => s + (Number(c.buyPrice) || 0), 0));
+    const hubNet = Number(container.saleProceeds?.netPayoutEur);
+    const profit =
+      Number.isFinite(hubNet) && Math.abs(hubNet) >= 0.01
+        ? roundMoney(hubNet - childBuy)
+        : children.reduce((s, c) => s + computeItemProfitBeforeOverhead(c, taxMode), 0);
     return {
-      sellPrice: roundMoney(sellPrice),
+      sellPrice,
       profit: roundMoney(profit),
       feeAmount: getItemDisplayFeeAmount(container, items),
       shippingAmount: getItemDisplayShippingAmount(container, items),
@@ -291,7 +402,7 @@ export function getSoldContainerDisplayTotals(
 export function shouldSkipForAggregatedSaleLine(item: InventoryItem, allItems: InventoryItem[]): boolean {
   if (item.isDraft) return true;
   if (shouldSkipCompositionChild(item, allItems)) return true;
-  if (shouldSkipContainerRow(item, allItems)) return true;
+  if (shouldSkipSoldContainerChildForSaleTotals(item, allItems)) return true;
   // Ghost sold PC/bundle left after a second historical compose on the same parts.
   if (isOrphanSoldContainerShell(item, allItems)) return true;
   return false;
@@ -374,7 +485,7 @@ export function computeSoldTabMargin(item: InventoryItem): number {
   const buy = Number(item.buyPrice) || 0;
   if (isTrustedEbayProceeds(item.saleProceeds)) {
     const split = saleColumnSplit(item, {
-      displaySellEur: item.sellPrice,
+      displaySellEur: item.saleProceeds?.buyerTotalEur ?? item.sellPrice,
     });
     if (split?.netEur != null && Number.isFinite(split.netEur)) {
       return roundMoney(split.netEur - buy);
@@ -393,7 +504,7 @@ export function computeItemProfitBeforeOverhead(item: InventoryItem, taxMode: Ta
 /**
  * Stamp `profit` from current saleProceeds / fees. Returns the same reference when unchanged.
  */
-export function withSyncedRealizedProfit(item: InventoryItem, taxMode: TaxMode): InventoryItem {
+export function withSyncedRealizedProfit(item: InventoryItem): InventoryItem {
   if (item.isBundle || item.isPC) return item;
   if (item.status !== ItemStatus.SOLD && item.status !== ItemStatus.TRADED && item.status !== ItemStatus.GIFTED) {
     return item;
@@ -402,16 +513,19 @@ export function withSyncedRealizedProfit(item: InventoryItem, taxMode: TaxMode):
     if (item.profit == null) return item;
     return { ...item, profit: undefined };
   }
-  const profit = computeItemProfitBeforeOverhead(item, taxMode);
+  // Inventory always shows the clean, tax-mode-agnostic margin (cash in pocket, no VAT taken
+  // out) — same as computeSoldTabMargin's own contract. The Dashboard is the only place that
+  // applies the selected TaxMode, recomputing from sell/buy/fee at aggregation time rather than
+  // reading this stored field. Stamping a VAT-adjusted number here was the bug: it depended on
+  // whatever TaxMode happened to be selected when this heal last ran, so the same sale could
+  // show a different "profit" on different days with no user action.
+  const profit = computeSoldTabMargin(item);
   if (item.profit != null && Math.abs(Number(item.profit) - profit) < 0.015) return item;
   return { ...item, profit };
 }
 
 /** Patch sold/traded rows whose stored margin drifted from saleProceeds math. */
-export function healRealizedProfitsFromSaleProceeds(
-  items: InventoryItem[],
-  taxMode: TaxMode
-): InventoryItem[] {
+export function healRealizedProfitsFromSaleProceeds(items: InventoryItem[]): InventoryItem[] {
   const out: InventoryItem[] = [];
   for (const item of items) {
     if (item.isBundle || item.isPC) continue;
@@ -419,7 +533,7 @@ export function healRealizedProfitsFromSaleProceeds(
       continue;
     }
     if (!item.saleProceeds && !(Number(item.feeAmount) > 0) && item.sellPrice == null) continue;
-    const next = withSyncedRealizedProfit(item, taxMode);
+    const next = withSyncedRealizedProfit(item);
     if (next !== item) out.push(next);
   }
   return out;

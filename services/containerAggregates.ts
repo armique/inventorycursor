@@ -18,8 +18,9 @@ function roundMoney(n: number): number {
 }
 
 function updateTouchesContainers(items: InventoryItem[], updatedIds: Set<string>): boolean {
+  const byId = new Map(items.map((i) => [i.id, i]));
   for (const id of updatedIds) {
-    const item = items.find((i) => i.id === id);
+    const item = byId.get(id);
     if (!item) continue;
     if (item.isPC || item.isBundle || item.parentContainerId) return true;
     if (item.componentIds && item.componentIds.length > 0) return true;

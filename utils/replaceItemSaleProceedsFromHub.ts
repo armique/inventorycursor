@@ -5,21 +5,37 @@
 
 import { InventoryItem, ItemStatus, TaxMode, type SaleProceedsBreakdown } from '../types';
 import type { EbayOrderLineItem, EbayOrderRecord } from '../services/ebayOrderIndex';
-import { lineItemClaimKey, linkedEbayOrderRef } from './ebayOrderLinkAnalysis';
-import { scoreItemAgainstOrderLine } from './ebayOrderMatch';
+import { lineItemClaimKey } from './ebayOrderLinkAnalysis';
 import {
   netPayoutAfterRefund,
   saleColumnSplit,
   saleProceedsFeeTotal,
   saleProceedsFromOrder,
   saleProceedsFromItemFields,
+  type SaleColumnSplit,
 } from './saleProceeds';
 import { orderHasFeeBreakdown } from '../services/ebayOrderIndex';
 import { sumOrderRefundEur } from './ebayOrderFinancial';
-import { roundMoney, computeItemProfitBeforeOverhead, computeSoldTabMargin } from '../services/financialAggregation';
+import { roundMoney, computeItemProfitBeforeOverhead, computeSoldTabMargin, buildInventoryLookup, getChildren, type InventoryLookup } from '../services/financialAggregation';
 import { formatEUR } from './formatMoney';
 import { customerFromEbayOrder } from './ebayOrderBuyerData';
 import { shouldCorrectSalePlatformToEbay } from './applyEbayOrderMatch';
+import {
+  hubOrderIdFromItem,
+  hubSaleColumnSplitForItem,
+  mergeHubOrderLines,
+  pickHubLinesForItem,
+  saleProceedsFromOrderForItem,
+  shouldSkipHubPlanForContainerChild,
+  familyOwnsFullOrder,
+  inventoryFamilyForHub,
+  isHubContainer,
+  usesFullOrderHubPayout,
+} from './hubOrderProceeds';
+import { hubReconciledFeeSplit } from './saleProceeds';
+import { syncSoldContainerFamily } from './containerChildSoldDisplay';
+
+export { hubOrderIdFromItem, pickHubLineForItem } from './hubOrderProceeds';
 
 const EPS = 0.02;
 
@@ -84,7 +100,6 @@ export function orderMetaNeedsHubFill(
   if (blank(item.ebayListingId) && line.listingId) return true;
   if (blank(item.platformSold) || shouldCorrectSalePlatformToEbay(item)) return true;
   if (blank(item.paymentType) || shouldCorrectSalePlatformToEbay(item)) return true;
-  if (blank(item.sellDate) && order.creationDate) return true;
   const hubCustomer = customerFromEbayOrder(order);
   const hubHasBuyer = Boolean(
     hubCustomer.name || hubCustomer.address || hubCustomer.email || hubCustomer.phone
@@ -114,7 +129,9 @@ export function fillMissingOrderMetaFromHub(
     ...item,
     ebayOrderId: blank(item.ebayOrderId) ? order.orderId : item.ebayOrderId,
     ebayOrderLineKey: blank(item.ebayOrderLineKey)
-      ? lineItemClaimKey(order.orderId, line)
+      ? order.lineItems.length <= 1 || !isHubContainer(item)
+        ? lineItemClaimKey(order.orderId, line)
+        : item.ebayOrderLineKey
       : item.ebayOrderLineKey,
     ebayUsername: blank(item.ebayUsername) ? order.buyer?.username || item.ebayUsername : item.ebayUsername,
     ebaySku: blank(item.ebaySku) ? line.sku || item.ebaySku : item.ebaySku,
@@ -122,8 +139,8 @@ export function fillMissingOrderMetaFromHub(
     platformSold: fixPlatform ? 'ebay.de' : item.platformSold,
     paymentType,
     customer: !itemHasCustomer(item) && hubHasBuyer ? hubCustomer : item.customer,
-    // Only fill missing sellDate — never rewrite an existing Sold-tab month key.
-    sellDate: blank(item.sellDate) ? order.creationDate || item.sellDate : item.sellDate,
+    // Never stamp sellDate from Hub import/creation — use Abrechnung CSV backfill or manual Sold tab.
+    sellDate: item.sellDate,
   };
 }
 
@@ -135,9 +152,9 @@ function snapshot(item: InventoryItem, taxMode?: TaxMode): HubBreakdownSnapshot 
     ebay: split?.ebayFeeEur ?? money(p.transactionFeeEur),
     ship: split?.shippingEur ?? money(p.shippingLabelEur),
     refund: split?.refundEur ?? money(p.refundEur),
-    net: split?.netEur ?? p.netPayoutEur ?? null,
+    net: p.netPayoutEur ?? split?.netEur ?? null,
     sell: item.sellPrice ?? null,
-    total: split?.totalEur ?? p.buyerTotalEur ?? item.sellPrice ?? null,
+    total: p.buyerTotalEur ?? item.sellPrice ?? split?.totalEur ?? null,
     profit: taxMode === 'SmallBusiness' || !taxMode
       ? computeSoldTabMargin(item)
       : computeItemProfitBeforeOverhead(item, taxMode),
@@ -162,50 +179,52 @@ function hubHasConcreteFees(p: SaleProceedsBreakdown | null | undefined): boolea
   return Boolean(p) && !p!.feesEstimated && saleProceedsFeeTotal(p) >= 0.01;
 }
 
+function feeBucketsFilled(p: {
+  transactionFeeEur?: number | null;
+  adFeeEur?: number | null;
+  shippingLabelEur?: number | null;
+}): number {
+  return [p.transactionFeeEur, p.adFeeEur, p.shippingLabelEur].filter((n) => money(n) >= 0.01).length;
+}
+
+/**
+ * Item already has ads/label/eBay lines that add up to Hub's payout.
+ * Hub sometimes only parsed a single lump "eBay" fee — do not wipe the detail.
+ */
+export function itemFeeSplitIsRicherAndReconcilesToHub(
+  itemProceeds: SaleProceedsBreakdown,
+  hubProceeds: SaleProceedsBreakdown
+): boolean {
+  if (Math.abs(money(itemProceeds.buyerTotalEur) - money(hubProceeds.buyerTotalEur)) >= EPS) return false;
+  if (Math.abs(money(itemProceeds.netPayoutEur) - money(hubProceeds.netPayoutEur)) >= EPS) return false;
+  if (Math.abs(saleProceedsFeeTotal(itemProceeds) - saleProceedsFeeTotal(hubProceeds)) >= EPS) return false;
+  if (feeBucketsFilled(itemProceeds) <= feeBucketsFilled(hubProceeds)) return false;
+  return money(itemProceeds.adFeeEur) >= 0.01 || money(itemProceeds.shippingLabelEur) >= 0.01;
+}
+
 function orderIdKey(id: string): string {
   return id.trim().toLowerCase().replace(/[\s_]/g, '');
 }
 
-export function pickHubLineForItem(order: EbayOrderRecord, item: InventoryItem): EbayOrderLineItem {
-  const claim = (item.ebayOrderLineKey || '').trim().toLowerCase();
-  if (claim) {
-    const hit = order.lineItems.find((li) => lineItemClaimKey(order.orderId, li).toLowerCase() === claim);
-    if (hit) return hit;
-  }
-  if (order.lineItems.length === 1) return order.lineItems[0];
-  if (order.lineItems.length > 1) {
-    const ranked = order.lineItems
-      .map((li) => ({ li, score: scoreItemAgainstOrderLine(item, order, li).matchScore }))
-      .sort((a, b) => b.score - a.score);
-    if (ranked[0] && ranked[0].score > 0) return ranked[0].li;
-    return ranked[0]?.li || order.lineItems[0];
-  }
-  return {
-    sku: item.ebaySku || null,
-    title: item.name,
-    lineItemCost: order.grossTotal ?? item.sellPrice ?? null,
-    listingId: item.ebayListingId || null,
-  };
-}
-
-export function hubOrderIdFromItem(item: InventoryItem): string {
-  const direct = (item.ebayOrderId || '').trim();
-  if (direct) return direct;
-  const raw = linkedEbayOrderRef(item);
-  return raw.split('::')[0].trim();
+export function indexHubOrdersById(hubOrders: EbayOrderRecord[]): Map<string, EbayOrderRecord> {
+  return new Map(hubOrders.map((o) => [orderIdKey(o.orderId), o]));
 }
 
 export function hubBreakdownReplaceReason(
   item: InventoryItem,
   order: EbayOrderRecord,
-  line: EbayOrderLineItem
+  line: EbayOrderLineItem,
+  items?: InventoryItem[],
+  lookup?: InventoryLookup
 ): HubBreakdownReplaceReason | null {
   const refundEur = sumOrderRefundEur(order);
   const metaGap = orderMetaNeedsHubFill(item, order, line);
   if (!orderHasFeeBreakdown(order) && refundEur < 0.01) {
     return metaGap ? 'order_meta' : null;
   }
-  const next = saleProceedsFromOrder(order, line);
+  const next = items?.length
+    ? saleProceedsFromOrderForItem(order, item, items, lookup)
+    : saleProceedsFromOrder(order, line);
   const cur = saleProceedsFromItemFields(item);
   if (!hubHasConcreteFees(next)) {
     if (refundEur < 0.01) return metaGap ? 'order_meta' : null;
@@ -220,41 +239,131 @@ export function hubBreakdownReplaceReason(
     if (afterNet != null && Math.abs(money(cur.netPayoutEur) - afterNet) >= EPS) return 'differs';
     return metaGap ? 'order_meta' : null;
   }
+  if (itemFeeSplitIsRicherAndReconcilesToHub(cur, next)) {
+    return metaGap ? 'order_meta' : null;
+  }
   if (!item.saleProceeds) return 'missing';
   if (cur.feesEstimated) return 'estimated';
   if (cur.source === 'ebay_screenshot' || cur.source === 'inferred') return 'screenshot';
+  const gross = cur.buyerTotalEur ?? item.sellPrice;
+  if (
+    cur.source === 'ebay_seller_hub' &&
+    gross != null &&
+    cur.netPayoutEur != null &&
+    Math.abs(cur.netPayoutEur - gross) < EPS &&
+    saleProceedsFeeTotal(cur) >= 0.01
+  ) {
+    return 'differs';
+  }
   if (cur.source !== 'ebay_seller_hub' || proceedsDiffer(cur, next)) return 'differs';
   return metaGap ? 'order_meta' : null;
+}
+
+export type HubSellDisplayRow = {
+  itemId: string;
+  orderId: string;
+  previewItem: InventoryItem;
+  replaceRow: HubBreakdownReplaceRow | null;
+};
+
+/** Hub sell column preview for sold rows that still need linking to the Sell cell. */
+export function buildHubSellDisplayByItemId(
+  items: InventoryItem[],
+  hubOrders: EbayOrderRecord[],
+  taxMode: TaxMode,
+  lookup: InventoryLookup = buildInventoryLookup(items)
+): Map<string, HubSellDisplayRow> {
+  return buildHubSellMaps(items, hubOrders, taxMode, lookup).display;
+}
+
+export function buildHubSellMaps(
+  items: InventoryItem[],
+  hubOrders: EbayOrderRecord[],
+  taxMode: TaxMode,
+  lookup: InventoryLookup = buildInventoryLookup(items)
+): {
+  replace: Map<string, HubBreakdownReplaceRow>;
+  display: Map<string, HubSellDisplayRow>;
+} {
+  const byId = indexHubOrdersById(hubOrders);
+  const plan = buildHubBreakdownReplacePlan(items, hubOrders, taxMode, lookup);
+  const replace = new Map(plan.map((row) => [row.itemId, row]));
+  const display = new Map<string, HubSellDisplayRow>();
+
+  for (const item of items) {
+    if (item.status !== ItemStatus.SOLD && item.status !== ItemStatus.TRADED) continue;
+    if (shouldSkipHubPlanForContainerChild(item, items, lookup)) continue;
+    const orderId = hubOrderIdFromItem(item);
+    if (!orderId) continue;
+    const order = byId.get(orderIdKey(orderId));
+    if (!order) continue;
+    if (!hubSellCellNeedsLink(item, order, items, lookup)) continue;
+
+    const replaceRow = replace.get(item.id) ?? null;
+    const previewItem =
+      replaceRow?.nextItem ??
+      applyHubPayoutBreakdownToSoldItem(
+        item,
+        order,
+        mergeHubOrderLines(pickHubLinesForItem(order, item, items, lookup)),
+        taxMode,
+        items,
+        lookup
+      );
+
+    display.set(item.id, {
+      itemId: item.id,
+      orderId: order.orderId,
+      previewItem,
+      replaceRow,
+    });
+  }
+  return { replace, display };
 }
 
 export function buildHubBreakdownReplacePlan(
   items: InventoryItem[],
   hubOrders: EbayOrderRecord[],
-  taxMode: TaxMode
+  taxMode: TaxMode,
+  lookup: InventoryLookup = buildInventoryLookup(items)
 ): HubBreakdownReplaceRow[] {
-  const byId = new Map(hubOrders.map((o) => [orderIdKey(o.orderId), o]));
+  const byId = indexHubOrdersById(hubOrders);
   const rows: HubBreakdownReplaceRow[] = [];
   for (const item of items) {
-    if (item.status !== ItemStatus.SOLD && item.status !== ItemStatus.TRADED) continue;
-    const orderId = hubOrderIdFromItem(item);
-    if (!orderId) continue;
-    const order = byId.get(orderIdKey(orderId));
-    if (!order) continue;
-    const line = pickHubLineForItem(order, item);
-    const reason = hubBreakdownReplaceReason(item, order, line);
-    if (!reason) continue;
-    const nextItem = applyHubPayoutBreakdownToSoldItem(item, order, line, taxMode);
-    rows.push({
-      itemId: item.id,
-      itemName: item.name,
-      orderId: order.orderId,
-      reason,
-      before: snapshot(item, taxMode),
-      after: snapshot(nextItem, taxMode),
-      nextItem,
-    });
+    const row = buildHubBreakdownReplaceRowForItem(item, items, byId, taxMode, lookup);
+    if (row) rows.push(row);
   }
   return rows;
+}
+
+/** One sold row vs Hub archive — used by the full plan and by idle chunked auto-heal. */
+export function buildHubBreakdownReplaceRowForItem(
+  item: InventoryItem,
+  items: InventoryItem[],
+  hubOrdersById: Map<string, EbayOrderRecord>,
+  taxMode: TaxMode,
+  lookup?: InventoryLookup
+): HubBreakdownReplaceRow | null {
+  if (item.status !== ItemStatus.SOLD && item.status !== ItemStatus.TRADED) return null;
+  if (shouldSkipHubPlanForContainerChild(item, items, lookup)) return null;
+  const orderId = hubOrderIdFromItem(item);
+  if (!orderId) return null;
+  const order = hubOrdersById.get(orderIdKey(orderId));
+  if (!order) return null;
+  const lines = pickHubLinesForItem(order, item, items, lookup);
+  const line = mergeHubOrderLines(lines);
+  const reason = hubBreakdownReplaceReason(item, order, line, items, lookup);
+  if (!reason) return null;
+  const nextItem = applyHubPayoutBreakdownToSoldItem(item, order, line, taxMode, items, lookup);
+  return {
+    itemId: item.id,
+    itemName: item.name,
+    orderId: order.orderId,
+    reason,
+    before: snapshot(item, taxMode),
+    after: snapshot(nextItem, taxMode),
+    nextItem,
+  };
 }
 
 /**
@@ -266,22 +375,47 @@ export function applyHubPayoutBreakdownToSoldItem(
   item: InventoryItem,
   order: EbayOrderRecord,
   line: EbayOrderLineItem,
-  taxMode: TaxMode
+  taxMode: TaxMode,
+  allItems?: InventoryItem[],
+  lookup?: InventoryLookup
 ): InventoryItem {
+  const fromHub = saleProceedsFromOrderForItem(order, item, allItems, lookup);
   const withMeta = fillMissingOrderMetaFromHub(item, order, line);
-  const fromHub = saleProceedsFromOrder(order, line);
+  const normalized = order;
+  const family = allItems?.length ? inventoryFamilyForHub(item, allItems, lookup) : [item];
+  const fullOrderShare = usesFullOrderHubPayout(normalized, item, allItems, lookup);
+  const hubFees = hubReconciledFeeSplit(normalized);
   const current = saleProceedsFromItemFields(withMeta);
-  const keepExistingFees = !hubHasConcreteFees(fromHub) && saleProceedsFeeTotal(current) >= 0.01;
+  const hubFeeProceeds: SaleProceedsBreakdown = fullOrderShare
+    ? {
+        capturedAt: withMeta.saleProceeds?.capturedAt || new Date().toISOString(),
+        source: 'ebay_seller_hub',
+        itemGrossEur: hubFees.itemGrossEur,
+        buyerShippingEur: hubFees.buyerShippingEur,
+        buyerTotalEur: hubFees.buyerTotalEur,
+        transactionFeeEur: hubFees.transactionFeeEur,
+        adFeeEur: hubFees.adFeeEur,
+        shippingLabelEur: hubFees.shippingLabelEur,
+        otherFeeEur: hubFees.otherFeeEur,
+        refundEur: hubFees.refundEur,
+        netPayoutEur: hubFees.netPayoutEur,
+        feesEstimated: false,
+      }
+    : fromHub;
+  const keepExistingFees =
+    (!hubHasConcreteFees(hubFeeProceeds) && saleProceedsFeeTotal(current) >= 0.01) ||
+    itemFeeSplitIsRicherAndReconcilesToHub(current, hubFeeProceeds);
   const refundEur = fromHub.refundEur ?? current.refundEur ?? 0;
-  const feeSource = keepExistingFees ? current : fromHub;
+  const feeSource = keepExistingFees ? current : fullOrderShare ? hubFees : fromHub;
   const feeTotal = saleProceedsFeeTotal(feeSource);
-  const buyerTotal = fromHub.buyerTotalEur ?? current.buyerTotalEur ?? withMeta.sellPrice ?? 0;
-  const netPayoutEur = netPayoutAfterRefund(
-    buyerTotal,
-    feeTotal,
-    keepExistingFees ? current.netPayoutEur : fromHub.netPayoutEur ?? current.netPayoutEur,
-    refundEur ?? 0
-  );
+  const buyerTotal =
+    (fullOrderShare ? hubFees.buyerTotalEur : fromHub.buyerTotalEur) ??
+    fromHub.buyerTotalEur ??
+    current.buyerTotalEur ??
+    withMeta.sellPrice ??
+    0;
+  const netPayoutEur = fullOrderShare ? hubFees.netPayoutEur : fromHub.netPayoutEur;
+  const feeSplit = fullOrderShare ? hubFees : fromHub;
   const proceedsHub: SaleProceedsBreakdown = keepExistingFees
     ? {
         ...current,
@@ -293,9 +427,24 @@ export function applyHubPayoutBreakdownToSoldItem(
         netPayoutEur,
       }
     : {
-        ...fromHub,
+        capturedAt: new Date().toISOString(),
         source: 'ebay_seller_hub',
         feesEstimated: false,
+        itemGrossEur: feeSplit.itemGrossEur ?? fromHub.itemGrossEur,
+        buyerShippingEur: feeSplit.buyerShippingEur ?? fromHub.buyerShippingEur,
+        buyerTotalEur: buyerTotal,
+        transactionFeeEur:
+          feeSplit.transactionFeeEur != null && feeSplit.transactionFeeEur >= 0.01
+            ? feeSplit.transactionFeeEur
+            : null,
+        adFeeEur:
+          feeSplit.adFeeEur != null && feeSplit.adFeeEur >= 0.01 ? feeSplit.adFeeEur : null,
+        shippingLabelEur:
+          feeSplit.shippingLabelEur != null && feeSplit.shippingLabelEur >= 0.01
+            ? feeSplit.shippingLabelEur
+            : null,
+        otherFeeEur:
+          feeSplit.otherFeeEur != null && feeSplit.otherFeeEur >= 0.01 ? feeSplit.otherFeeEur : null,
         refundEur: refundEur || null,
         netPayoutEur,
       };
@@ -330,9 +479,100 @@ export function applyHubPayoutBreakdownToSoldItem(
   };
 }
 
+/** True when the stored sell cell differs from the Hub order split. */
+export function hubSellSplitDiffersFromItem(item: InventoryItem, hubSplit: SaleColumnSplit): boolean {
+  const itemSplit = saleColumnSplit(item, {
+    displaySellEur: item.saleProceeds?.buyerTotalEur ?? item.sellPrice,
+  });
+  if (!itemSplit) return true;
+  const fields: Array<keyof SaleColumnSplit> = [
+    'totalEur',
+    'netEur',
+    'shippingEur',
+    'ebayFeeEur',
+    'adFeeEur',
+    'otherFeeEur',
+  ];
+  return fields.some((key) => Math.abs((itemSplit[key] as number) - (hubSplit[key] as number)) >= EPS);
+}
+
+/**
+ * Hub sell column is shown only while the Sell cell still needs linking.
+ * Hide once amounts match Hub and the row is stamped from Seller Hub.
+ */
+export function hubSellCellNeedsLink(
+  item: InventoryItem,
+  order: EbayOrderRecord,
+  items?: InventoryItem[],
+  lookup?: InventoryLookup
+): boolean {
+  const hubSplit = hubSaleColumnSplitForItem(order, item, items, lookup);
+  const cur = saleProceedsFromItemFields(item);
+  const hubProceeds: SaleProceedsBreakdown = {
+    capturedAt: cur.capturedAt || new Date().toISOString(),
+    source: 'ebay_seller_hub',
+    buyerTotalEur: hubSplit.totalEur,
+    transactionFeeEur: hubSplit.ebayFeeEur,
+    adFeeEur: hubSplit.adFeeEur,
+    shippingLabelEur: hubSplit.shippingEur,
+    otherFeeEur: hubSplit.otherFeeEur,
+    refundEur: hubSplit.refundEur,
+    netPayoutEur: hubSplit.netEur,
+    feesEstimated: false,
+  };
+  if (itemFeeSplitIsRicherAndReconcilesToHub(cur, hubProceeds)) return false;
+  if (hubSellSplitDiffersFromItem(item, hubSplit)) return true;
+  return cur.source !== 'ebay_seller_hub' || Boolean(cur.feesEstimated);
+}
+
+/** Build an apply row from Hub order data — used when the sell cell should mirror Hub sell. */
+export function buildHubApplyRowForItem(
+  item: InventoryItem,
+  order: EbayOrderRecord,
+  taxMode: TaxMode,
+  allItems?: InventoryItem[],
+  reason: HubBreakdownReplaceReason = 'differs',
+  lookup?: InventoryLookup
+): HubBreakdownReplaceRow {
+  const lines = pickHubLinesForItem(order, item, allItems, lookup);
+  const line = mergeHubOrderLines(lines);
+  const nextItem = applyHubPayoutBreakdownToSoldItem(item, order, line, taxMode, allItems, lookup);
+  return {
+    itemId: item.id,
+    itemName: item.name,
+    orderId: order.orderId,
+    reason,
+    before: snapshot(item, taxMode),
+    after: snapshot(nextItem, taxMode),
+    nextItem,
+  };
+}
+
 /** Patches handleUpdate must receive — never the full inventory map. */
-export function hubBreakdownItemsToSave(plan: HubBreakdownReplaceRow[]): InventoryItem[] {
-  return plan.map((row) => row.nextItem);
+export function hubBreakdownItemsToSave(
+  plan: HubBreakdownReplaceRow[],
+  allItems?: InventoryItem[]
+): InventoryItem[] {
+  const out: InventoryItem[] = [];
+  const seen = new Set<string>();
+  for (const row of plan) {
+    const parent = row.nextItem;
+    if (!allItems?.length || !(parent.isPC || parent.isBundle)) {
+      out.push(parent);
+      seen.add(parent.id);
+      continue;
+    }
+    const kids = getChildren(parent, allItems);
+    const synced = syncSoldContainerFamily(parent, kids);
+    out.push(synced.container);
+    seen.add(synced.container.id);
+    for (let i = 0; i < kids.length; i++) {
+      if (synced.children[i] === kids[i] || seen.has(synced.children[i].id)) continue;
+      seen.add(synced.children[i].id);
+      out.push(synced.children[i]);
+    }
+  }
+  return out;
 }
 
 export function hubBreakdownActionDetails(row: HubBreakdownReplaceRow): string {
@@ -358,4 +598,92 @@ export function applyHubBreakdownReplacePlan(
 ): InventoryItem[] {
   const next = new Map(plan.map((row) => [row.itemId, row.nextItem]));
   return items.map((item) => next.get(item.id) || item);
+}
+
+export type HubMarginMathCheck = {
+  netEur: number | null;
+  buyPriceEur: number;
+  expectedMarginEur: number | null;
+  storedMarginEur: number | null;
+  matches: boolean;
+};
+
+/** True when Hub net − buy price equals the margin that would be stamped on apply. */
+export function hubMarginMathCheck(
+  item: InventoryItem,
+  split: SaleColumnSplit,
+  taxMode: TaxMode = POCKET_PROFIT_TAX_MODE
+): HubMarginMathCheck {
+  const buyPriceEur = roundMoney(Number(item.buyPrice) || 0);
+  const netEur =
+    split.netEur != null && Number.isFinite(split.netEur) ? roundMoney(split.netEur) : null;
+  const expectedMarginEur =
+    netEur != null ? roundMoney(netEur - buyPriceEur) : null;
+  const storedMarginEur =
+    item.profit != null && Number.isFinite(Number(item.profit))
+      ? roundMoney(Number(item.profit))
+      : null;
+  const matches =
+    expectedMarginEur != null &&
+    (storedMarginEur == null || Math.abs(expectedMarginEur - storedMarginEur) < EPS);
+  return { netEur, buyPriceEur, expectedMarginEur, storedMarginEur, matches };
+}
+
+export function hubMarginMathCheckForRow(
+  item: InventoryItem,
+  split: SaleColumnSplit,
+  row: HubBreakdownReplaceRow,
+  taxMode: TaxMode = POCKET_PROFIT_TAX_MODE
+): HubMarginMathCheck {
+  const buyPriceEur = roundMoney(Number(item.buyPrice) || 0);
+  const netEur =
+    row.after.net != null && Number.isFinite(row.after.net) ? roundMoney(row.after.net) : null;
+  const expectedMarginEur =
+    netEur != null ? roundMoney(netEur - buyPriceEur) : null;
+  const afterMargin = roundMoney(computeSoldTabMargin(row.nextItem));
+  const matches =
+    expectedMarginEur != null && Math.abs(expectedMarginEur - afterMargin) < EPS;
+  return {
+    netEur,
+    buyPriceEur,
+    expectedMarginEur,
+    storedMarginEur: afterMargin,
+    matches,
+  };
+}
+
+/** Sold rows that should receive Hub archive values without a manual cell click. */
+export function hubBreakdownRowsNeedingAutoApply(plan: HubBreakdownReplaceRow[]): HubBreakdownReplaceRow[] {
+  return plan.filter((row) => {
+    if (row.reason === 'order_meta') return false;
+    if (row.after.net == null && row.reason !== 'missing' && row.reason !== 'estimated') {
+      return false;
+    }
+    const beforeNet = row.before.net;
+    const afterNet = row.after.net;
+    if (beforeNet != null && afterNet != null && Math.abs(beforeNet - afterNet) >= EPS) {
+      return true;
+    }
+    const beforeTotal = row.before.total;
+    const afterTotal = row.after.total;
+    if (
+      beforeTotal != null &&
+      afterTotal != null &&
+      Math.abs(beforeTotal - afterTotal) >= EPS
+    ) {
+      return true;
+    }
+    if (
+      Math.abs(row.before.ads - row.after.ads) >= EPS ||
+      Math.abs(row.before.ebay - row.after.ebay) >= EPS ||
+      Math.abs(row.before.ship - row.after.ship) >= EPS
+    ) {
+      return true;
+    }
+    if (row.reason === 'missing' || row.reason === 'estimated' || row.reason === 'screenshot') {
+      return true;
+    }
+    if (row.before.source !== 'ebay_seller_hub' && row.reason === 'differs') return true;
+    return false;
+  });
 }

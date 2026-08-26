@@ -85,10 +85,16 @@ export function hubOrderRecordFromDetailText(
   if (payout.otherFeeEur != null) {
     pushEvent(events, orderId, creationDate, 'fee', -Math.abs(payout.otherFeeEur), 'Weitere Gebühren', importedAt);
   }
-  if (life.refundEur != null && life.refundEur >= 0.01) {
+  const refundEur = payout.refundEur ?? life.refundEur;
+  if (refundEur != null && refundEur >= 0.01) {
     const kind = life.status === 'cancelled' ? 'cancellation' : 'refund';
-    const label = life.status === 'refunded_partial' ? 'Teilweise erstattet' : 'Erstattet';
-    pushEvent(events, orderId, creationDate, kind, -Math.abs(life.refundEur), label, importedAt);
+    const fromBuyerSection = payout.refundEur != null && payout.refundEur >= 0.01;
+    const label = fromBuyerSection
+      ? 'Rückerstattung'
+      : life.status === 'refunded_partial'
+        ? 'Teilweise erstattet'
+        : 'Erstattet';
+    pushEvent(events, orderId, creationDate, kind, -Math.abs(refundEur), label, importedAt);
   }
 
   const fullName = looksLikeJunkPerson(payout.fullName) ? undefined : payout.fullName || undefined;

@@ -8,6 +8,7 @@ export type EbaySellerHubPayout = {
   adFeeEur: number | null;
   shippingLabelEur: number | null;
   otherFeeEur: number | null;
+  refundEur: number | null;
   netPayoutEur: number | null;
   orderId: string | null;
   username: string | null;

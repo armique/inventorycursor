@@ -68,6 +68,14 @@ import {
   recordFirestoreReads,
   recordFirestoreWrites,
 } from "./firestoreOpsCounter";
+import {
+  EMPTY_ITEMS_WRAPPER_BYTES,
+  FIRESTORE_CHUNK_BODY_MAX,
+  jsonUtf8ByteSize,
+  packItemsIntoShards,
+  planSyncPackWrites,
+  utf8ByteLength,
+} from "../utils/firestoreShardPack";
 
 // --- CONFIG ---
 
@@ -127,16 +135,41 @@ export function saveFirebaseConfig(config: FirebaseConfig): void {
   window.location.reload();
 }
 
+/** localStorage flag — when absent or "1", inventory/Abrechnung stay on this device only. */
+export const LOCAL_DATA_ONLY_STORAGE_KEY = "deinventory_local_only";
+
+/** True = no Firestore sync; all inventory/Abrechnung data is read/written locally only. */
+export function isLocalDataOnlyMode(): boolean {
+  try {
+    const v = localStorage.getItem(LOCAL_DATA_ONLY_STORAGE_KEY);
+    if (v === "0") return false;
+    return true;
+  } catch {
+    return true;
+  }
+}
+
+export function setLocalDataOnlyMode(localOnly: boolean): void {
+  try {
+    localStorage.setItem(LOCAL_DATA_ONLY_STORAGE_KEY, localOnly ? "1" : "0");
+  } catch {
+    /* ignore */
+  }
+  window.location.reload();
+}
+
 export function isCloudEnabled(): boolean {
+  if (isLocalDataOnlyMode()) return false;
   const c = getFirebaseConfig();
   return !!(c?.apiKey && c?.projectId);
 }
 
 export function setCloudEnabled(enabled: boolean): void {
   if (!enabled) {
-    localStorage.removeItem("firebase_client_config");
-    window.location.reload();
+    setLocalDataOnlyMode(true);
+    return;
   }
+  setLocalDataOnlyMode(false);
 }
 
 // --- INIT ---
@@ -188,6 +221,7 @@ export function isUsingFirebaseEmulator(): boolean {
 }
 
 function init(): { db: Firestore; auth: Auth; storage: FirebaseStorage } | null {
+  if (!isCloudEnabled()) return null;
   if (db && auth && storage) return { db, auth, storage };
 
   const config = getFirebaseConfig();
@@ -934,7 +968,7 @@ export interface FirestoreInventoryPayload {
 }
 
 /** Max JSON size per shard document (Firestore hard limit ~1 MiB per doc). */
-const CHUNK_BODY_MAX = 680 * 1024;
+const CHUNK_BODY_MAX = FIRESTORE_CHUNK_BODY_MAX;
 
 const SYNC_PACK_COLLECTION = "syncPack";
 
@@ -1058,45 +1092,40 @@ function deepTrimLargeStrings(value: unknown, maxLen: number): unknown {
 }
 
 function jsonByteSize(obj: unknown): number {
-  return new Blob([JSON.stringify(obj)]).size;
+  return jsonUtf8ByteSize(obj);
 }
 
 /** Split items into multiple arrays so each `{ items }` document stays under CHUNK_BODY_MAX. */
 async function chunkItemsForFirestore(rawItems: unknown[]): Promise<unknown[][]> {
-  const chunks: unknown[][] = [];
-  let current: unknown[] = [];
-
-  const wrapSize = (arr: unknown[]) => jsonByteSize({ items: arr });
+  const prepared: { item: unknown; utf8Bytes: number }[] = [];
   const YIELD_EVERY = 18;
+  const trimSteps = [96_000, 48_000, 16_000, 6000, 2500, 1000, 400, 200, 120];
 
   for (let index = 0; index < rawItems.length; index++) {
     const raw = rawItems[index];
     let item: unknown = trimItemForSize(sanitizeForFirestore(raw));
-    let oneSize = jsonByteSize({ items: [item] });
+    let itemJson = JSON.stringify(item);
+    let utf8Bytes = utf8ByteLength(itemJson);
+    let oneSize = EMPTY_ITEMS_WRAPPER_BYTES + utf8Bytes;
     let guard = 0;
-    const trimSteps = [96_000, 48_000, 16_000, 6000, 2500, 1000, 400, 200, 120];
     while (oneSize > CHUNK_BODY_MAX && guard < trimSteps.length) {
       item = deepTrimLargeStrings(item, trimSteps[guard++]);
-      oneSize = jsonByteSize({ items: [item] });
+      itemJson = JSON.stringify(item);
+      utf8Bytes = utf8ByteLength(itemJson);
+      oneSize = EMPTY_ITEMS_WRAPPER_BYTES + utf8Bytes;
     }
     if (oneSize > CHUNK_BODY_MAX) {
       throw new Error(
         "One row is too large for cloud sync even after shrinking. Remove embedded photos from that item or use image URLs instead of pasted images."
       );
     }
-
-    if (current.length > 0 && wrapSize([...current, item]) > CHUNK_BODY_MAX) {
-      chunks.push(current);
-      current = [];
-    }
-    current.push(item);
+    prepared.push({ item, utf8Bytes });
 
     if (index > 0 && index % YIELD_EVERY === 0) {
-      await yieldToMain();
+      await yieldToMain(400);
     }
   }
-  if (current.length) chunks.push(current);
-  return chunks;
+  return packItemsIntoShards(prepared, CHUNK_BODY_MAX);
 }
 
 function buildCorePayloadForShard(data: FirestoreInventoryPayload): Record<string, unknown> {
@@ -1259,42 +1288,45 @@ async function writeShardedSyncPack(
     );
   }
 
-  const extraDeletes: string[] = [];
+  const existingById = new Map<string, Record<string, unknown>>();
   existingSnap.forEach((d) => {
-    const id = d.id;
-    if (id === "meta" || id === "core") return;
-    const im = /^i(\d+)$/.exec(id);
-    if (im && parseInt(im[1], 10) >= invChunks.length) extraDeletes.push(id);
-    const tm = /^t(\d+)$/.exec(id);
-    if (tm && parseInt(tm[1], 10) >= trashChunks.length) extraDeletes.push(id);
+    existingById.set(d.id, d.data() as Record<string, unknown>);
   });
 
-  type BatchOp = (b: ReturnType<typeof writeBatch>) => void;
-  const ops: BatchOp[] = [];
-
-  ops.push((b) =>
-    b.set(doc(colRef, "meta"), {
+  const plan = planSyncPackWrites({
+    invChunks,
+    trashChunks,
+    corePayload,
+    meta: {
       schemaVersion: 2,
       inventoryChunks: invChunks.length,
       trashChunks: trashChunks.length,
       updatedAt: nowIso,
       savedBy,
-    })
-  );
-  ops.push((b) => b.set(doc(colRef, "core"), corePayload));
-  invChunks.forEach((items, i) => {
-    ops.push((b) => b.set(doc(colRef, `i${i}`), { items }));
+    },
+    existingById,
   });
-  trashChunks.forEach((items, i) => {
-    ops.push((b) => b.set(doc(colRef, `t${i}`), { items }));
-  });
-  extraDeletes.forEach((id) => {
-    ops.push((b) => b.delete(doc(colRef, id)));
-  });
-  ops.push((b) => b.delete(legacyRef));
 
-  const estimatedWrites = 2 + invChunks.length + trashChunks.length;
-  const estimatedDeletes = extraDeletes.length + 1;
+  type BatchOp = (b: ReturnType<typeof writeBatch>) => void;
+  const ops: BatchOp[] = [];
+
+  for (const op of plan.setOps) {
+    ops.push((b) => b.set(doc(colRef, op.id), op.data));
+  }
+  for (const id of plan.deleteIds) {
+    ops.push((b) => b.delete(doc(colRef, id)));
+  }
+  const shouldDeleteLegacy = plan.setOps.length > 0 || plan.deleteIds.length > 0;
+  if (shouldDeleteLegacy) {
+    ops.push((b) => b.delete(legacyRef));
+  }
+
+  if (ops.length === 0) {
+    return;
+  }
+
+  const estimatedWrites = plan.setOps.length;
+  const estimatedDeletes = plan.deleteIds.length + (shouldDeleteLegacy ? 1 : 0);
   assertFirestoreDailyBudget({
     writes: estimatedWrites,
     deletes: estimatedDeletes,
@@ -1314,7 +1346,6 @@ async function writeShardedSyncPack(
   }
   if (count > 0) await batch.commit();
 
-  // meta + core + inventory/trash shards count as writes; extras + legacy as deletes
   recordFirestoreWrites(estimatedWrites);
   recordFirestoreDeletes(estimatedDeletes);
 }
@@ -1344,22 +1375,23 @@ export function subscribeToData(
       recordFirestoreReads(Math.max(1, snap.size));
       void (async () => {
         try {
+          await yieldToMain();
           if (snap.empty) {
             const leg = await getDoc(legacyRef);
             recordFirestoreReads(1);
             onData(leg.exists() ? (leg.data() as FirestoreInventoryPayload) : null);
             return;
           }
-          onData(assemblePayloadFromSyncSnapshot(snap));
+          const payload = assemblePayloadFromSyncSnapshot(snap);
+          await yieldToMain();
+          onData(payload);
         } catch (e) {
           console.error("Firestore sync assemble error:", e);
-          onData(null);
         }
       })();
     },
     (err) => {
       console.error("Firestore snapshot error:", err);
-      onData(null);
     }
   );
 }
@@ -1377,6 +1409,7 @@ export async function fetchFromCloud(): Promise<FirestoreInventoryPayload | null
   const packSnap = await getDocs(colRef);
   recordFirestoreReads(Math.max(1, packSnap.size));
   if (!packSnap.empty) {
+    await yieldToMain();
     return assemblePayloadFromSyncSnapshot(packSnap);
   }
   const leg = await getDoc(legacyInventoryDocRef(ctx.db, user.uid));
@@ -2103,6 +2136,46 @@ export async function writeGamificationState(state: Record<string, unknown>): Pr
     doc(ctx.db, "users", user.uid, GAMIFICATION_COLLECTION, GAMIFICATION_DOC_ID),
     stripUndefined({ ...state, updatedAt: new Date().toISOString() }),
   );
+}
+
+// --- EBAY ABRECHNUNG STATS (coverage, KPI cards, pocket, label overrides) — one doc, not syncPack ---
+
+const EBAY_TX_REPORTS_COLLECTION = "ebayTxReports";
+const EBAY_TX_REPORTS_DOC_ID = "state";
+
+export type EbayTxCloudState = {
+  reports: Array<{ meta: Record<string, unknown>; summary: Record<string, unknown> }>;
+  labelOverrides: Record<string, unknown>;
+  coverage: Record<string, unknown> | null;
+  pocket: Record<string, unknown> | null;
+  combinedSummary: Record<string, unknown> | null;
+  updatedAt: string;
+};
+
+export async function fetchEbayTxReportsFromCloud(): Promise<EbayTxCloudState | null> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.db || !user) return null;
+  try {
+    const snap = await getDoc(doc(ctx.db, "users", user.uid, EBAY_TX_REPORTS_COLLECTION, EBAY_TX_REPORTS_DOC_ID));
+    recordFirestoreReads(1);
+    if (!snap.exists()) return null;
+    return snap.data() as EbayTxCloudState;
+  } catch (err) {
+    console.error("fetchEbayTxReportsFromCloud failed:", err);
+    return null;
+  }
+}
+
+export async function writeEbayTxReportsToCloud(state: EbayTxCloudState): Promise<void> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.db || !user) throw new Error("Not signed in");
+  await setDoc(
+    doc(ctx.db, "users", user.uid, EBAY_TX_REPORTS_COLLECTION, EBAY_TX_REPORTS_DOC_ID),
+    stripUndefined({ ...state, updatedAt: state.updatedAt || new Date().toISOString() }),
+  );
+  recordFirestoreWrites(1);
 }
 
 // --- EBAY PURCHASE INDEX (buyer history archive, survives eBay's ~90-day API window) ---

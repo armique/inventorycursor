@@ -31,3 +31,36 @@ export function currentLocalYearMonth(ref: Date = new Date()): string {
 export function todayLocalDateKey(ref: Date = new Date()): string {
   return toLocalCalendarDateKey(ref);
 }
+
+/**
+ * Mean calendar day across a set of dates, as YYYY-MM-DD — used as Acquired for a bundle
+ * built from parts bought on different days, instead of stamping the day it was composed.
+ * Falls back to today when none of the inputs parse to a real date.
+ */
+export function averageDateKey(dates: (string | Date | undefined | null)[]): string {
+  const dayIndexes = dates
+    .map((raw) => toLocalCalendarDateKey(raw))
+    .filter((key): key is string => Boolean(key))
+    .map((key) => {
+      const [y, m, d] = key.split('-').map(Number);
+      return Date.UTC(y, m - 1, d) / 86400000;
+    });
+  if (!dayIndexes.length) return todayLocalDateKey();
+  const avgIndex = Math.round(dayIndexes.reduce((a, b) => a + b, 0) / dayIndexes.length);
+  const avg = new Date(avgIndex * 86400000);
+  return `${avg.getUTCFullYear()}-${String(avg.getUTCMonth() + 1).padStart(2, '0')}-${String(avg.getUTCDate()).padStart(2, '0')}`;
+}
+
+const DISPLAY_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** Compact table display: `22 Aug 26` from ISO or date input. */
+export function formatInventoryDisplayDate(raw: string | Date | undefined | null): string {
+  const key = toLocalCalendarDateKey(raw);
+  if (!key) return '';
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
+  if (!m) return key;
+  const day = parseInt(m[3], 10);
+  const monthIdx = parseInt(m[2], 10) - 1;
+  const month = DISPLAY_MONTHS[monthIdx] ?? m[2];
+  return `${day} ${month} ${m[1].slice(2)}`;
+}

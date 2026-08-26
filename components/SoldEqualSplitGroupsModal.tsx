@@ -220,8 +220,8 @@ const SoldEqualSplitGroupsModal: React.FC<Props> = ({ items, onApply, onClose, o
             </button>
           </div>
         ) : (
-          <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[240px_1fr]">
-            <aside className="border-b lg:border-b-0 lg:border-r border-slate-100 overflow-y-auto max-h-40 lg:max-h-none">
+          <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
+            <aside className="shrink-0 border-b lg:border-b-0 lg:border-r border-slate-100 overflow-y-auto max-h-40 lg:max-h-none lg:w-[240px]">
               <ul className="p-2 space-y-1">
                 {visibleDrafts.map((d) => {
                   const selected = d.id === (active?.id ?? '');
@@ -250,7 +250,7 @@ const SoldEqualSplitGroupsModal: React.FC<Props> = ({ items, onApply, onClose, o
               </ul>
             </aside>
 
-            <div className="flex flex-col min-h-0 overflow-hidden">
+            <div className="flex-1 min-w-0 flex flex-col min-h-0 overflow-hidden">
               {active && (
                 <>
                   <div className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1 min-h-0">

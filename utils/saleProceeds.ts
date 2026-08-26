@@ -4,7 +4,13 @@ import { hasEbaySaleSignals, resolveSalePlatform } from './salePlatform';
 import type { EbayOrderLineItem, EbayOrderRecord } from '../services/ebayOrderIndex';
 import { roundMoney } from '../services/financialAggregation';
 import { getLinePayout } from './ebayOrderPayout';
-import { sumOrderRefundEur } from './ebayOrderFinancial';
+import {
+  getHubBestelleinnahmen,
+  hubRefundAlreadyInBuyerTotal,
+  normalizeHubOrderForProceeds,
+  sumOrderRefundEur,
+  sumOrderSaleProceeds,
+} from './ebayOrderFinancial';
 import type { EbayScreenshotSaleFields } from './ebayScreenshotSaleFields';
 import type { EbaySellerHubPayout } from '../lib/ebaySellerHubPayout';
 
@@ -132,12 +138,27 @@ export function saleProceedsFeeTotal(p: SaleProceedsBreakdown | null | undefined
   );
 }
 
+/** True when Gesamtbetrag is already Zwischensumme + Versand − Rückerstattung. */
+export function buyerTotalAlreadyNetsRefund(
+  itemGrossEur: number | null | undefined,
+  buyerShippingEur: number | null | undefined,
+  refundEur: number,
+  buyerTotalEur: number | null | undefined
+): boolean {
+  const refund = refundEur >= 0.01 ? roundMoney(refundEur) : 0;
+  if (refund < 0.01 || buyerTotalEur == null || !Number.isFinite(buyerTotalEur)) return false;
+  const original = roundMoney((itemGrossEur ?? 0) + (buyerShippingEur ?? 0));
+  if (original < 0.01) return false;
+  return Math.abs(original - refund - buyerTotalEur) < 0.05;
+}
+
 /** Hub/list net: subtract a goodwill refund when stored net is still the pre-refund payout. */
 export function netPayoutAfterRefund(
   total: number | null | undefined,
   feeTotal: number,
   knownNet: number | null | undefined,
-  refundEur: number
+  refundEur: number,
+  options?: { totalAlreadyNetsRefund?: boolean }
 ): number | null {
   const refund = refundEur >= 0.01 ? roundMoney(refundEur) : 0;
   const fees = roundMoney(Math.abs(feeTotal) || 0);
@@ -148,7 +169,7 @@ export function netPayoutAfterRefund(
         ? roundMoney(total - fees)
         : null;
   if (preRefund == null) return null;
-  if (refund < 0.01) return preRefund;
+  if (refund < 0.01 || options?.totalAlreadyNetsRefund) return preRefund;
   const impliedPreRefund = total != null && Number.isFinite(total) ? roundMoney(total - fees) : null;
   if (impliedPreRefund != null && Math.abs(preRefund - impliedPreRefund) < 0.05) {
     return roundMoney(preRefund - refund);
@@ -209,10 +230,11 @@ export function saleProceedsFromHubPayout(payout: EbaySellerHubPayout): SaleProc
   const adFeeEur = n(payout.adFeeEur);
   const label = n(payout.shippingLabelEur);
   const otherFeeEur = n(payout.otherFeeEur);
+  const refundEur = n(payout.refundEur);
   const buyerTotalEur =
     n(payout.buyerTotalEur) ??
     (itemGrossEur != null || buyerShippingEur != null
-      ? roundMoney((itemGrossEur ?? 0) + (buyerShippingEur ?? 0))
+      ? roundMoney((itemGrossEur ?? 0) + (buyerShippingEur ?? 0) - (refundEur ?? 0))
       : null);
   const netPayoutEur =
     n(payout.netPayoutEur) ??
@@ -235,6 +257,7 @@ export function saleProceedsFromHubPayout(payout: EbaySellerHubPayout): SaleProc
     adFeeEur,
     shippingLabelEur: label,
     otherFeeEur,
+    refundEur,
     netPayoutEur,
   };
 }
@@ -247,11 +270,161 @@ function feeBucket(transactionType?: string, description?: string): 'label' | 'a
   return 'other';
 }
 
+/** Hub order fees aligned to Gesamtbetrag − Bestelleinnahmen (eBay payout breakdown). */
+export function hubReconciledFeeSplit(order: EbayOrderRecord): {
+  buyerTotalEur: number;
+  buyerShippingEur: number | null;
+  itemGrossEur: number | null;
+  shippingLabelEur: number;
+  transactionFeeEur: number;
+  adFeeEur: number;
+  otherFeeEur: number;
+  netPayoutEur: number;
+  refundEur: number;
+} {
+  const normalized = normalizeHubOrderForProceeds(order);
+  const lineSum = roundMoney(
+    (normalized.lineItems || []).reduce((sum, li) => sum + (Number(li.lineItemCost) || 0), 0)
+  );
+  const saleProceeds = sumOrderSaleProceeds(normalized);
+  let buyerTotalEur = roundMoney(normalized.grossTotal ?? saleProceeds ?? lineSum);
+  const netPayoutEur = roundMoney(getHubBestelleinnahmen(normalized) ?? buyerTotalEur);
+  if (saleProceeds != null && saleProceeds > buyerTotalEur + 0.05) {
+    buyerTotalEur = saleProceeds;
+  }
+  const refundEur = sumOrderRefundEur(normalized);
+  const impliedFeeTotal = roundMoney(Math.max(0, buyerTotalEur - netPayoutEur));
+
+  const labelAmounts: number[] = [];
+  let tx = 0;
+  let ads = 0;
+  let other = 0;
+  for (const event of normalized.financialEvents || []) {
+    if (event.kind !== 'fee' || event.amount >= -0.001) continue;
+    const abs = roundMoney(Math.abs(event.amount));
+    const bucket = feeBucket(event.transactionType, event.description);
+    if (bucket === 'label') labelAmounts.push(abs);
+    else if (bucket === 'ads') ads = roundMoney(ads + abs);
+    else if (bucket === 'tx') tx = roundMoney(tx + abs);
+    else other = roundMoney(other + abs);
+  }
+
+  let shippingLabelEur = 0;
+  if (labelAmounts.length === 1) {
+    shippingLabelEur = labelAmounts[0];
+  } else if (labelAmounts.length > 1) {
+    shippingLabelEur = Math.min(...labelAmounts);
+  }
+
+  const parsedMarketplace = roundMoney(tx + ads + other);
+  const impliedMarketplace = roundMoney(Math.max(0, impliedFeeTotal - shippingLabelEur));
+
+  let transactionFeeEur = impliedMarketplace;
+  let adFeeEur = 0;
+  let otherFeeEur = 0;
+  if (refundEur >= 0.01 && parsedMarketplace >= 0.01) {
+    transactionFeeEur = tx;
+    adFeeEur = ads;
+    otherFeeEur = other;
+  } else if (Math.abs(parsedMarketplace - impliedMarketplace) < 0.05) {
+    transactionFeeEur = tx;
+    adFeeEur = ads;
+    otherFeeEur = other;
+  }
+
+  const labelHint =
+    normalized.shippingCost != null && Number.isFinite(normalized.shippingCost)
+      ? roundMoney(Math.abs(normalized.shippingCost))
+      : shippingLabelEur;
+  const inferredBuyerShip =
+    lineSum <= 0.01 && labelHint >= 0.01 && buyerTotalEur > labelHint + 0.05
+      ? labelHint
+      : null;
+  const buyerShippingEur =
+    lineSum > 0.01 && buyerTotalEur > lineSum + 0.005
+      ? roundMoney(buyerTotalEur - lineSum)
+      : inferredBuyerShip;
+  const refundInBuyerTotal =
+    hubRefundAlreadyInBuyerTotal(normalized) ||
+    buyerTotalAlreadyNetsRefund(lineSum > 0.01 ? lineSum : null, buyerShippingEur, refundEur, buyerTotalEur);
+
+  return {
+    buyerTotalEur,
+    buyerShippingEur,
+    itemGrossEur:
+      lineSum > 0.01
+        ? lineSum
+        : inferredBuyerShip != null
+          ? roundMoney(buyerTotalEur - inferredBuyerShip)
+          : null,
+    shippingLabelEur,
+    transactionFeeEur,
+    adFeeEur,
+    otherFeeEur,
+    netPayoutEur:
+      refundEur >= 0.01
+        ? roundMoney(
+            netPayoutAfterRefund(
+              buyerTotalEur,
+              transactionFeeEur + adFeeEur + otherFeeEur + shippingLabelEur,
+              netPayoutEur,
+              refundEur,
+              { totalAlreadyNetsRefund: refundInBuyerTotal }
+            ) ?? netPayoutEur
+          )
+        : netPayoutEur,
+    refundEur,
+  };
+}
+
+/** Hub sell column split — always order Gesamtbetrag + reconciled fee rows + Bestelleinnahmen. */
+export function hubSaleColumnSplit(order: EbayOrderRecord, share = 1): SaleColumnSplit {
+  const f = hubReconciledFeeSplit(order);
+  const mul = (value: number) => roundMoney(value * share);
+  return {
+    totalEur: mul(f.buyerTotalEur),
+    buyerShippingEur: f.buyerShippingEur != null ? mul(f.buyerShippingEur) : 0,
+    adFeeEur: mul(f.adFeeEur),
+    ebayFeeEur: mul(f.transactionFeeEur),
+    otherFeeEur: mul(f.otherFeeEur),
+    shippingEur: mul(f.shippingLabelEur),
+    refundEur: mul(f.refundEur),
+    netEur: mul(f.netPayoutEur),
+  };
+}
+
 export function saleProceedsFromOrder(
   order: EbayOrderRecord,
   line: EbayOrderLineItem
 ): SaleProceedsBreakdown {
   const payout = getLinePayout(order, line);
+  const itemGrossEur = n(line.lineItemCost ?? payout.gross);
+  const multi = order.lineItems.length > 1;
+  const fromLines = order.lineItems.reduce((sum, li) => sum + (Number(li.lineItemCost) || 0), 0);
+  const share =
+    multi && fromLines > 0.01 && itemGrossEur != null && itemGrossEur > 0
+      ? itemGrossEur / fromLines
+      : 1;
+  const isHub = order.sources?.includes('hub');
+
+  if (isHub && Math.abs(share - 1) < 1e-9) {
+    const f = hubReconciledFeeSplit(order);
+    return {
+      capturedAt: new Date().toISOString(),
+      source: 'ebay_seller_hub',
+      itemGrossEur: f.itemGrossEur ?? itemGrossEur,
+      buyerShippingEur: f.buyerShippingEur,
+      buyerTotalEur: f.buyerTotalEur,
+      transactionFeeEur: f.transactionFeeEur >= 0.01 ? f.transactionFeeEur : null,
+      adFeeEur: f.adFeeEur >= 0.01 ? f.adFeeEur : null,
+      shippingLabelEur: f.shippingLabelEur >= 0.01 ? f.shippingLabelEur : null,
+      otherFeeEur: f.otherFeeEur >= 0.01 ? f.otherFeeEur : null,
+      refundEur: f.refundEur >= 0.01 ? f.refundEur : null,
+      netPayoutEur: f.netPayoutEur,
+      feesEstimated: false,
+    };
+  }
+
   let tx = 0;
   let ads = 0;
   let label = 0;
@@ -265,15 +438,6 @@ export function saleProceedsFromOrder(
     else if (bucket === 'tx') tx += abs;
     else other += abs;
   }
-
-  const itemGrossEur = n(line.lineItemCost ?? payout.gross);
-  const multi = order.lineItems.length > 1;
-  const fromLines = order.lineItems.reduce((sum, li) => sum + (Number(li.lineItemCost) || 0), 0);
-  // Same share as getLinePayout — never hang the whole order total on one line.
-  const share =
-    multi && fromLines > 0.01 && itemGrossEur != null && itemGrossEur > 0
-      ? itemGrossEur / fromLines
-      : 1;
 
   if (multi && Math.abs(share - 1) > 1e-9) {
     tx = roundMoney(tx * share);
@@ -312,9 +476,17 @@ export function saleProceedsFromOrder(
   const refundEur =
     orderRefund >= 0.01 ? n(multi ? orderRefund * share : orderRefund) : null;
 
+  const orderBestelleinnahmen = isHub ? getHubBestelleinnahmen(order) : payout.net;
+  const resolvedNet =
+    orderBestelleinnahmen != null
+      ? n(Math.abs(share - 1) < 1e-9 ? orderBestelleinnahmen : roundMoney(orderBestelleinnahmen * share))
+      : payout.netKnown
+        ? n(payout.net)
+        : null;
+
   return {
     capturedAt: new Date().toISOString(),
-    source: order.sources?.includes('hub') ? 'ebay_seller_hub' : 'ebay_order',
+    source: isHub ? 'ebay_seller_hub' : 'ebay_order',
     itemGrossEur,
     buyerShippingEur,
     buyerTotalEur,
@@ -323,9 +495,38 @@ export function saleProceedsFromOrder(
     shippingLabelEur: n(label),
     otherFeeEur: useEstimatedFee ? null : otherFeeEur,
     refundEur,
-    netPayoutEur: payout.netKnown ? n(payout.net) : null,
+    netPayoutEur: resolvedNet,
     feesEstimated: useEstimatedFee,
   };
+}
+
+/**
+ * When saleProceeds has itemized buckets (label / ads / other) but transactionFeeEur
+ * was stored as null, do not dump the whole feeAmount into transactionFeeEur —
+ * feeAmount already includes the label (Abrechnung link), which would show −€6.19
+ * delivery and −€6.19 eBay for the same Versandetikett.
+ */
+function inferTransactionFeeFromLump(
+  feeAmount: number | null,
+  stored: SaleProceedsBreakdown | null | undefined,
+  fallbackLabelEur: number | null
+): number | null {
+  const storedTx = n(stored?.transactionFeeEur);
+  if (storedTx != null) return storedTx;
+  if (feeAmount == null) return null;
+
+  const ad = n(stored?.adFeeEur);
+  const label = n(stored?.shippingLabelEur) ?? fallbackLabelEur;
+  const other = n(stored?.otherFeeEur);
+  const hasItemized =
+    stored?.adFeeEur != null || stored?.shippingLabelEur != null || stored?.otherFeeEur != null || fallbackLabelEur != null;
+
+  if (!hasItemized) return feeAmount;
+
+  const peeled = roundMoney(
+    Math.max(0, feeAmount - Math.abs(ad ?? 0) - Math.abs(label ?? 0) - Math.abs(other ?? 0))
+  );
+  return peeled >= 0.005 ? peeled : null;
 }
 
 export function saleProceedsFromItemFields(item: InventoryItem): SaleProceedsBreakdown {
@@ -341,19 +542,18 @@ export function saleProceedsFromItemFields(item: InventoryItem): SaleProceedsBre
         ? roundMoney(itemGrossEur + (buyerShippingEur ?? 0))
         : itemGrossEur;
   const refundEur = n(stored?.refundEur);
+  const resolvedLabel = n(stored?.shippingLabelEur) ?? shippingLabelEur;
+  const resolvedTx = inferTransactionFeeFromLump(fee, stored, shippingLabelEur);
+  const feeTotalForNet =
+    Math.abs(resolvedTx ?? 0) +
+    Math.abs(n(stored?.adFeeEur) ?? 0) +
+    Math.abs(resolvedLabel ?? 0) +
+    Math.abs(n(stored?.otherFeeEur) ?? 0);
   const netPayoutEur =
     n(stored?.netPayoutEur) != null
-      ? netPayoutAfterRefund(
-          buyerTotalEur,
-          Math.abs(n(stored?.transactionFeeEur) ?? fee ?? 0) +
-            Math.abs(n(stored?.adFeeEur) ?? 0) +
-            Math.abs(n(stored?.shippingLabelEur) ?? shippingLabelEur ?? 0) +
-            Math.abs(n(stored?.otherFeeEur) ?? 0),
-          n(stored?.netPayoutEur),
-          refundEur ?? 0
-        )
+      ? netPayoutAfterRefund(buyerTotalEur, feeTotalForNet, n(stored?.netPayoutEur), refundEur ?? 0)
       : itemGrossEur != null
-        ? roundMoney(itemGrossEur - (fee ?? 0) - (shippingLabelEur ?? 0) - (refundEur ?? 0))
+        ? roundMoney(itemGrossEur - feeTotalForNet - (refundEur ?? 0))
         : null;
   return {
     capturedAt: stored?.capturedAt || new Date().toISOString(),
@@ -361,9 +561,9 @@ export function saleProceedsFromItemFields(item: InventoryItem): SaleProceedsBre
     itemGrossEur: n(stored?.itemGrossEur) ?? itemGrossEur,
     buyerShippingEur,
     buyerTotalEur,
-    transactionFeeEur: n(stored?.transactionFeeEur) ?? (stored?.adFeeEur == null ? fee : null),
+    transactionFeeEur: resolvedTx,
     adFeeEur: n(stored?.adFeeEur),
-    shippingLabelEur: n(stored?.shippingLabelEur) ?? shippingLabelEur,
+    shippingLabelEur: resolvedLabel,
     otherFeeEur: n(stored?.otherFeeEur),
     refundEur: n(stored?.refundEur),
     netPayoutEur,
@@ -395,7 +595,11 @@ export function saleColumnSplit(
   const display = extras?.displaySellEur ?? item.sellPrice;
   if (display == null || !Number.isFinite(display)) return null;
   const p = resolveSaleProceeds(item);
-  const total = n(p?.buyerTotalEur) ?? roundMoney(display);
+  const storedTotal = n(p?.buyerTotalEur);
+  const total =
+    extras?.displaySellEur != null && Number.isFinite(extras.displaySellEur)
+      ? roundMoney(extras.displaySellEur)
+      : storedTotal ?? roundMoney(display);
   let adFeeEur = Math.abs(n(p?.adFeeEur) ?? 0);
   let ebayFeeEur = Math.abs(n(p?.transactionFeeEur) ?? 0);
   let otherFeeEur = Math.abs(n(p?.otherFeeEur) ?? 0);
@@ -424,7 +628,33 @@ export function saleColumnSplit(
     }
   }
   const feeTotal = adFeeEur + ebayFeeEur + otherFeeEur + shippingEur;
-  const netEur = netPayoutAfterRefund(total, feeTotal, n(p?.netPayoutEur), refundEur);
+  const hubNet = p?.source === 'ebay_seller_hub' ? n(p?.netPayoutEur) : null;
+  let netEur =
+    hubNet != null
+      ? hubNet
+      : netPayoutAfterRefund(total, feeTotal, n(p?.netPayoutEur), refundEur);
+  if (netEur != null && Math.abs(netEur - total) < 0.02 && feeTotal >= 0.01) {
+    netEur = roundMoney(Math.max(0, total - feeTotal - refundEur));
+  }
+  const lumpFee = roundMoney(Math.abs(Number(item.feeAmount) || 0));
+  if (
+    netEur != null &&
+    Math.abs(netEur - total) < 0.02 &&
+    lumpFee >= 0.01 &&
+    feeTotal < 0.01
+  ) {
+    netEur = roundMoney(Math.max(0, total - lumpFee - refundEur));
+  }
+  const storedNet = n(p?.netPayoutEur);
+  if (
+    p?.source !== 'ebay_seller_hub' &&
+    storedTotal != null &&
+    storedTotal > 0.01 &&
+    storedNet != null &&
+    Math.abs(storedTotal - total) >= 0.05
+  ) {
+    netEur = roundMoney(storedNet * (total / storedTotal));
+  }
   return {
     totalEur: total,
     buyerShippingEur: Math.abs(n(p?.buyerShippingEur) ?? 0),
@@ -452,6 +682,11 @@ export function saleProceedsRows(p: SaleProceedsBreakdown): SaleProceedsRow[] {
   if (ship != null && Math.abs(ship) >= 0.01) {
     rows.push({ id: 'buyer-ship', label: 'Versand (Käufer)', amount: ship, tone: 'in' });
   }
+  const refund = p.refundEur != null && Math.abs(p.refundEur) >= 0.01 ? Math.abs(p.refundEur) : 0;
+  const refundInBuyerTotal = buyerTotalAlreadyNetsRefund(item, ship, refund, p.buyerTotalEur);
+  if (refundInBuyerTotal) {
+    rows.push({ id: 'refund', label: 'Rückerstattung', amount: -refund, tone: 'out' });
+  }
   const buyerTotal = p.buyerTotalEur ?? sumKnown(item, ship);
   if (buyerTotal != null && (ship != null || p.buyerTotalEur != null)) {
     rows.push({ id: 'buyer-total', label: 'Vom Käufer bezahlt', amount: buyerTotal, tone: 'total' });
@@ -468,8 +703,8 @@ export function saleProceedsRows(p: SaleProceedsBreakdown): SaleProceedsRow[] {
   if (p.shippingLabelEur != null && Math.abs(p.shippingLabelEur) >= 0.01) {
     rows.push({ id: 'label', label: 'Versandetikett', amount: -Math.abs(p.shippingLabelEur), tone: 'out' });
   }
-  if (p.refundEur != null && Math.abs(p.refundEur) >= 0.01) {
-    rows.push({ id: 'refund', label: 'Erstattet', amount: -Math.abs(p.refundEur), tone: 'out' });
+  if (refund >= 0.01 && !refundInBuyerTotal) {
+    rows.push({ id: 'refund', label: 'Erstattet', amount: -refund, tone: 'out' });
   }
   if (p.netPayoutEur != null) {
     rows.push({ id: 'net', label: 'Bestelleinnahmen', amount: p.netPayoutEur, tone: 'net' });

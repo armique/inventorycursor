@@ -2,7 +2,7 @@ import type { InventoryItem, TaxMode } from '../types';
 import { fetchEbayOrder } from '../services/ebayService';
 import { fetchEbaySellerHubPayout, type SellerHubFetchCandidate } from '../services/ebaySellerHubFetch';
 import type { EbayOrderRecord } from '../services/ebayOrderIndex';
-import { applyEbayOrderMatchToItem } from './applyEbayOrderMatch';
+import { linkInventoryItemToEbayOrder } from './linkInventoryItemToEbayOrder';
 import { getLinePayout } from './ebayOrderPayout';
 import { persistHubPayoutOnCachedOrder } from './ebaySellerHubOrderCache';
 import type { EbayOrderMatch } from './ebayOrderMatch';
@@ -78,7 +78,7 @@ export async function bindEbayOrderExact(
   taxMode: TaxMode
 ): Promise<BindEbayOrderExactResult> {
   if (alreadyHasExactPayout(match) && alreadyHasBuyer(match)) {
-    return { ok: true, item: applyEbayOrderMatchToItem(item, match, taxMode), source: 'cache' };
+    return { ok: true, item: linkInventoryItemToEbayOrder(item, match, taxMode), source: 'cache' };
   }
 
   const buyerPromise = enrichBuyerFromApi(match.order);
@@ -87,7 +87,7 @@ export async function bindEbayOrderExact(
     const order = await buyerPromise;
     return {
       ok: true,
-      item: applyEbayOrderMatchToItem(item, { ...match, order }, taxMode),
+      item: linkInventoryItemToEbayOrder(item, { ...match, order }, taxMode),
       source: 'cache',
     };
   }
@@ -118,7 +118,7 @@ export async function bindEbayOrderExact(
   const order = persistHubPayoutOnCachedOrder(orderWithBuyer, hub.payout);
   return {
     ok: true,
-    item: applyEbayOrderMatchToItem(item, { ...match, order }, taxMode),
+    item: linkInventoryItemToEbayOrder(item, { ...match, order }, taxMode),
     source: 'seller_hub',
   };
 }

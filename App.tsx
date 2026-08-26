@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
+﻿import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense, startTransition } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useSearchParams, useNavigate } from 'react-router-dom';
 import { Cloud, CheckCircle2, Loader2, WifiOff, RefreshCw, X } from 'lucide-react';
 
@@ -29,6 +29,7 @@ const ProductCardGalleryPage = lazy(() => import('./components/ProductCardGaller
 const BulkImportHistoryPage = lazy(() => import('./components/BulkImportHistoryPage'));
 const SellTodayPage = lazy(() => import('./components/SellTodayPage'));
 const EbayOrdersPage = lazy(() => import('./components/EbayOrdersPage'));
+const EbayAbrechnungPage = lazy(() => import('./components/EbayAbrechnungPage'));
 const EditItemRoute = lazy(() => import('./components/EditItemRoute'));
 const AddHubPage = lazy(() => import('./components/AddHubPage'));
 const AddItemRoute = lazy(() => import('./components/AddItemRoute'));
@@ -50,7 +51,7 @@ import {
   snapshotThreeDPrintCloudNow,
   type ThreeDPrintCloudState,
 } from './services/threeDPrintCloud';
-import { isCloudEnabled, onAuthChange, subscribeToData, writeToCloud, writeStoreCatalog, getSyncErrorMessage, CLOUD_OMITTED_PLACEHOLDER, fetchFromCloud, fetchGamificationState, writeGamificationState, completeGoogleRedirectSignIn, consumeAuthReturnPath, consumeRedirectPending, getAuthErrorMessage } from './services/firebaseService';
+import { isCloudEnabled, onAuthChange, subscribeToData, writeToCloud, writeStoreCatalog, getSyncErrorMessage, CLOUD_OMITTED_PLACEHOLDER, fetchGamificationState, writeGamificationState, completeGoogleRedirectSignIn, consumeAuthReturnPath, consumeRedirectPending, getAuthErrorMessage } from './services/firebaseService';
 import {
   defaultGamificationState,
   ensureFreshDay,
@@ -65,23 +66,36 @@ import { pullPurchaseIndexFromCloud } from './services/ebayPurchaseIndex';
 import { ensureEbayListings, pullListingIndexFromCloud } from './services/ebayListingIndex';
 import { hydrateHubArchiveIndex } from './services/ebayHubArchiveIndex';
 import { syncHubArchiveWithCloud } from './services/ebayHubArchiveSync';
+import { syncEbayTxReportsWithCloud } from './services/ebayTransactionReportSync';
+import { runEbayTxDailyCsvExport } from './services/ebayTxDailyExport';
 import { ensureKaListings } from './services/kleinanzeigenListingIndex';
 import { DEFAULT_CATEGORIES } from './services/constants';
 import { migrateCategoriesRecord, migrateContainerItem } from './utils/containerTaxonomy';
+import { todayLocalDateKey } from './utils/calendarDate';
+import { buildFullBackupPayload, downloadFullBackupJson } from './utils/fullBackupExport';
+import {
+  loadInventoryItemsForBoot,
+  writeInventoryItemsToDB,
+  appendPendingItemPatches,
+  readPendingItemPatches,
+  clearPendingItemPatches,
+  setInventoryItemsStaleListener,
+} from './services/inventoryItemsStore';
 import {
   migrateLegacyGpuSubcategoryNames,
   renameCategoryInCatalog,
   renameSubcategoryInCatalog,
 } from './utils/categoryRename';
 import { appendPriceHistoryIfChanged, mergeItemAuditFields } from './services/priceHistory';
-import { withSyncedRealizedProfit } from './services/financialAggregation';
+import { withSyncedRealizedProfit, healRealizedProfitsFromSaleProceeds } from './services/financialAggregation';
 import { syncContainerBuyTotalsFromComponents } from './services/containerAggregates';
 import { syncContainerSaleMetaToChildren } from './utils/containerSaleCascade';
+import { planAbrechnungMistakenLinkHeals } from './utils/itemSaleCycle';
 import { enforceContainerMembershipInvariants, findEmptyContainerShellIds } from './utils/containerMembershipInvariants';
 import { applyTradeRevert } from './services/tradeRevert';
 import { mergeTradeActionEntries } from './services/tradeActionHistory';
 import { applyUnsoldRestock, loadRefundOrdersForRestock, pruneActionHistory } from './services/saleRevert';
-import { saveOAuthResult } from './services/githubBackupService';
+import { saveOAuthResult, getStoredConfig as getStoredGitHubBackupConfig, runDailyGitHubBackupIfDue } from './services/githubBackupService';
 import { exchangeEbayAuthorizationCode } from './services/ebayService';
 import { generateExpensesFromRecurring } from './services/recurringExpenseService';
 import { Analytics } from '@vercel/analytics/react';
@@ -93,7 +107,11 @@ import {
 } from './utils/marketplaceCredentialsSync';
 import { UndoToastProvider, useUndoToastContext } from './context/UndoToastContext';
 import { appendUndoHistory, makeUndoSnapshot, type UndoSnapshot } from './utils/appendUndoHistory';
-import { persistSnapshotToLocalStorage, scheduleBackgroundWork } from './services/backgroundPersistence';
+import {
+  persistSnapshotToLocalStorage,
+  scheduleBackgroundWork,
+  yieldToMain,
+} from './services/backgroundPersistence';
 import { scheduleItemSalesPoolRebuild } from './utils/itemSalesPool';
 import { buildStoreCatalog } from './utils/storefrontCatalog';
 import {
@@ -109,14 +127,18 @@ import {
 import {
   CONTAINER_BUY_DATE_BACKFILL_KEY,
   backfillContainerBuyDates,
+  countBlankContainerBuyDates,
   preferFilledContainerBuyDate,
 } from './utils/backfillContainerBuyDates';
 import { applyHealthInsuranceLedger } from './utils/healthInsuranceLedger';
 import { applyCrucialRamInvoiceSaleFix } from './utils/crucialRamInvoiceSaleFix';
+import { applyAsusGtx1080RogStrixHubSaleFix } from './utils/asusGtx1080RogStrixHubSaleFix';
+import { applyRx6500XtHubSellSync } from './utils/rx6500XtHubSellSync';
 import { restoreIntegralRamKit, INTEGRAL_RAM_KIT_ID } from './utils/restoreIntegralRamKit';
 import { restoreAsusA320mPcSale } from './utils/restoreAsusA320mPcSale';
+import { applySamsungEvo840RefundResale } from './utils/applySamsungEvo840RefundResale';
 import { healActiveContainerPartMembership } from './utils/healActiveContainerPartMembership';
-import { localInventoryAheadOfRemote } from './utils/inventoryCloudPush';
+import { localInventoryAheadOfRemote, inventoryLooksUnchanged, expenseListLooksUnchanged, mergeItemsPreservingReferences } from './utils/inventoryCloudPush';
 import { addRecentItemId } from './services/recentItemsService';
 import { mergeBusinessSettings } from './utils/mergeBusinessSettings';
 import {
@@ -131,6 +153,7 @@ import {
   REMOTE_APPLY_SUPPRESS_MS,
   REMOTE_ECHO_TOLERANCE_MS,
   BULK_IMPORT_SYNC_FLUSH_MS,
+  inventoryCloudDebounceMs,
   resolveCloudFlushDelay,
   shouldFlushCloudSoon,
   shouldAcceptRemoteSnapshot,
@@ -143,6 +166,60 @@ import {
 } from './utils/cloudSyncStatus';
 
 const ACTION_HISTORY_LIMIT = 400;
+
+const ALL_INVENTORY_STATUSES = [
+  ItemStatus.IN_STOCK,
+  ItemStatus.SOLD,
+  ItemStatus.TRADED,
+  ItemStatus.GIFTED,
+  ItemStatus.ORDERED,
+  ItemStatus.IN_COMPOSITION,
+];
+
+function smallJsonLooksUnchanged(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch {
+    return false;
+  }
+}
+
+function actionHistoryLooksUnchanged(
+  a: ActionHistoryEntry[],
+  b: ActionHistoryEntry[]
+): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i]?.id !== b[i]?.id || a[i]?.timestamp !== b[i]?.timestamp) return false;
+  }
+  return true;
+}
+
+function recurringLooksUnchanged(a: RecurringExpense[], b: RecurringExpense[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i];
+    const y = b[i];
+    if (x === y) continue;
+    if (!x || !y || x.id !== y.id) return false;
+    if (x.monthlyAmount !== y.monthlyAmount || (x.lastGeneratedDate || '') !== (y.lastGeneratedDate || '')) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function bulkImportIdsLookUnchanged(a: BulkImportRecord[], b: BulkImportRecord[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i]?.id !== b[i]?.id) return false;
+  }
+  return true;
+}
 
 type AppSyncSnapshot = {
   items: InventoryItem[];
@@ -280,6 +357,7 @@ function EbayOAuthCallback() {
 function GoogleAuthRedirectBootstrap() {
   const navigate = useNavigate();
   useEffect(() => {
+    if (!isCloudEnabled()) return;
     let cancelled = false;
     (async () => {
       try {
@@ -369,8 +447,8 @@ function GitHubOAuthCallback() {
 
 export { DEFAULT_CATEGORIES, HIERARCHY_CATEGORIES } from './services/constants';
 
-function recomputeRealizedProfit(item: InventoryItem, taxMode: TaxMode): InventoryItem {
-  return withSyncedRealizedProfit(item, taxMode);
+function recomputeRealizedProfit(item: InventoryItem): InventoryItem {
+  return withSyncedRealizedProfit(item);
 }
 
 function makeActionEntry(action: string, item?: InventoryItem, details?: string, timestampIso?: string): ActionHistoryEntry {
@@ -474,7 +552,7 @@ const App: React.FC = () => {
     },
     [categories, categoryFields, items]
   );
-  
+
   const [businessSettings, setBusinessSettings] = useState<BusinessSettings>(() => {
     const saved = localStorage.getItem('business_settings');
     const base: BusinessSettings = saved
@@ -534,6 +612,24 @@ const App: React.FC = () => {
   });
 
   const [dashboardPrefs, setDashboardPrefs] = useState<DashboardPreferences>(() => loadDashboardPreferencesFromLocalStorage());
+
+  const handleDownloadInventoryBackup = useCallback(() => {
+    downloadFullBackupJson(
+      buildFullBackupPayload({
+        items,
+        trash,
+        expenses,
+        businessSettings,
+        monthlyGoal,
+        categories,
+        categoryFields,
+        dashboardPreferences: dashboardPrefs,
+        actionHistory,
+        bulkImports,
+      })
+    );
+  }, [items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields, dashboardPrefs, actionHistory, bulkImports]);
+
   const [threeDPrintCloud, setThreeDPrintCloud] = useState<ThreeDPrintCloudState>(() => composeThreeDPrintCloudFromLocal());
   const applyingRemote3dRef = useRef(false);
   const [gamification, setGamificationState] = useState<GamificationState>(() =>
@@ -541,22 +637,27 @@ const App: React.FC = () => {
   );
   const gamificationPulledRef = useRef(false);
   const dailyBackupRanRef = useRef(false);
+  const dailyGitHubBackupRanRef = useRef(false);
+  const ebayTxDailyExportRanRef = useRef(false);
   const gamificationWriteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const updateGamification = useCallback((updater: (prev: GamificationState) => GamificationState) => {
     setGamificationState((prev) => {
       const next = ensureFreshMonth(ensureFreshDay(updater(ensureFreshDay(prev))));
       saveGamificationStateLocal(next);
-      if (gamificationWriteTimer.current) clearTimeout(gamificationWriteTimer.current);
-      gamificationWriteTimer.current = setTimeout(() => {
-        writeGamificationState(next as unknown as Record<string, unknown>).catch((e) =>
-          console.warn('Gamification cloud write failed:', e),
-        );
-      }, 1500);
+      if (isCloudEnabled()) {
+        if (gamificationWriteTimer.current) clearTimeout(gamificationWriteTimer.current);
+        gamificationWriteTimer.current = setTimeout(() => {
+          writeGamificationState(next as unknown as Record<string, unknown>).catch((e) =>
+            console.warn('Gamification cloud write failed:', e),
+          );
+        }, 1500);
+      }
       return next;
     });
   }, []);
   const dashboardPrefsRef = useRef(dashboardPrefs);
   const threeDPrintCloudRef = useRef(threeDPrintCloud);
+  const threeDPrintCloudSeededRef = useRef(false);
   const actionHistoryRef = useRef<ActionHistoryEntry[]>(loadActionHistoryFromStorage());
   const bulkImportsRef = useRef<BulkImportRecord[]>(loadBulkImportsFromStorage());
   useEffect(() => {
@@ -589,6 +690,18 @@ const App: React.FC = () => {
   const [bootError, setBootError] = useState<string>('');
   const [refreshKey, setRefreshKey] = useState(0);
   const [backupBannerDismissed, setBackupBannerDismissed] = useState(() => localStorage.getItem('cloud_backup_banner_dismissed') === '1');
+  /** Set when another tab/window has saved newer inventory data than this tab has — this
+   *  tab has stopped autosaving to avoid overwriting it. Reload to pick up the latest. */
+  const [tabDataStale, setTabDataStale] = useState(false);
+  const [hubArchiveVersion, setHubArchiveVersion] = useState(0);
+  const hubAutoHealVersionRef = useRef(0);
+  const hubAutoHealArmedRef = useRef(false);
+  const abrechnungHealDoneRef = useRef(false);
+  /** One-shot historical item heals — must not rescan inventory on every edit (freezes scroll/UI). */
+  const inventoryBootHealsDoneRef = useRef(false);
+  const containerMembershipBootHealDoneRef = useRef(false);
+  const bulkImportCrossLinkDoneRef = useRef(false);
+  const healthInsuranceLedgerDoneRef = useRef(false);
   
   const [authUser, setAuthUser] = useState<any>(null);
   // Tracks when Firebase auth has completed its initial check (so we don't flash the login screen before session restore).
@@ -611,6 +724,8 @@ const App: React.FC = () => {
   /** After remote merge, push if this device had bulk-import history cloud lacked. */
   const pendingCloudPushAfterRemoteRef = useRef(false);
   const writeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dashboardCloudDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const runSilentCloudSyncRef = useRef<(() => Promise<void>) | null>(null);
   const localPersistDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Next cloud write delay; discrete actions set FAST_CLOUD_FLUSH_MS before setState. */
   const preferredCloudFlushMsRef = useRef(WRITE_DEBOUNCE_MS);
@@ -618,7 +733,13 @@ const App: React.FC = () => {
   const initialWriteDoneRef = useRef(false);
   /** Blocks cloud uploads until the first pull finishes (prevents empty-phone wipe). */
   const cloudHydratedRef = useRef(!isCloudEnabled());
+  const [cloudHydrated, setCloudHydrated] = useState(!isCloudEnabled());
+  const markCloudHydrated = useCallback(() => {
+    cloudHydratedRef.current = true;
+    setCloudHydrated(true);
+  }, []);
   const ebayOrderIndexPulledRef = useRef(false);
+  const ebayTxReportsPulledRef = useRef(false);
   const ebayListingDailyRefreshTriedRef = useRef(false);
   const kaListingDailyRefreshTriedRef = useRef(false);
   const storeCatalogPublishDoneRef = useRef(false);
@@ -672,6 +793,25 @@ const App: React.FC = () => {
     );
   }, []);
 
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const api = {
+      suppressCloudPull: (ms = REMOTE_APPLY_SUPPRESS_MS * 3) => {
+        suppressRemoteApplyUntilRef.current = Date.now() + ms;
+      },
+      flushCloudNow: async () => {
+        hasUnsavedChanges.current = true;
+        requestFastCloudFlush();
+        if (writeDebounceRef.current) clearTimeout(writeDebounceRef.current);
+        await runSilentCloudSyncRef.current?.();
+      },
+    };
+    (window as unknown as { __inventoryDev?: typeof api }).__inventoryDev = api;
+    return () => {
+      delete (window as unknown as { __inventoryDev?: typeof api }).__inventoryDev;
+    };
+  }, [requestFastCloudFlush]);
+
   const markCloudDirty = useCallback(() => {
     hasUnsavedChanges.current = true;
     requestFastCloudFlush();
@@ -707,7 +847,7 @@ const App: React.FC = () => {
 
   // Public storefront catalog is rebuilt from inventory via debounced publishStoreCatalog / writeStoreCatalog.
 
-  const saveToLocalStorage = (
+  const saveToLocalStorage = async (
     newItems: InventoryItem[],
     newTrash: InventoryItem[],
     newExpenses: Expense[],
@@ -727,7 +867,12 @@ const App: React.FC = () => {
     bulkImportsRef.current = bi;
     localStorage.setItem('action_history', JSON.stringify(ah));
     localStorage.setItem('bulk_imports', JSON.stringify(bi));
-    localStorage.setItem('inventory_items', JSON.stringify(newItems));
+    try {
+      await writeInventoryItemsToDB(newItems);
+      clearPendingItemPatches();
+    } catch (e) {
+      console.warn('[persist] saveToLocalStorage: IndexedDB items write failed:', e);
+    }
     localStorage.setItem('inventory_trash', JSON.stringify(newTrash));
     localStorage.setItem('inventory_expenses', JSON.stringify(newExpenses));
     localStorage.setItem('business_settings', JSON.stringify(newSettings));
@@ -878,72 +1023,128 @@ const App: React.FC = () => {
 
   const applyRemoteData = useCallback((data: any) => {
     if (!data) return;
-    isRemoteUpdate.current = true;
     const remoteInv = (data.inventory || []) as InventoryItem[];
     const remoteTrash = (data.trash || []) as InventoryItem[];
     const localItems = itemsRef.current;
     const localTrash = trashRef.current;
-    const inv = mergeInventoryWithLocal(remoteInv, localItems);
-    const tr = mergeInventoryWithLocal(remoteTrash, localTrash);
-    if (
+    const ahead =
       localInventoryAheadOfRemote(remoteInv, localItems) ||
-      localInventoryAheadOfRemote(remoteTrash, localTrash)
-    ) {
+      localInventoryAheadOfRemote(remoteTrash, localTrash);
+    if (ahead) {
       pendingCloudPushAfterRemoteRef.current = true;
       hasUnsavedChanges.current = true;
       requestFastCloudFlush();
     }
+    const inventoryMatchesRemote =
+      inventoryLooksUnchanged(localItems, remoteInv) &&
+      inventoryLooksUnchanged(localTrash, remoteTrash);
+
     const localExpenses = expensesRef.current;
     const remoteExpenses = (data.expenses || []) as Expense[];
     const exp = mergeExpensesFromLocal(remoteExpenses, localExpenses);
     const remoteRecurring = (data.recurringExpenses || []) as RecurringExpense[];
     const localRecurring = recurringExpensesRef.current;
-    // Merge recurring expenses by ID (remote wins on conflicts)
     const recurringMap = new Map<string, RecurringExpense>();
-    localRecurring.forEach(r => { if (r && r.id) recurringMap.set(r.id, r); });
-    remoteRecurring.forEach(r => { if (r && r.id) recurringMap.set(r.id, r); });
+    localRecurring.forEach((r) => {
+      if (r && r.id) recurringMap.set(r.id, r);
+    });
+    remoteRecurring.forEach((r) => {
+      if (r && r.id) recurringMap.set(r.id, r);
+    });
     const recurring = Array.from(recurringMap.values());
     const sets = data.settings || {};
     const goal = data.goals?.monthly ?? monthlyGoalRef.current;
     const cats = data.categories || categoriesRef.current;
     const fields = data.categoryFields || categoryFieldsRef.current;
-    let dashToSave: DashboardPreferences;
+    let dashToSave: DashboardPreferences = dashboardPrefsRef.current;
     if (data.dashboard != null) {
       dashToSave = normalizeDashboardPreferences(data.dashboard);
-      setDashboardPrefs(dashToSave);
-    } else {
-      dashToSave = dashboardPrefsRef.current;
     }
     const localAH = actionHistoryRef.current;
     const remoteAH = Array.isArray(data.actionHistory) ? (data.actionHistory as ActionHistoryEntry[]) : [];
     const mergedAH = mergeActionHistoryFromLocal(remoteAH, localAH).slice(-ACTION_HISTORY_LIMIT);
-    setActionHistory(mergedAH);
-    actionHistoryRef.current = mergedAH;
     const localBI = bulkImportsRef.current;
     const remoteBI = Array.isArray(data.bulkImports) ? (data.bulkImports as BulkImportRecord[]) : [];
     const mergedBI = mergeBulkImportsFromLocal(remoteBI, localBI).slice(0, BULK_IMPORTS_LIMIT);
-    setBulkImports(mergedBI);
-    bulkImportsRef.current = mergedBI;
-    // If this device had history (or richer rows) the cloud snapshot lacked, push after apply.
-    if (localBulkImportsNeedCloudPush(mergedBI, remoteBI)) {
+    if (localBulkImportsNeedCloudPush(mergedBI, remoteBI) && !inventoryMatchesRemote) {
       pendingCloudPushAfterRemoteRef.current = true;
       hasUnsavedChanges.current = true;
     }
+
     if (data.threeDPrint != null) {
       const merged3d = mergeThreeDPrintCloud(data.threeDPrint, threeDPrintCloudRef.current);
       applyingRemote3dRef.current = true;
       const saved3d = persistThreeDPrintCloudState(merged3d.state);
       applyingRemote3dRef.current = false;
-      setThreeDPrintCloud(saved3d);
-      threeDPrintCloudRef.current = saved3d;
+      if (saved3d !== threeDPrintCloudRef.current) {
+        setThreeDPrintCloud(saved3d);
+        threeDPrintCloudRef.current = saved3d;
+      }
       if (merged3d.localNewer) {
         pendingCloudPushAfterRemoteRef.current = true;
         hasUnsavedChanges.current = true;
       }
-    } else {
+    } else if (!inventoryMatchesRemote && threeDPrintCloudRef.current && !threeDPrintCloudSeededRef.current) {
+      threeDPrintCloudSeededRef.current = true;
       pendingCloudPushAfterRemoteRef.current = true;
       hasUnsavedChanges.current = true;
     }
+
+    const applyCheapSlices = (flushSettingsDiff: boolean): BusinessSettings => {
+      if (!expenseListLooksUnchanged(localExpenses, exp)) setExpenses(exp);
+      if (!recurringLooksUnchanged(localRecurring, recurring)) setRecurringExpenses(recurring);
+      if (data.dashboard != null && !smallJsonLooksUnchanged(dashboardPrefsRef.current, dashToSave)) {
+        setDashboardPrefs(dashToSave);
+      }
+      if (!actionHistoryLooksUnchanged(localAH, mergedAH)) {
+        setActionHistory(mergedAH);
+        actionHistoryRef.current = mergedAH;
+      }
+      if (!bulkImportIdsLookUnchanged(localBI, mergedBI)) {
+        setBulkImports(mergedBI);
+        bulkImportsRef.current = mergedBI;
+      }
+      const { settings: mergedSettings, keptLocalFilled } = mergeBusinessSettings(
+        businessSettingsRef.current,
+        sets
+      );
+      const stampedSettings = stampInvoiceBusinessProfile(mergedSettings);
+      const nextSettings = stampedSettings.settings;
+      if (!smallJsonLooksUnchanged(businessSettingsRef.current, nextSettings)) {
+        businessSettingsRef.current = nextSettings;
+        setBusinessSettings(nextSettings);
+      }
+      if (!stampedSettings.changed) {
+        markInvoiceBusinessProfileDone();
+      }
+      if (flushSettingsDiff && (keptLocalFilled || stampedSettings.changed)) {
+        pendingCloudPushAfterRemoteRef.current = true;
+        hasUnsavedChanges.current = true;
+        requestFastCloudFlush();
+      }
+      if (goal !== monthlyGoalRef.current) setMonthlyGoal(goal);
+      const nextCats = migrateCategoriesRecord(cats);
+      if (!smallJsonLooksUnchanged(categoriesRef.current, nextCats)) setCategories(nextCats);
+      if (!smallJsonLooksUnchanged(categoryFieldsRef.current, fields)) setCategoryFields(fields);
+      return nextSettings;
+    };
+
+    if (inventoryMatchesRemote) {
+      applyCheapSlices(false);
+      return;
+    }
+
+    isRemoteUpdate.current = true;
+    const inv = mergeInventoryWithLocal(remoteInv, localItems);
+    const tr = mergeInventoryWithLocal(remoteTrash, localTrash);
+    if (
+      inventoryLooksUnchanged(localItems, inv) &&
+      inventoryLooksUnchanged(localTrash, tr)
+    ) {
+      applyCheapSlices(false);
+      return;
+    }
+
     const migratedInv = inv.map(migrateContainerItem);
     const { items: filledInv, updatedCount: filledCount } = backfillContainerBuyDates(migratedInv);
     const ramFix = applyCrucialRamInvoiceSaleFix(filledInv, businessSettingsRef.current.taxMode);
@@ -963,34 +1164,24 @@ const App: React.FC = () => {
         if (!nextTrash.some((t) => t.id === row.id)) nextTrash.push(row);
       }
     }
-    setItems(healedParts.items);
-    setTrash(nextTrash);
+    if (
+      inventoryLooksUnchanged(localItems, healedParts.items) &&
+      inventoryLooksUnchanged(localTrash, nextTrash)
+    ) {
+      applyCheapSlices(false);
+      return;
+    }
+    const nextSettings = applyCheapSlices(true);
+    startTransition(() => {
+      setItems(healedParts.items);
+      setTrash(nextTrash);
+    });
     clearUndoStackRef.current = true;
-    setExpenses(exp);
-    setRecurringExpenses(recurring);
-    const { settings: mergedSettings, keptLocalFilled } = mergeBusinessSettings(
-      businessSettingsRef.current,
-      sets
-    );
-    const stampedSettings = stampInvoiceBusinessProfile(mergedSettings);
-    const nextSettings = stampedSettings.settings;
-    businessSettingsRef.current = nextSettings;
-    setBusinessSettings(nextSettings);
-    if (!stampedSettings.changed) {
-      markInvoiceBusinessProfileDone();
-    }
-    if (keptLocalFilled || stampedSettings.changed) {
-      pendingCloudPushAfterRemoteRef.current = true;
-      hasUnsavedChanges.current = true;
-      requestFastCloudFlush();
-    }
-    setMonthlyGoal(goal);
-    setCategories(migrateCategoriesRecord(cats));
-    setCategoryFields(fields);
-    scheduleBackgroundWork(() =>
-      persistSnapshotToLocalStorage({
-        itemsJson: JSON.stringify(inv),
-        trashJson: JSON.stringify(tr),
+    const persistItems = healedParts.items;
+    scheduleBackgroundWork(async () => {
+      await persistSnapshotToLocalStorage({
+        items: persistItems,
+        trashJson: JSON.stringify(nextTrash),
         expensesJson: JSON.stringify(exp),
         settingsJson: JSON.stringify(nextSettings),
         monthlyGoal: goal.toString(),
@@ -1000,14 +1191,27 @@ const App: React.FC = () => {
         dashboardPrefs: dashToSave,
         actionHistoryJson: JSON.stringify(mergedAH),
         bulkImportsJson: JSON.stringify(mergedBI),
-      })
-    );
+      });
+    });
   }, [mergeActionHistoryFromLocal, mergeExpensesFromLocal, mergeInventoryWithLocal, requestFastCloudFlush]);
+
+  // Another tab/window saved newer inventory data than this tab has — stop autosaving here
+  // and tell the user to reload, instead of silently overwriting the newer save.
+  useEffect(() => {
+    setInventoryItemsStaleListener(() => setTabDataStale(true));
+    return () => setInventoryItemsStaleListener(null);
+  }, []);
 
   // 1. BOOT: load local data and show app immediately; sync with Firestore in background
   useEffect(() => {
-    loadLocalData();
-    setAppState('READY');
+    try {
+      if (localStorage.getItem('deinventory_local_only') !== '0') {
+        localStorage.setItem('deinventory_local_only', '1');
+      }
+    } catch {
+      /* ignore */
+    }
+    void loadLocalData(true).then(() => setAppState('READY'));
     if (!isCloudEnabled()) return;
     let unsubSnapshot: (() => void) | null = null;
     const unsubAuth = onAuthChange((user) => {
@@ -1019,43 +1223,109 @@ const App: React.FC = () => {
       }
       if (!user) {
         initialWriteDoneRef.current = false;
+        threeDPrintCloudSeededRef.current = false;
         cloudHydratedRef.current = !isCloudEnabled();
+        setCloudHydrated(!isCloudEnabled());
         ebayOrderIndexPulledRef.current = false;
+        ebayTxReportsPulledRef.current = false;
         ebayListingDailyRefreshTriedRef.current = false;
         kaListingDailyRefreshTriedRef.current = false;
         setSyncState(prev => ({ ...prev, status: 'idle', message: undefined }));
         return;
       }
-      setSyncState({ status: 'syncing', lastSynced: null, message: 'Connecting…' });
+      setSyncState({ status: 'syncing', lastSynced: null, message: 'Downloading from cloud…' });
+      cloudHydratedRef.current = false;
       unsubSnapshot = subscribeToData(user.uid, (data) => {
-        if (data && shouldApplyRemoteSnapshot(data)) {
-          const remoteTs = data.updatedAt ? Date.parse(data.updatedAt) : NaN;
-          if (
-            Number.isFinite(remoteTs) &&
-            remoteTs > lastLocalPushAtRef.current + REMOTE_ECHO_TOLERANCE_MS
-          ) {
-            // Another device/tab wrote newer data — treat cloud as source of truth.
-            hasUnsavedChanges.current = false;
+        scheduleBackgroundWork(async () => {
+          await yieldToMain();
+          if (data && shouldApplyRemoteSnapshot(data)) {
+            const remoteTs = data.updatedAt ? Date.parse(data.updatedAt) : NaN;
+            if (
+              Number.isFinite(remoteTs) &&
+              remoteTs > lastLocalPushAtRef.current + REMOTE_ECHO_TOLERANCE_MS
+            ) {
+              hasUnsavedChanges.current = false;
+            }
+            applyRemoteData(data);
           }
-          applyRemoteData(data);
-        }
-        if (data) {
-          // Real-time snapshot arrived — safe to upload local edits afterward.
-          cloudHydratedRef.current = true;
-        }
-        remoteSnapshotSeenRef.current = true;
-        setSyncState({ status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED });
+          if (data) {
+            markCloudHydrated();
+            pendingCloudFlushRef.current = false;
+            initialWriteDoneRef.current = true;
+          } else if (!initialWriteDoneRef.current) {
+            initialWriteDoneRef.current = true;
+            const localHasData =
+              itemsRef.current.length > 0 ||
+              trashRef.current.length > 0 ||
+              expensesRef.current.length > 0;
+            if (!localHasData) {
+              markCloudHydrated();
+              pendingCloudFlushRef.current = false;
+            } else {
+              try {
+                const snap = getSyncSnapshot();
+                await writeToCloud({
+                  inventory: snap.items,
+                  trash: snap.trash,
+                  expenses: snap.expenses,
+                  recurringExpenses: snap.recurringExpenses,
+                  categories: snap.categories,
+                  categoryFields: snap.categoryFields,
+                  settings: snap.businessSettings,
+                  goals: { monthly: snap.monthlyGoal },
+                  dashboard: snap.dashboardPrefs,
+                  actionHistory: snap.actionHistory.slice(-ACTION_HISTORY_LIMIT),
+                  bulkImports: snap.bulkImports.slice(0, BULK_IMPORTS_LIMIT),
+                });
+                hasUnsavedChanges.current = false;
+                lastLocalPushAtRef.current = Date.now();
+                markCloudHydrated();
+                pendingCloudFlushRef.current = false;
+                suppressRemoteApplyUntilRef.current = Date.now() + REMOTE_APPLY_SUPPRESS_MS;
+              } catch (err) {
+                initialWriteDoneRef.current = false;
+                cloudHydratedRef.current = false;
+                setSyncState((prev) => ({ ...prev, status: 'error', message: getSyncErrorMessage(err) }));
+                return;
+              }
+            }
+          }
+          remoteSnapshotSeenRef.current = true;
+          setSyncState((prev) => {
+            if (prev.status === 'success' && prev.message === SYNC_MSG_SYNCED) return prev;
+            return { status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED };
+          });
+        });
       });
     });
     return () => {
       if (unsubSnapshot) unsubSnapshot();
       if (unsubAuth) unsubAuth();
     };
-  }, [applyRemoteData, shouldApplyRemoteSnapshot]);
+  }, [applyRemoteData, getSyncSnapshot, shouldApplyRemoteSnapshot]);
 
-  const loadLocalData = () => {
-    const localItems = JSON.parse(localStorage.getItem('inventory_items') || '[]') as InventoryItem[];
-    setItems(localItems.map(migrateContainerItem));
+  /**
+   * `applyPendingPatches` (boot only): the tiny synchronous localStorage log written by
+   * every edit (see handleUpdate) may hold changes newer than the last successful
+   * IndexedDB write, e.g. after a crash between two debounced saves. Merge them in and
+   * mark unsaved so the normal save path immediately re-persists the merged result.
+   */
+  const loadLocalData = async (applyPendingPatches = false) => {
+    const baseItems = await loadInventoryItemsForBoot();
+    let effectiveItems = baseItems;
+    if (applyPendingPatches) {
+      const pending = readPendingItemPatches();
+      if (pending.length) {
+        const byId = new Map(baseItems.map((i) => [i.id, i]));
+        for (const patch of pending) byId.set(patch.id, patch);
+        effectiveItems = Array.from(byId.values());
+        hasUnsavedChanges.current = true;
+      }
+    }
+    const migrated = effectiveItems.map(migrateContainerItem);
+    // Preserve object identity for rows nothing actually changed — see
+    // mergeItemsPreservingReferences for why a wholesale replace here is expensive.
+    setItems(mergeItemsPreservingReferences(itemsRef.current, migrated));
     const localTrash = JSON.parse(localStorage.getItem('inventory_trash') || '[]') as InventoryItem[];
     setTrash(localTrash.map(migrateContainerItem));
     setExpenses(JSON.parse(localStorage.getItem('inventory_expenses') || '[]'));
@@ -1063,6 +1333,21 @@ const App: React.FC = () => {
     setCategories((prev) => migrateCategoriesRecord(prev));
     setBulkImports(loadBulkImportsFromStorage());
   };
+
+  // Live cross-tab sync via the `storage` event is DISABLED. It worked for the write
+  // path itself, but re-running loadLocalData() mid-session put a freshly-merged `items`
+  // array in front of this app's many other items-watching effects (container/backfill
+  // healers, membership sync, etc.) at a point in the render cycle they weren't written
+  // to expect — that's what caused the freeze-then-reload, the flicker, and ultimately a
+  // real data loss (a link vanishing again). Each fix here surfaced a new interaction bug
+  // with those other effects, which isn't an acceptable trade against real order data.
+  // The IndexedDB storage, write-ahead log, and coalescing writes above are unaffected —
+  // your edits are still safe against crashes/refreshes, and refreshing a second tab
+  // (F5) still reliably picks up whatever another tab last saved.
+  //
+  // If cross-tab live sync is revisited later, do it as a pure read-side effect that
+  // never calls setItems() outside the normal boot path — e.g. a lightweight banner
+  // ("newer data available — click to reload") — rather than merging into live state.
 
   // One-time backfill: stamp bulkImportId on legacy bulk-{ts}-{n} items and seed history.
   useEffect(() => {
@@ -1085,20 +1370,24 @@ const App: React.FC = () => {
   }, [appState, items.length]);
 
   // Fill empty Acquired on PC / Bundle / Mixed whenever blanks remain.
-  // Not one-shot: cloud snapshots can wipe local fills, so re-apply until every container has a date.
+  // Re-run only while blanks exist — skip the full scan when every container already has a date.
   useEffect(() => {
     if (appState !== 'READY' || items.length === 0) return;
+    if (isCloudEnabled() && authUser && !cloudHydrated) return;
+    if (countBlankContainerBuyDates(items) === 0) return;
     const { items: next, updatedCount } = backfillContainerBuyDates(items);
     if (updatedCount === 0) return;
     requestFastCloudFlush();
     setItems(next);
     hasUnsavedChanges.current = true;
-  }, [appState, items, requestFastCloudFlush]);
+  }, [appState, authUser, cloudHydrated, items, requestFastCloudFlush]);
 
   // Replace DAK Gesundheit history with bank-accurate rows + start AOK Bayern on the 17th.
   useEffect(() => {
     if (appState !== 'READY') return;
+    if (healthInsuranceLedgerDoneRef.current) return;
     const next = applyHealthInsuranceLedger(expenses, recurringExpenses);
+    healthInsuranceLedgerDoneRef.current = true;
     if (!next.changed) return;
     setExpenses(next.expenses);
     setRecurringExpenses(next.recurring);
@@ -1106,43 +1395,60 @@ const App: React.FC = () => {
     requestFastCloudFlush();
   }, [appState, expenses, recurringExpenses, requestFastCloudFlush]);
 
-  // One historical RAM sale stored eBay net payout as sellPrice — restore buyer total for invoices.
-  useEffect(() => {
-    if (appState !== 'READY' || items.length === 0) return;
-    const next = applyCrucialRamInvoiceSaleFix(items, businessSettings.taxMode);
-    if (!next.changed) return;
-    setItems(next.items);
-    hasUnsavedChanges.current = true;
-    requestFastCloudFlush();
-  }, [appState, items, businessSettings.taxMode, requestFastCloudFlush]);
-
-  // Hub approve dropped this sold kit — put it back at the original Feb 2025 prices.
+  // Historical sale/heal patches — once after cloud hydrate (remote apply runs its own copy).
   useEffect(() => {
     if (appState !== 'READY') return;
-    const next = restoreIntegralRamKit(items, trash);
-    if (!next.changed) return;
-    addRecentItemId(INTEGRAL_RAM_KIT_ID);
-    setItems(next.items);
-    setTrash(next.trash);
+    if (isCloudEnabled() && authUser && !cloudHydrated) return;
+    if (inventoryBootHealsDoneRef.current) return;
+
+    const taxMode = businessSettingsRef.current.taxMode || 'SmallBusiness';
+    let nextItems = itemsRef.current;
+    if (!nextItems.length) return;
+    inventoryBootHealsDoneRef.current = true;
+    let nextTrash = trashRef.current;
+    let changed = false;
+    let clearUndo = false;
+
+    const applyItems = (result: { items: InventoryItem[]; changed: boolean }, opts?: { clearUndo?: boolean }) => {
+      if (!result.changed) return;
+      nextItems = result.items;
+      changed = true;
+      if (opts?.clearUndo) clearUndo = true;
+    };
+
+    applyItems(applyCrucialRamInvoiceSaleFix(nextItems, taxMode));
+    applyItems(applyAsusGtx1080RogStrixHubSaleFix(nextItems, taxMode));
+    applyItems(applyRx6500XtHubSellSync(nextItems, taxMode));
+    applyItems(applySamsungEvo840RefundResale(nextItems, taxMode), { clearUndo: true });
+
+    const integralKit = restoreIntegralRamKit(nextItems, nextTrash);
+    if (integralKit.changed) {
+      nextItems = integralKit.items;
+      nextTrash = integralKit.trash;
+      changed = true;
+      addRecentItemId(INTEGRAL_RAM_KIT_ID);
+    }
+
+    applyItems(restoreAsusA320mPcSale(nextItems), { clearUndo: true });
+
+    if (!changed) return;
+    if (clearUndo) clearUndoStackRef.current = true;
+    setItems(nextItems);
+    if (nextTrash !== trashRef.current) setTrash(nextTrash);
     hasUnsavedChanges.current = true;
     requestFastCloudFlush();
-  }, [appState, items, trash, requestFastCloudFlush]);
+  }, [appState, authUser, cloudHydrated, items.length, requestFastCloudFlush]);
 
-  // Accidental restock of ASUS A320M PC — restore Oct 2025 sale at EK €152.72 / VK €279.90.
+  // After return/restock: nest Active PC parts and drop ghost standalone duplicates (boot + remote apply only).
   useEffect(() => {
-    if (appState !== 'READY' || items.length === 0) return;
-    const next = restoreAsusA320mPcSale(items);
-    if (!next.changed) return;
-    clearUndoStackRef.current = true;
-    setItems(next.items);
-    hasUnsavedChanges.current = true;
-    requestFastCloudFlush();
-  }, [appState, items, requestFastCloudFlush]);
+    if (appState !== 'READY') return;
+    if (isCloudEnabled() && authUser && !cloudHydrated) return;
+    if (containerMembershipBootHealDoneRef.current) return;
 
-  // After return/restock: nest Active PC parts and drop ghost standalone duplicates.
-  useEffect(() => {
-    if (appState !== 'READY' || items.length === 0) return;
-    const next = healActiveContainerPartMembership(items);
+    const current = itemsRef.current;
+    if (!current.length) return;
+    containerMembershipBootHealDoneRef.current = true;
+    const next = healActiveContainerPartMembership(current);
     if (!next.changed) return;
     clearUndoStackRef.current = true;
     setItems(next.items);
@@ -1154,29 +1460,33 @@ const App: React.FC = () => {
     }
     hasUnsavedChanges.current = true;
     requestFastCloudFlush();
-  }, [appState, items, requestFastCloudFlush]);
+  }, [appState, authUser, cloudHydrated, items.length, requestFastCloudFlush]);
 
-  // Enrich history rows with chat URL / screenshot from member items (legacy sessions).
+  // Bulk-import chat proof + bulkImportId stamp — once after hydrate (not on every item edit).
   useEffect(() => {
     if (appState !== 'READY') return;
-    if (bulkImportsRef.current.length === 0 || items.length === 0) return;
-    const { records, changed } = enrichBulkImportsWithChatProof(bulkImportsRef.current, items);
-    if (!changed) return;
-    setBulkImports(records);
-    bulkImportsRef.current = records;
-    localStorage.setItem('bulk_imports', JSON.stringify(records));
-    hasUnsavedChanges.current = true;
-  }, [appState, items, bulkImports]);
+    if (isCloudEnabled() && authUser && !cloudHydrated) return;
+    if (bulkImportCrossLinkDoneRef.current) return;
 
-  // Cross-device: stamp bulkImportId onto members listed in history (Flags icon on every device).
-  useEffect(() => {
-    if (appState !== 'READY') return;
-    if (bulkImports.length === 0 || items.length === 0) return;
-    const { items: stamped, changed } = stampItemsFromBulkImportRecords(items, bulkImports);
-    if (!changed) return;
-    setItems(stamped);
+    const currentItems = itemsRef.current;
+    const currentBulk = bulkImportsRef.current;
+    if (!currentBulk.length || !currentItems.length) return;
+    bulkImportCrossLinkDoneRef.current = true;
+
+    const enriched = enrichBulkImportsWithChatProof(currentBulk, currentItems);
+    if (enriched.changed) {
+      setBulkImports(enriched.records);
+      bulkImportsRef.current = enriched.records;
+      localStorage.setItem('bulk_imports', JSON.stringify(enriched.records));
+      hasUnsavedChanges.current = true;
+    }
+
+    const stamped = stampItemsFromBulkImportRecords(currentItems, enriched.records);
+    if (!stamped.changed) return;
+    setItems(stamped.items);
     hasUnsavedChanges.current = true;
-  }, [appState, bulkImports, items]);
+    requestFastCloudFlush();
+  }, [appState, authUser, cloudHydrated, items.length, bulkImports.length, requestFastCloudFlush]);
 
   // One-time migration: merge Peripherals > Optical Drives into Components > Optical Drives, then remove Optical Drives from Peripherals
   const OPTICAL_DRIVES_MIGRATION_KEY = 'migration_optical_drives_to_components';
@@ -1208,7 +1518,7 @@ const App: React.FC = () => {
     setItems(newItems);
     setCategories(newCategories);
     setCategoryFields(newFields);
-    saveToLocalStorage(newItems, trash, expenses, businessSettings, monthlyGoal, newCategories, newFields, recurringExpenses);
+    void saveToLocalStorage(newItems, trash, expenses, businessSettings, monthlyGoal, newCategories, newFields, recurringExpenses);
     localStorage.setItem(OPTICAL_DRIVES_MIGRATION_KEY, '1');
   }, [appState, items, categories, categoryFields, trash, expenses, businessSettings, monthlyGoal, recurringExpenses]);
 
@@ -1232,90 +1542,45 @@ const App: React.FC = () => {
     localStorage.setItem(GPU_SUBCATEGORY_MIGRATION_KEY, '1');
   }, [appState, items, categories, categoryFields]);
 
-  // Initial cloud sync when user signs in:
-  // - FIRST pull from Firestore so a new/empty device never overwrites cloud.
-  // - ONLY seed cloud from local when remote truly has no document AND local has data.
-  useEffect(() => {
-    if (!authUser || !isCloudEnabled() || initialWriteDoneRef.current) return;
-    initialWriteDoneRef.current = true;
-    cloudHydratedRef.current = false;
-
-    (async () => {
-      try {
-        setSyncState({ status: 'syncing', lastSynced: null, message: 'Downloading from cloud…' });
-        const remote = await fetchFromCloud();
-        if (remote) {
-          applyRemoteData(remote as any);
-          cloudHydratedRef.current = true;
-          pendingCloudFlushRef.current = false;
-          setSyncState({ status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED });
-          await writeStoreCatalog(buildStoreCatalog((remote.inventory || []) as InventoryItem[], remote.categoryFields || {})).catch((e) =>
-            console.warn('Store catalog update failed', e)
-          );
-          return;
-        }
-
-        // No remote doc yet: push local only when this device actually has inventory/expenses.
-        const localHasData =
-          itemsRef.current.length > 0 ||
-          trashRef.current.length > 0 ||
-          expensesRef.current.length > 0;
-        if (!localHasData) {
-          cloudHydratedRef.current = true;
-          pendingCloudFlushRef.current = false;
-          setSyncState({ status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED });
-          return;
-        }
-
-        const snap = getSyncSnapshot();
-        const payload = {
-          inventory: snap.items,
-          trash: snap.trash,
-          expenses: snap.expenses,
-          recurringExpenses: snap.recurringExpenses,
-          categories: snap.categories,
-          categoryFields: snap.categoryFields,
-          settings: snap.businessSettings,
-          goals: { monthly: snap.monthlyGoal },
-          dashboard: snap.dashboardPrefs,
-          actionHistory: snap.actionHistory.slice(-ACTION_HISTORY_LIMIT),
-          bulkImports: snap.bulkImports.slice(0, BULK_IMPORTS_LIMIT),
-        };
-        await writeToCloud(payload);
-        hasUnsavedChanges.current = false;
-        lastLocalPushAtRef.current = Date.now();
-        cloudHydratedRef.current = true;
-        pendingCloudFlushRef.current = false;
-        suppressRemoteApplyUntilRef.current = Date.now() + REMOTE_APPLY_SUPPRESS_MS;
-        setSyncState({ status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED });
-        scheduleBackgroundWork(async () => {
-          await writeStoreCatalog(buildStoreCatalog(snap.items, snap.categoryFields)).catch((e) =>
-            console.warn('Store catalog update failed', e)
-          );
-        });
-      } catch (err) {
-        initialWriteDoneRef.current = false;
-        cloudHydratedRef.current = false;
-        setSyncState((prev) => ({ ...prev, status: 'error', message: getSyncErrorMessage(err) }));
-      }
-    })();
-  }, [authUser, applyRemoteData, getSyncSnapshot]);
+  // First Firestore snapshot (from subscribeToData) hydrates or seeds cloud.
+  // A second getDocs pull used to download the same ~1.5MiB pack and freeze the tab.
 
   // Restore the Seller Hub ledger from IndexedDB even when signed out / localhost.
+  // Hydrate must not trigger auto-heal — that rewrite used to freeze the UI after refresh.
   useEffect(() => {
-    void hydrateHubArchiveIndex().catch((e) => console.warn('Hub archive hydrate failed:', e));
+    const onUpdated = () => {
+      if (!hubAutoHealArmedRef.current) return;
+      setHubArchiveVersion((v) => v + 1);
+    };
+    window.addEventListener('ebay-hub-archive-updated', onUpdated);
+    void hydrateHubArchiveIndex()
+      .then(() => {
+        hubAutoHealArmedRef.current = true;
+      })
+      .catch((e) => console.warn('Hub archive hydrate failed:', e));
+    return () => window.removeEventListener('ebay-hub-archive-updated', onUpdated);
   }, []);
 
-  // Re-hydrate eBay caches (orders / purchases / listings / Hub ledger) from Firestore.
+  // Re-hydrate eBay caches after the UI is quiet so Hub JSON parse does not freeze scrolling.
   useEffect(() => {
     if (!authUser || !isCloudEnabled() || ebayOrderIndexPulledRef.current) return;
     ebayOrderIndexPulledRef.current = true;
-    void pullOrderIndexFromCloud().catch((e) => console.warn('eBay order index cloud pull failed:', e));
-    void pullPurchaseIndexFromCloud().catch((e) => console.warn('eBay purchase index cloud pull failed:', e));
-    void pullListingIndexFromCloud().catch((e) => console.warn('eBay listing index cloud pull failed:', e));
-    void hydrateHubArchiveIndex()
-      .then(() => syncHubArchiveWithCloud())
-      .catch((e) => console.warn('Hub archive cloud sync failed:', e));
+    scheduleBackgroundWork(() => {
+      void pullOrderIndexFromCloud().catch((e) => console.warn('eBay order index cloud pull failed:', e));
+      void pullPurchaseIndexFromCloud().catch((e) => console.warn('eBay purchase index cloud pull failed:', e));
+      void pullListingIndexFromCloud().catch((e) => console.warn('eBay listing index cloud pull failed:', e));
+      void hydrateHubArchiveIndex()
+        .then(() => syncHubArchiveWithCloud())
+        .catch((e) => console.warn('Hub archive cloud sync failed:', e));
+    });
+  }, [authUser]);
+
+  useEffect(() => {
+    if (!authUser || !isCloudEnabled() || ebayTxReportsPulledRef.current) return;
+    ebayTxReportsPulledRef.current = true;
+    scheduleBackgroundWork(() => {
+      void syncEbayTxReportsWithCloud().catch((e) => console.warn('eBay Abrechnung cloud sync failed:', e));
+    });
   }, [authUser]);
 
   // Keep eBay active-listing cache fresh for photo import:
@@ -1411,17 +1676,84 @@ const App: React.FC = () => {
           console.warn('[backup] Daily snapshot failed:', e);
         }
       });
-    }, 8000);
+    }, 25000);
     return () => clearTimeout(t);
   }, [authUser, appState, items.length, getSyncSnapshot]);
+
+  // Daily GitHub snapshot — independent of Firestore/cloud sync, works from any device
+  // (phone, PC, deployed site, local dev) as long as this browser has a saved repo/token
+  // (Settings > Backup). Each push is its own commit, so git history is the retention.
+  useEffect(() => {
+    if (appState !== 'READY') return;
+    if (dailyGitHubBackupRanRef.current || items.length === 0) return;
+    if (!getStoredGitHubBackupConfig()) return;
+    dailyGitHubBackupRanRef.current = true;
+    const t = setTimeout(() => {
+      const snap = getSyncSnapshot();
+      scheduleBackgroundWork(async () => {
+        try {
+          const result = await runDailyGitHubBackupIfDue(
+            {
+              inventory: snap.items,
+              trash: snap.trash,
+              expenses: snap.expenses,
+              recurringExpenses: snap.recurringExpenses,
+              categories: snap.categories,
+              categoryFields: snap.categoryFields,
+              settings: snap.businessSettings,
+              goals: { monthly: snap.monthlyGoal },
+              dashboard: snap.dashboardPrefs,
+              actionHistory: snap.actionHistory,
+              bulkImports: snap.bulkImports,
+            },
+            todayLocalDateKey(),
+          );
+          if (result.ran) {
+            console.info(`[github-backup] Pushed daily snapshot (${result.sha.slice(0, 7)})`);
+          }
+        } catch (e) {
+          // Never surface as a blocking error — the next boot (or manual sync) retries.
+          console.warn('[github-backup] Daily snapshot failed:', e);
+        }
+      });
+    }, 30000);
+    return () => clearTimeout(t);
+  }, [appState, items.length, getSyncSnapshot]);
+
+  // Daily CSV copy of the Abrechnung table into data/ebay-abrechnung/ (local dev server only).
+  useEffect(() => {
+    if (appState !== 'READY') return;
+    if (ebayTxDailyExportRanRef.current) return;
+    ebayTxDailyExportRanRef.current = true;
+    const t = setTimeout(() => {
+      scheduleBackgroundWork(async () => {
+        try {
+          const result = await runEbayTxDailyCsvExport();
+          if (result.ran) {
+            console.info(
+              `[ebay-abrechnung] Saved ${result.fileName} (${result.rowCount} rows, ${Math.round(result.bytes / 1024)} KB)` +
+                (result.coverage ? ` · ${result.coverage}` : ''),
+            );
+          }
+        } catch (e) {
+          console.warn('[ebay-abrechnung] Daily CSV export failed:', e);
+        }
+      });
+    }, 26000);
+    return () => clearTimeout(t);
+  }, [appState]);
 
   // Publish store catalog once when panel has items and auth (ensures storefront gets data)
   useEffect(() => {
     if (!isCloudEnabled() || !authUser || items.length === 0 || storeCatalogPublishDoneRef.current) return;
     storeCatalogPublishDoneRef.current = true;
     const t = setTimeout(() => {
-      writeStoreCatalog(buildStoreCatalog(items, categoryFields)).catch(() => {});
-    }, 1500);
+      const snapItems = itemsRef.current;
+      const snapFields = categoryFieldsRef.current;
+      scheduleBackgroundWork(async () => {
+        await writeStoreCatalog(buildStoreCatalog(snapItems, snapFields)).catch(() => {});
+      });
+    }, 4000);
     return () => clearTimeout(t);
   }, [authUser, items.length, isCloudEnabled(), items, categoryFields]);
 
@@ -1612,6 +1944,34 @@ const App: React.FC = () => {
     }, FAST_CLOUD_FLUSH_MS);
   }, [bulkImports, items, trash, authUser, requestFastCloudFlush, runSilentCloudSync]);
 
+  useEffect(() => {
+    runSilentCloudSyncRef.current = runSilentCloudSync;
+  }, [runSilentCloudSync]);
+
+  /** Dashboard filters/widgets — local save immediately; cloud uses a slow debounce (never re-stringify inventory). */
+  const handleDashboardPreferencesChange = useCallback(
+    (next: DashboardPreferences) => {
+      setDashboardPrefs((prev) => {
+        if (smallJsonLooksUnchanged(prev, next)) return prev;
+        dashboardPrefsRef.current = next;
+        persistDashboardPreferencesToLocalStorage(next);
+        hasUnsavedChanges.current = true;
+        if (dashboardCloudDebounceRef.current) clearTimeout(dashboardCloudDebounceRef.current);
+        dashboardCloudDebounceRef.current = setTimeout(() => {
+          dashboardCloudDebounceRef.current = null;
+          if (!isCloudEnabled() || !authUser || !cloudHydratedRef.current) return;
+          if (writeDebounceRef.current) clearTimeout(writeDebounceRef.current);
+          writeDebounceRef.current = setTimeout(() => {
+            writeDebounceRef.current = null;
+            void runSilentCloudSyncRef.current?.();
+          }, 400);
+        }, 2500);
+        return next;
+      });
+    },
+    [authUser]
+  );
+
   const publishStoreCatalogNow = useCallback(async () => {
     if (!isCloudEnabled() || !authUser) return;
     const snap = getSyncSnapshot();
@@ -1633,9 +1993,9 @@ const App: React.FC = () => {
     localPersistDebounceRef.current = setTimeout(() => {
       localPersistDebounceRef.current = null;
       const snap = getSyncSnapshot();
-      scheduleBackgroundWork(() =>
-        persistSnapshotToLocalStorage({
-          itemsJson: JSON.stringify(snap.items),
+      scheduleBackgroundWork(async () => {
+        await persistSnapshotToLocalStorage({
+          items: snap.items,
           trashJson: JSON.stringify(snap.trash),
           expensesJson: JSON.stringify(snap.expenses),
           settingsJson: JSON.stringify(snap.businessSettings),
@@ -1646,8 +2006,16 @@ const App: React.FC = () => {
           dashboardPrefs: snap.dashboardPrefs,
           actionHistoryJson: JSON.stringify(snap.actionHistory.slice(-ACTION_HISTORY_LIMIT)),
           bulkImportsJson: JSON.stringify(snap.bulkImports.slice(0, BULK_IMPORTS_LIMIT)),
-        })
-      );
+        });
+        // Cloud users: the cloud-sync success path is what clears this flag, tracking
+        // "still needs a cloud push" independently of the local save completing. Local-only
+        // mode has no such second consumer — nothing else was ever going to clear it, which
+        // left it stuck true forever after the first edit and permanently blocked the
+        // cross-tab storage listener's "don't clobber my pending edit" guard.
+        if (!isCloudEnabled()) {
+          hasUnsavedChanges.current = false;
+        }
+      });
     }, LOCAL_PERSIST_DEBOUNCE_MS);
 
     if (!isCloudEnabled() || !authUser || !cloudHydratedRef.current || !hasUnsavedChanges.current) {
@@ -1656,10 +2024,13 @@ const App: React.FC = () => {
       };
     }
     if (writeDebounceRef.current) clearTimeout(writeDebounceRef.current);
-    const delay = resolveCloudFlushDelay(preferredCloudFlushMsRef.current);
-    preferredCloudFlushMsRef.current = WRITE_DEBOUNCE_MS;
+    const delay = resolveCloudFlushDelay(
+      preferredCloudFlushMsRef.current,
+      inventoryCloudDebounceMs(itemsRef.current.length)
+    );
+    preferredCloudFlushMsRef.current = inventoryCloudDebounceMs(itemsRef.current.length);
     setSyncState((prev) => {
-      if (prev.status === 'syncing') return prev;
+      if (prev.status === 'syncing' || prev.status === 'pending') return prev;
       if (prev.status === 'error') {
         return { ...prev, status: 'pending', message: SYNC_MSG_RETRYING };
       }
@@ -1677,7 +2048,38 @@ const App: React.FC = () => {
       if (writeDebounceRef.current) clearTimeout(writeDebounceRef.current);
       if (localPersistDebounceRef.current) clearTimeout(localPersistDebounceRef.current);
     };
-  }, [appState, authUser, items, trash, expenses, recurringExpenses, businessSettings, monthlyGoal, categories, categoryFields, dashboardPrefs, actionHistory, bulkImports, getSyncSnapshot, runSilentCloudSync]);
+  }, [appState, authUser, items, trash, expenses, recurringExpenses, businessSettings, monthlyGoal, categories, categoryFields, getSyncSnapshot, runSilentCloudSync]);
+
+  // Emergency synchronous local save on tab hide/close — independent of cloud. Items
+  // themselves don't need handling here: handleUpdate writes each edit synchronously to
+  // the tiny pending-patches log (see inventoryItemsStore.ts) the instant it happens, so
+  // they're already durable before any unload event could fire. This just covers the
+  // smaller trash/expenses lists, which still live directly in localStorage.
+  useEffect(() => {
+    const flushLocalNow = () => {
+      if (!hasUnsavedChanges.current) return;
+      if (localPersistDebounceRef.current) {
+        clearTimeout(localPersistDebounceRef.current);
+        localPersistDebounceRef.current = null;
+      }
+      try {
+        const snap = getSyncSnapshot();
+        localStorage.setItem('inventory_trash', JSON.stringify(snap.trash));
+        localStorage.setItem('inventory_expenses', JSON.stringify(snap.expenses));
+      } catch (e) {
+        console.warn('[persist] Emergency local flush failed:', e);
+      }
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') flushLocalNow();
+    };
+    window.addEventListener('beforeunload', flushLocalNow);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('beforeunload', flushLocalNow);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [getSyncSnapshot]);
 
   // Flush pending cloud writes when leaving the tab / unloading so other devices see changes sooner.
   useEffect(() => {
@@ -1770,9 +2172,9 @@ const App: React.FC = () => {
       hasUnsavedChanges.current = false;
       lastLocalPushAtRef.current = Date.now();
       suppressRemoteApplyUntilRef.current = Date.now() + REMOTE_APPLY_SUPPRESS_MS;
-      scheduleBackgroundWork(() =>
-        persistSnapshotToLocalStorage({
-          itemsJson: JSON.stringify(snap.items),
+      scheduleBackgroundWork(async () => {
+        await persistSnapshotToLocalStorage({
+          items: snap.items,
           trashJson: JSON.stringify(snap.trash),
           expensesJson: JSON.stringify(snap.expenses),
           settingsJson: JSON.stringify(snap.businessSettings),
@@ -1783,8 +2185,8 @@ const App: React.FC = () => {
           dashboardPrefs: snap.dashboardPrefs,
           actionHistoryJson: JSON.stringify(snap.actionHistory.slice(-ACTION_HISTORY_LIMIT)),
           bulkImportsJson: JSON.stringify(snap.bulkImports.slice(0, BULK_IMPORTS_LIMIT)),
-        })
-      );
+        });
+      });
       scheduleBackgroundWork(async () => {
         await writeStoreCatalog(buildStoreCatalog(snap.items, snap.categoryFields)).catch((e) => console.warn('Store catalog update failed', e));
       });
@@ -1798,17 +2200,7 @@ const App: React.FC = () => {
     }
   };
 
-  // ... Data Modifiers ...
-  const [history, setHistory] = useState<UndoSnapshot[]>([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
-  useEffect(() => {
-    historyRef.current = history;
-  }, [history]);
-  useEffect(() => {
-    historyIndexRef.current = historyIndex;
-  }, [historyIndex]);
-
-  /** Keep undo stack in sync with refs (avoids stale index when setState batches). */
+  // Undo stack lives in refs so a single-item edit does not extra-render App.
   const pushUndoSnapshot = useCallback(
     (
       currentItems: InventoryItem[],
@@ -1826,8 +2218,6 @@ const App: React.FC = () => {
       );
       historyRef.current = base;
       historyIndexRef.current = nextIdx;
-      setHistory(base);
-      setHistoryIndex(nextIdx);
     },
     []
   );
@@ -1839,8 +2229,6 @@ const App: React.FC = () => {
     const snap = makeUndoSnapshot(items, trashRef.current);
     historyRef.current = [snap];
     historyIndexRef.current = 0;
-    setHistory([snap]);
-    setHistoryIndex(0);
   }, [items]);
 
   const addActionEntries = useCallback((entries: ActionHistoryEntry[]) => {
@@ -1849,15 +2237,20 @@ const App: React.FC = () => {
   }, []);
   
   const handleUpdate = useCallback((updatedItems: InventoryItem[], deleteIds?: string[], options?: ItemUpdateOptions) => {
+    // Synchronous and tiny — durable the instant this call returns, before React has even
+    // committed the state update. This is what makes a refresh mid-edit safe: the debounced
+    // IndexedDB write below can lag by a few seconds, but this can't.
+    appendPendingItemPatches(updatedItems);
     const recordAction = !options?.skipActionLog;
     const recordUndo = !options?.skipUndo;
     const disposed = (s: ItemStatus | undefined) =>
       s === ItemStatus.SOLD || s === ItemStatus.TRADED || s === ItemStatus.GIFTED;
     const current = itemsRef.current;
+    const currentById = new Map(current.map((i) => [i.id, i]));
     let createdContainers = false;
     let statusTransition = false;
     for (const u of updatedItems) {
-      const oldItem = current.find((i) => i.id === u.id);
+      const oldItem = currentById.get(u.id);
       if (!oldItem && (u.isPC || u.isBundle)) createdContainers = true;
       if (oldItem && oldItem.status !== u.status && (disposed(u.status) || disposed(oldItem.status))) {
         statusTransition = true;
@@ -1878,7 +2271,9 @@ const App: React.FC = () => {
     const itemsToApply = updatedItems;
 
     setItems(currentItems => {
-        let nextItems = [...currentItems];
+        let nextItems = currentItems.slice();
+        const indexById = new Map<string, number>();
+        for (let i = 0; i < nextItems.length; i++) indexById.set(nextItems[i].id, i);
         const actionEntries: ActionHistoryEntry[] = [];
         const trashBefore = trashRef.current;
         let nextTrash = trashBefore;
@@ -1888,7 +2283,7 @@ const App: React.FC = () => {
           nextTrash = [...nextTrash, ...rows.filter((r) => !existing.has(r.id))];
         };
         itemsToApply.forEach(u => {
-          const idx = nextItems.findIndex(i => i.id === u.id);
+          const idx = indexById.has(u.id) ? indexById.get(u.id)! : -1;
           const oldItem = idx >= 0 ? nextItems[idx] : undefined;
           const merged = options?.skipPriceHistory
             ? u
@@ -1900,8 +2295,7 @@ const App: React.FC = () => {
           if (oldItem?.costOrigin) {
             final = { ...final, costOrigin: oldItem.costOrigin };
           }
-          const taxMode = businessSettings.taxMode || 'SmallBusiness';
-          final = recomputeRealizedProfit(final, taxMode);
+          final = recomputeRealizedProfit(final);
           if (final.status === ItemStatus.SOLD || final.status === ItemStatus.TRADED || final.status === ItemStatus.GIFTED) {
             final = { ...final, storeVisible: false };
           }
@@ -1919,6 +2313,7 @@ const App: React.FC = () => {
               }
             }
           } else {
+            indexById.set(final.id, nextItems.length);
             nextItems.push(final);
             if (recordAction) {
               const note = options?.actionNote;
@@ -1935,23 +2330,30 @@ const App: React.FC = () => {
         // Bundle/PC rows are React.memo'd by parent object identity. When only a nested
         // child changes (e.g. rename), clone the parent so the inventory nested list refreshes.
         {
+          const updatedIdSet = new Set(itemsToApply.map((u) => u.id));
           const parentsToRefresh = new Set<string>();
           for (const u of itemsToApply) {
-            const cur = nextItems.find((i) => i.id === u.id);
+            const curIdx = indexById.get(u.id);
+            const cur = curIdx !== undefined ? nextItems[curIdx] : undefined;
             if (cur?.parentContainerId) parentsToRefresh.add(cur.parentContainerId);
-            const prev = current.find((i) => i.id === u.id);
+            const prevIdx = indexById.get(u.id);
+            const prev = prevIdx !== undefined ? currentItems[prevIdx] : undefined;
             if (prev?.parentContainerId) parentsToRefresh.add(prev.parentContainerId);
           }
           for (const p of nextItems) {
             if (!(p.isPC || p.isBundle) || !p.componentIds?.length) continue;
-            if (itemsToApply.some((u) => p.componentIds!.includes(u.id))) {
-              parentsToRefresh.add(p.id);
+            for (const cid of p.componentIds) {
+              if (updatedIdSet.has(cid)) {
+                parentsToRefresh.add(p.id);
+                break;
+              }
             }
           }
           if (parentsToRefresh.size > 0) {
-            nextItems = nextItems.map((i) =>
-              parentsToRefresh.has(i.id) ? { ...i } : i,
-            );
+            for (let i = 0; i < nextItems.length; i++) {
+              const row = nextItems[i];
+              if (parentsToRefresh.has(row.id)) nextItems[i] = { ...row };
+            }
           }
         }
         
@@ -2007,9 +2409,9 @@ const App: React.FC = () => {
         if (!options?.skipContainerSync) {
           nextItems = syncContainerBuyTotalsFromComponents(nextItems, touchedIds);
         }
-        // Always cascade Sold-on / payment from sold PC/bundle → parts (even when
-        // buy-total sync is skipped for lightweight platform quick-picks).
-        nextItems = syncContainerSaleMetaToChildren(nextItems, touchedIds);
+        if (!options?.skipContainerSaleMetaSync) {
+          nextItems = syncContainerSaleMetaToChildren(nextItems, touchedIds);
+        }
         if (nextTrash !== trashBefore) {
           trashRef.current = nextTrash;
           setTrash(nextTrash);
@@ -2022,6 +2424,32 @@ const App: React.FC = () => {
         return nextItems;
     });
   }, [addActionEntries, businessSettings.taxMode, pushUndoSnapshot, requestFastCloudFlush]);
+
+  /** Strip false Abrechnung link sale history (e.g. mistaken unlink archives). */
+  useEffect(() => {
+    if (appState !== 'READY' || !items.length || abrechnungHealDoneRef.current) return;
+    if (isCloudEnabled() && authUser && !cloudHydrated) return;
+    abrechnungHealDoneRef.current = true;
+    const patches = planAbrechnungMistakenLinkHeals(items);
+    if (!patches.length) return;
+    handleUpdate(patches, undefined, {
+      skipFieldPreserve: true,
+      skipMembershipSync: true,
+      skipContainerSync: true,
+      skipContainerSaleMetaSync: true,
+      skipUndo: true,
+      skipActionLog: true,
+      flushCloud: true,
+    });
+  }, [appState, authUser, cloudHydrated, handleUpdate, items]);
+
+  /** Hub breakdown auto-apply disabled — boot batches were stamping import dates as sellDate and clearing order meta. Manual apply stays in Inventory / Hub archive UI. */
+  useEffect(() => {
+    if (appState !== 'READY' || !items.length) return;
+    if (!hubAutoHealArmedRef.current) return;
+    if (hubAutoHealVersionRef.current === hubArchiveVersion) return;
+    hubAutoHealVersionRef.current = hubArchiveVersion;
+  }, [appState, items.length, hubArchiveVersion]);
 
   const handleRestoreItems = useCallback((updatedItems: InventoryItem[]) => {
     setItems(updatedItems);
@@ -2056,7 +2484,6 @@ const App: React.FC = () => {
       ) {
         const newIndex = historyIndexRef.current - 1;
         historyIndexRef.current = newIndex;
-        setHistoryIndex(newIndex);
         setItems(prev.items);
         trashRef.current = prev.trash;
         setTrash(prev.trash);
@@ -2080,7 +2507,6 @@ const App: React.FC = () => {
     const snapshot = historyRef.current[newIndex];
     if (!snapshot) return;
     historyIndexRef.current = newIndex;
-    setHistoryIndex(newIndex);
     setItems(snapshot.items);
     trashRef.current = snapshot.trash;
     setTrash(snapshot.trash);
@@ -2095,7 +2521,6 @@ const App: React.FC = () => {
     const snapshot = historyRef.current[newIndex];
     if (!snapshot) return;
     historyIndexRef.current = newIndex;
-    setHistoryIndex(newIndex);
     setItems(snapshot.items);
     trashRef.current = snapshot.trash;
     setTrash(snapshot.trash);
@@ -2148,8 +2573,8 @@ const App: React.FC = () => {
     setExpenses(emptyExpenses);
     setTrash(emptyTrash);
     setRecurringExpenses(emptyRecurring);
-    setHistory([]);
-    setHistoryIndex(-1);
+    historyRef.current = [];
+    historyIndexRef.current = -1;
     setMonthlyGoal(defaultGoal);
     const wipedDash = getDefaultDashboardPreferences();
     setDashboardPrefs(wipedDash);
@@ -2164,7 +2589,7 @@ const App: React.FC = () => {
     setBulkImports([]);
     bulkImportsRef.current = [];
 
-    saveToLocalStorage(emptyInventory, emptyTrash, emptyExpenses, businessSettings, defaultGoal, categories, categoryFields, emptyRecurring, wipedDash);
+    void saveToLocalStorage(emptyInventory, emptyTrash, emptyExpenses, businessSettings, defaultGoal, categories, categoryFields, emptyRecurring, wipedDash);
 
     if (isCloudEnabled() && authUser) {
       try {
@@ -2243,7 +2668,7 @@ const App: React.FC = () => {
     const goal = data.goals?.monthly ?? monthlyGoal;
     const cats = data.categories && typeof data.categories === 'object' ? data.categories : categories;
     const fields = data.categoryFields && typeof data.categoryFields === 'object' ? data.categoryFields : categoryFields;
-    const sets = data.settings && typeof data.settings === 'object' ? { ...businessSettings, ...data.settings } : businessSettings;
+    const sets = data.settings && typeof data.settings === 'object' ? data.settings : businessSettings;
     const restoredDash =
       data.dashboard != null ? normalizeDashboardPreferences(data.dashboard) : dashboardPrefsRef.current;
     if (data.dashboard != null) setDashboardPrefs(restoredDash);
@@ -2266,7 +2691,7 @@ const App: React.FC = () => {
     setCategories(cats);
     setCategoryFields(fields);
     setBusinessSettings(sets);
-    saveToLocalStorage(inv, tr, exp, sets, goal, cats, fields, undefined, restoredDash, mergedAH, mergedBI);
+    void saveToLocalStorage(inv, tr, exp, sets, goal, cats, fields, undefined, restoredDash, mergedAH, mergedBI);
     if (isCloudEnabled() && authUser) {
       try {
         await writeToCloud({
@@ -2291,7 +2716,7 @@ const App: React.FC = () => {
   const handleFixEncoding = useCallback((fixedItems: InventoryItem[], fixedTrash: InventoryItem[]) => {
     setItems(fixedItems);
     setTrash(fixedTrash);
-    saveToLocalStorage(fixedItems, fixedTrash, expenses, businessSettings, monthlyGoal, categories, categoryFields);
+    void saveToLocalStorage(fixedItems, fixedTrash, expenses, businessSettings, monthlyGoal, categories, categoryFields);
     if (isCloudEnabled() && authUser) {
       writeToCloud({
         inventory: fixedItems,
@@ -2495,15 +2920,6 @@ const App: React.FC = () => {
      );
   }
 
-  const ALL_STATUSES = [
-    ItemStatus.IN_STOCK, 
-    ItemStatus.SOLD, 
-    ItemStatus.TRADED,
-    ItemStatus.GIFTED,
-    ItemStatus.ORDERED,
-    ItemStatus.IN_COMPOSITION
-  ];
-
   return (
     <Router>
       <Analytics />
@@ -2548,6 +2964,7 @@ const App: React.FC = () => {
                   localStorage.setItem('cloud_backup_banner_dismissed', '1');
                   setBackupBannerDismissed(true);
                 }}
+                tabDataStale={tabDataStale}
                 items={items}
                 expenses={expenses}
                 businessSettings={businessSettings}
@@ -2595,13 +3012,13 @@ const App: React.FC = () => {
                 businessSettings={businessSettings}
                 categoryFields={categoryFields}
                 dashboardPreferences={dashboardPrefs}
-                onDashboardPreferencesChange={setDashboardPrefs}
+                onDashboardPreferencesChange={handleDashboardPreferencesChange}
                 onUpdateItems={handleUpdate}
                 onBusinessSettingsChange={handleBusinessSettingsChange}
               />
             }
           />
-          <Route path="inventory" element={<InventoryList key="inventory-main" items={items} totalCount={items.length} onUpdate={handleUpdate} onDelete={handleDelete} onUndo={handleUndo} onRedo={handleRedo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1} pageTitle="Inventory" allowedStatuses={ALL_STATUSES} businessSettings={businessSettings} onBusinessSettingsChange={handleBusinessSettingsChange} categories={categories} categoryFields={categoryFields} persistenceKey="inventory_main" onPublishStoreCatalog={publishStoreCatalogNow} bulkImports={bulkImports} onUpdateBulkImport={handleUpdateBulkImport} onDeleteBulkImport={handleDeleteBulkImport} />} />
+          <Route path="inventory" element={<InventoryList key="inventory-main" items={items} totalCount={items.length} onUpdate={handleUpdate} onDelete={handleDelete} onUndo={handleUndo} onRedo={handleRedo} canUndo={historyIndexRef.current > 0} canRedo={historyIndexRef.current < historyRef.current.length - 1} pageTitle="Inventory" allowedStatuses={ALL_INVENTORY_STATUSES} businessSettings={businessSettings} onBusinessSettingsChange={handleBusinessSettingsChange} categories={categories} categoryFields={categoryFields} persistenceKey="inventory_main" onPublishStoreCatalog={publishStoreCatalogNow} bulkImports={bulkImports} onUpdateBulkImport={handleUpdateBulkImport} onDeleteBulkImport={handleDeleteBulkImport} onDownloadBackup={handleDownloadInventoryBackup} />} />
           <Route path="dealwatch" element={<EstDealwatchPage items={items} />} />
           <Route path="est" element={<Navigate to="/panel/dealwatch" replace />} />
           <Route
@@ -2648,6 +3065,16 @@ const App: React.FC = () => {
             path="ebay-orders"
             element={
               <EbayOrdersPage
+                items={items}
+                taxMode={businessSettings.taxMode}
+                onUpdate={handleUpdate}
+              />
+            }
+          />
+          <Route
+            path="ebay-abrechnung"
+            element={
+              <EbayAbrechnungPage
                 items={items}
                 taxMode={businessSettings.taxMode}
                 onUpdate={handleUpdate}

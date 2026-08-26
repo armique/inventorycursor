@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowUpDown, CalendarDays, CheckCircle2, ChevronDown, ChevronUp, Download, ExternalLink, FileSpreadsheet, Link2, Loader2, Pencil, RefreshCw, Trash2, Unlink, Upload } from 'lucide-react';
+import { ArrowUpDown, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronUp, Download, ExternalLink, FileSpreadsheet, Link2, Loader2, Pencil, Plus, RefreshCw, Trash2, Unlink, Upload, X } from 'lucide-react';
 import type { InventoryItem, ItemUpdateOptions, TaxMode } from '../types';
 import { formatEUR, formatSignedEUR } from '../utils/formatMoney';
 import { hasEbaySaleSignals } from '../utils/salePlatform';
 import { isRealizedDisposal } from '../utils/itemDisposition';
+import { inferCategoryFromName } from '../utils/itemCategoryDetect';
 import { buildEbayOrderUrl, isRealEbayOrderId } from '../utils/sourceLinks';
 import {
   shouldSkipForAggregatedSaleLine,
@@ -146,6 +147,93 @@ function resaleSearchHint(title: string): string {
 
 const PAGE_SIZE = 80;
 const OVERVIEW_STORAGE_KEY = 'ebay-abrechnung-overview-open';
+
+/** Fixed component types offered as filter pills — subCategory matches inferCategoryFromName's output. */
+type ComponentPinDef = { id: string; label: string; subCategory: string };
+const COMPONENT_PIN_CATALOG: ComponentPinDef[] = [
+  { id: 'gpu', label: 'GPU', subCategory: 'Graphics Cards' },
+  { id: 'cpu', label: 'CPU', subCategory: 'Processors' },
+  { id: 'mobo', label: 'Motherboards', subCategory: 'Motherboards' },
+  { id: 'ram', label: 'RAM', subCategory: 'RAM' },
+  { id: 'storage', label: 'SSD/HDD', subCategory: 'Storage (SSD/HDD)' },
+  { id: 'psu', label: 'PSU', subCategory: 'Power Supplies' },
+  { id: 'case', label: 'Cases', subCategory: 'Cases' },
+  { id: 'cooling', label: 'Cooling', subCategory: 'Cooling' },
+];
+const DEFAULT_COMPONENT_PIN_IDS = ['gpu', 'cpu', 'ram', 'mobo', 'storage'];
+const COMPONENT_PINS_STORAGE_KEY = 'ebay-abrechnung-component-pins';
+
+function readComponentPinIds(): string[] {
+  try {
+    const stored = localStorage.getItem(COMPONENT_PINS_STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed)) {
+        const valid = parsed.filter(
+          (id): id is string => typeof id === 'string' && COMPONENT_PIN_CATALOG.some((p) => p.id === id)
+        );
+        if (valid.length) return valid;
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return DEFAULT_COMPONENT_PIN_IDS;
+}
+
+/** Add/remove which component types show as filter pills — fixed catalog, no category settings needed. */
+const ComponentPinPickerModal: React.FC<{
+  activeIds: string[];
+  onToggle: (id: string) => void;
+  onClose: () => void;
+}> = ({ activeIds, onToggle, onClose }) => {
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        className="bg-white w-full max-w-xs rounded-2xl shadow-2xl border border-slate-200 overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-label="Component filter pills"
+      >
+        <div className="p-4 border-b border-slate-100 flex items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-black text-slate-900">Component pills</h3>
+            <p className="text-xs text-slate-500 mt-0.5">Detected from the order title — same guess as Inventory.</p>
+          </div>
+          <button type="button" onClick={onClose} className="p-1.5 rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="p-2 max-h-[60vh] overflow-y-auto">
+          {COMPONENT_PIN_CATALOG.map((pin) => {
+            const on = activeIds.includes(pin.id);
+            return (
+              <button
+                key={pin.id}
+                type="button"
+                onClick={() => onToggle(pin.id)}
+                className="w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl hover:bg-slate-50 text-left"
+              >
+                <span className="text-sm font-semibold text-slate-800">{pin.label}</span>
+                <span
+                  className={`h-5 w-5 shrink-0 rounded-md border flex items-center justify-center ${
+                    on ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-300 text-transparent'
+                  }`}
+                >
+                  <Check size={12} strokeWidth={3} />
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 function readOverviewOpen(): boolean {
   try {
@@ -293,6 +381,27 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
   const [search, setSearch] = useState('');
   const [kindFilter, setKindFilter] = useState<EbayTxKind | 'all' | 'refunded' | 'matcher'>('order');
   const [hideLinked, setHideLinked] = useState(false);
+  const [componentPinIds, setComponentPinIds] = useState<string[]>(readComponentPinIds);
+  const [activeComponentPin, setActiveComponentPin] = useState<string | null>(null);
+  const [showComponentPinPicker, setShowComponentPinPicker] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(COMPONENT_PINS_STORAGE_KEY, JSON.stringify(componentPinIds));
+    } catch {
+      /* ignore */
+    }
+  }, [componentPinIds]);
+
+  const toggleComponentPinVisible = useCallback((id: string) => {
+    setComponentPinIds((prev) => {
+      if (prev.includes(id)) {
+        setActiveComponentPin((active) => (active === id ? null : active));
+        return prev.filter((p) => p !== id);
+      }
+      return [...prev, id];
+    });
+  }, []);
   const [page, setPage] = useState(0);
   const [sort, setSort] = useState<EbayTxSort | null>(null);
   const [labelOverrides, setLabelOverrides] = useState<Record<string, EbayTxLabelOverride>>({});
@@ -588,7 +697,21 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
     return { count, pocketEur };
   }, [displayReport, ledgers, refundStateByRowId]);
 
-  const filtered = useMemo(() => {
+  // Title → guessed component subCategory, cached once per row set (inferCategoryFromName is
+  // the same heuristic used app-wide for inventory category detection — reused here so a GPU
+  // pill means the same thing it would in Inventory).
+  const rowComponentSubCategoryById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const row of displayReport?.rows || []) {
+      if (row.kind !== 'order') continue;
+      const title = (row.title || row.description || '').trim();
+      if (!title) continue;
+      map.set(row.id, inferCategoryFromName(title).subCategory);
+    }
+    return map;
+  }, [displayReport]);
+
+  const preComponentFiltered = useMemo(() => {
     if (!displayReport || kindFilter === 'matcher') return [];
     const q = search.trim().toLowerCase();
     return displayReport.rows.filter((row) => {
@@ -612,6 +735,25 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
         .includes(q);
     });
   }, [displayReport, kindFilter, search, refundStateByRowId]);
+
+  /** How many rows in the current tab/search match each component pill — shown as the pill's count. */
+  const componentPinCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const row of preComponentFiltered) {
+      const sub = rowComponentSubCategoryById.get(row.id);
+      if (!sub) continue;
+      for (const pin of COMPONENT_PIN_CATALOG) {
+        if (pin.subCategory === sub) counts.set(pin.id, (counts.get(pin.id) || 0) + 1);
+      }
+    }
+    return counts;
+  }, [preComponentFiltered, rowComponentSubCategoryById]);
+
+  const filtered = useMemo(() => {
+    const activePin = activeComponentPin ? COMPONENT_PIN_CATALOG.find((p) => p.id === activeComponentPin) : null;
+    if (!activePin) return preComponentFiltered;
+    return preComponentFiltered.filter((row) => rowComponentSubCategoryById.get(row.id) === activePin.subCategory);
+  }, [preComponentFiltered, activeComponentPin, rowComponentSubCategoryById]);
   const livePocket = useMemo(() => summarizeEbayTxOrderLedgers(ledgers), [ledgers]);
   const pocket = displayReport?.rows?.length ? livePocket : cloudStats?.pocket || livePocket;
   const labelChoices = useMemo(
@@ -678,7 +820,7 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
 
   useEffect(() => {
     setPage(0);
-  }, [kindFilter, search, sort, hideLinked]);
+  }, [kindFilter, search, sort, hideLinked, activeComponentPin]);
 
   const pageCount = Math.max(1, Math.ceil(sortedRows.length / PAGE_SIZE));
   const pageRows = sortedRows.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
@@ -724,31 +866,42 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
   }, [items, onUpdate, report]);
 
   // CSV Bestellung date is source of truth for every Abrechnung-linked item.
+  //
+  // `items` and `report` both populate asynchronously on page load (IndexedDB read, then
+  // cloud sync merge; CSV/API-sync report rebuild). Reacting the instant they first become
+  // non-empty means this can run against a still-partially-hydrated snapshot — computing a
+  // "fix" for a row whose real, about-to-arrive data didn't actually need one, then finding
+  // the reverse "fix" once hydration finishes a moment later. That's what shows up as this
+  // note (and the linked-count nearby) never quite settling across reloads. Debouncing past
+  // a quiet period lets the last hydration burst land before we compute/apply anything.
   useEffect(() => {
     if (!report?.rows?.length || !items.length || loading || busy) return;
-    const { updates } = backfillEbayTxLinkedSellDates(items, report.rows);
-    if (!updates.length) return;
-    const key = updates
-      .map((item) => `${item.id}:${(item.sellDate || '').slice(0, 10)}`)
-      .sort()
-      .join('|');
-    if (sellDateAutoFixKeyRef.current === key) return;
-    sellDateAutoFixKeyRef.current = key;
-    onUpdate(updates, undefined, {
-      skipFieldPreserve: true,
-      skipMembershipSync: true,
-      skipContainerSync: true,
-      skipContainerSaleMetaSync: true,
-      skipUndo: true,
-      flushCloud: true,
-      actionNote: {
-        action: 'Abrechnung sell dates',
-        details: `${updates.length} linked item(s) ← CSV order dates (auto)`,
-      },
-    });
-    setLinkNote(
-      `Updated sell date on ${updates.length} linked item${updates.length === 1 ? '' : 's'} from CSV.`
-    );
+    const t = setTimeout(() => {
+      const { updates } = backfillEbayTxLinkedSellDates(items, report.rows);
+      if (!updates.length) return;
+      const key = updates
+        .map((item) => `${item.id}:${(item.sellDate || '').slice(0, 10)}`)
+        .sort()
+        .join('|');
+      if (sellDateAutoFixKeyRef.current === key) return;
+      sellDateAutoFixKeyRef.current = key;
+      onUpdate(updates, undefined, {
+        skipFieldPreserve: true,
+        skipMembershipSync: true,
+        skipContainerSync: true,
+        skipContainerSaleMetaSync: true,
+        skipUndo: true,
+        flushCloud: true,
+        actionNote: {
+          action: 'Abrechnung sell dates',
+          details: `${updates.length} linked item(s) ← CSV order dates (auto)`,
+        },
+      });
+      setLinkNote(
+        `Updated sell date on ${updates.length} linked item${updates.length === 1 ? '' : 's'} from CSV.`
+      );
+    }, 800);
+    return () => clearTimeout(t);
   }, [busy, items, loading, onUpdate, report]);
 
   const matcherOrderCount = useMemo(() => {
@@ -840,14 +993,20 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
     };
   }, []);
 
+  // Same hydration-race guard as the sell-date effect above: wait for a quiet period so the
+  // Matcher's "linked" count reflects fully-settled inventory data instead of whatever
+  // partial snapshot happened to be in `items` the instant this tab first opened.
   useEffect(() => {
     if (kindFilter !== 'matcher') return;
     if (loading || !report?.rows?.length || !items.length || suggestBusy) return;
     if (suggestions?.length) return;
     if (matcherAutoBuiltRef.current) return;
-    matcherAutoBuiltRef.current = true;
-    void onBuildSuggestions();
-  }, [kindFilter, loading, report?.rows?.length, items.length, suggestBusy, suggestions?.length, onBuildSuggestions]);
+    const t = setTimeout(() => {
+      matcherAutoBuiltRef.current = true;
+      void onBuildSuggestions();
+    }, 800);
+    return () => clearTimeout(t);
+  }, [kindFilter, loading, report?.rows?.length, items, suggestBusy, suggestions?.length, onBuildSuggestions]);
 
   useEffect(() => {
     if (kindFilter === 'matcher') setMatchRow(null);
@@ -1519,6 +1678,51 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
                   <span className="ml-0.5 tabular-nums font-semibold opacity-80">{linkedInFilteredCount}</span>
                 ) : null}
               </button>
+            ) : null}
+            {kindFilter !== 'matcher' ? (
+              <div className="flex flex-wrap items-center gap-1">
+                {componentPinIds.map((id) => {
+                  const pin = COMPONENT_PIN_CATALOG.find((p) => p.id === id);
+                  if (!pin) return null;
+                  const active = activeComponentPin === id;
+                  const count = componentPinCounts.get(id) || 0;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setActiveComponentPin((prev) => (prev === id ? null : id))}
+                      aria-pressed={active}
+                      title={`Filter to orders whose title looks like ${pin.label} (guessed the same way Inventory does)`}
+                      className={`px-2 py-1 rounded-lg text-[11px] font-bold border inline-flex items-center gap-1 ${
+                        active
+                          ? 'bg-indigo-700 text-white border-indigo-700'
+                          : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'
+                      }`}
+                    >
+                      {pin.label}
+                      {count > 0 ? (
+                        <span className="tabular-nums font-semibold opacity-80">{count}</span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={() => setShowComponentPinPicker(true)}
+                  title="Add or remove component filter pills"
+                  aria-label="Add or remove component filter pills"
+                  className="h-[26px] w-[26px] shrink-0 inline-flex items-center justify-center rounded-lg border border-dashed border-slate-300 text-slate-400 hover:border-slate-400 hover:text-slate-600"
+                >
+                  <Plus size={12} />
+                </button>
+                {showComponentPinPicker ? (
+                  <ComponentPinPickerModal
+                    activeIds={componentPinIds}
+                    onToggle={toggleComponentPinVisible}
+                    onClose={() => setShowComponentPinPicker(false)}
+                  />
+                ) : null}
+              </div>
             ) : null}
             <div className="flex-1 min-w-[12rem]">
               {kindFilter === 'matcher' ? (

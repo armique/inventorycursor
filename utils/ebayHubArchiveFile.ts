@@ -1,6 +1,9 @@
 /**
  * Seller Hub archive JSON produced by scripts/ebay-hub-archive-export.mjs.
  * Importable into the order cache the same way as a Payments CSV.
+ *
+ * Field meanings: see HUB_ARCHIVE_FIELD_GLOSSARY in utils/hubArchiveFields.ts.
+ * grossTotal = Gesamtbetrag, netTotal = Bestelleinnahmen, shippingCost = Versandetikett.
  */
 
 import type { EbayOrderFinancialEvent, EbayOrderRecord, EbayOrderSource } from '../services/ebayOrderIndex';

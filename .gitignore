@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 *.local
+.inventory-pro-vite.pid
 .env
 .env.local
 .env.*.local
@@ -39,6 +40,15 @@ scripts/.env.browser-scrape
 
 # Local eBay order archive (buyer addresses — do not commit)
 data/ebay-orders/
+data/ebay-abrechnung/
+data/ebay-abrechnung - backup/
+data/ebay-abrechnung-backups/
+
+# Local copy of the daily GitHub inventory backup (see scripts/pull-github-backup.mjs)
+data/inventory-backup/
+
+# Local full-data backups taken before risky operations (see live-backups convention)
+data/live-backups/
 
 .vercel
 .env*

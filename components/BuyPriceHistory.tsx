@@ -29,14 +29,14 @@ const BuyPriceHistory: React.FC<{ item: InventoryItem; compact?: boolean }> = ({
     : `EK history · ${buys.length}`;
 
   return (
-    <div className={compact ? 'mt-1' : 'mt-2'}>
+    <span className={compact ? 'inline-flex flex-col items-start max-w-full' : 'block mt-2'}>
       <button
         type="button"
         onClick={(e) => {
           e.stopPropagation();
           setOpen((v) => !v);
         }}
-        className={`inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wide rounded-lg px-2 py-1 border ${
+        className={`inline-flex items-center gap-1 shrink-0 whitespace-nowrap text-[9px] font-black uppercase tracking-wide rounded-lg px-2 py-1 border ${
           restockBump
             ? 'text-amber-900 bg-amber-50 border-amber-300 hover:bg-amber-100'
             : 'text-slate-700 bg-slate-50 border-slate-200 hover:bg-slate-100'
@@ -100,7 +100,7 @@ const BuyPriceHistory: React.FC<{ item: InventoryItem; compact?: boolean }> = ({
           })}
         </ol>
       )}
-    </div>
+    </span>
   );
 };
 

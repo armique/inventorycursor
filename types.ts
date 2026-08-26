@@ -421,6 +421,13 @@ export interface InventoryItem extends AiAttribution, SourceLinks {
   usesDifferentialVat?: boolean;
   componentIds?: string[];
   parentContainerId?: string;
+  /** Container was created by splitting one item into parts — distinguishes it from a
+   *  user-built Bundle/Mixed Bundle/PC in the UI (badge, styling). */
+  splitOrigin?: 'parts' | 'identical';
+  /** Inside a split container, this part IS the original item (whatever wasn't carved
+   *  out into other parts) — highlighted in the parts list so it isn't mistaken for one
+   *  of the extracted parts. */
+  isSplitRemainder?: boolean;
 
   // Listing status on external marketplaces
   listedOnKleinanzeigen?: boolean;
@@ -764,6 +771,8 @@ export type ItemUpdateOptions = {
   skipUndo?: boolean;
   skipActionLog?: boolean;
   skipContainerSync?: boolean;
+  /** Skip stamping sold PC/bundle sale meta onto parts (e.g. Abrechnung unlink). */
+  skipContainerSaleMetaSync?: boolean;
   /**
    * Skip one-parent / componentIds membership repair. Default runs on every save so
    * a part cannot stay listed on two PC/bundles.

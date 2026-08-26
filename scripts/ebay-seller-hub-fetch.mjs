@@ -1,8 +1,9 @@
 /**
  * Find one Seller Hub order in the logged-in Chrome tab and print payout JSON.
  *
- * Chrome must be started with:
- *   chrome.exe --remote-debugging-port=9222
+ * Chrome must be started with remote debugging (your normal profile by default):
+ *   npm run chrome:cdp
+ *   scripts/Start-Chrome-Hub.bat
  *
  *   node scripts/ebay-seller-hub-fetch.mjs
  *   (JSON on stdin: { orderId, title, sku, listingId, query })

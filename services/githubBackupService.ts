@@ -71,6 +71,87 @@ function parseRepo(repo: string): { owner: string; repo: string } {
   return { owner, repo: name };
 }
 
+const DAILY_PUSH_LAST_RUN_KEY = 'github_backup_last_run_day_v1';
+
+function alreadyPushedToday(day: string): boolean {
+  try {
+    return localStorage.getItem(DAILY_PUSH_LAST_RUN_KEY) === day;
+  } catch {
+    return false;
+  }
+}
+
+function markPushedToday(day: string): void {
+  try {
+    localStorage.setItem(DAILY_PUSH_LAST_RUN_KEY, day);
+  } catch {
+    /* best-effort — a re-push tomorrow is harmless */
+  }
+}
+
+export type DailyGitHubBackupResult =
+  | { ran: false; reason: 'already-today' | 'not-configured' | 'empty' }
+  | { ran: true; sha: string; committedAt: string };
+
+const DATA_URI_MAX_INLINE_CHARS = 200;
+
+/**
+ * Deep-clone, replacing large data: URIs (photos/receipts/screenshots — embedded as base64
+ * whenever Firebase Storage is unavailable, e.g. with cloud sync off) with a short placeholder.
+ * Everything else (names, prices, dates, history) passes through untouched.
+ *
+ * Without this, a handful of photos alone can push the JSON past GitHub's Contents API upload
+ * limit (~1 MB) and silently fail the whole daily backup — text data is what's irreplaceable
+ * here, photos can be re-attached, so they're worth dropping rather than losing the backup.
+ */
+function stripLargeDataUris<T>(value: T): T {
+  if (typeof value === 'string') {
+    if (value.startsWith('data:') && value.length > DATA_URI_MAX_INLINE_CHARS) {
+      return '[photo omitted from daily backup — cloud sync is off; re-attach after a restore]' as unknown as T;
+    }
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((v) => stripLargeDataUris(v)) as unknown as T;
+  }
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[k] = stripLargeDataUris(v);
+    }
+    return out as T;
+  }
+  return value;
+}
+
+/**
+ * Push today's snapshot to GitHub if it hasn't run yet today on this device/browser.
+ * Every push is its own commit, so git history is the retention policy — no separate
+ * pruning needed (unlike the old per-day-file Firebase Storage backup).
+ *
+ * Runs from whichever device has the app open and a saved repo/token — phone, PC,
+ * the deployed site, or local dev all push the same way, independent of Firestore.
+ */
+export async function runDailyGitHubBackupIfDue(
+  payload: { inventory?: unknown[]; expenses?: unknown[] } & Record<string, unknown>,
+  today: string,
+  options?: { force?: boolean }
+): Promise<DailyGitHubBackupResult> {
+  if (!options?.force && alreadyPushedToday(today)) return { ran: false, reason: 'already-today' };
+
+  const config = getStoredConfig();
+  if (!config) return { ran: false, reason: 'not-configured' };
+
+  // Never overwrite a good backup with an empty one (e.g. called before local data loaded).
+  if (!payload.inventory?.length && !payload.expenses?.length) {
+    return { ran: false, reason: 'empty' };
+  }
+
+  const result = await pushBackup(config, stripLargeDataUris(payload), `Daily auto-backup ${today}`);
+  markPushedToday(today);
+  return { ran: true, ...result };
+}
+
 /** Push backup content to the repo. Creates or updates backup.json. Returns commit sha. */
 export async function pushBackup(
   config: GitHubBackupConfig,

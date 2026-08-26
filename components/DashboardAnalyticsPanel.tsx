@@ -173,7 +173,7 @@ const DashboardAnalyticsPanel: React.FC<Props> = ({ items, expenses, range, rang
       <div className="grid lg:grid-cols-2 gap-4">
         <div className="bg-white rounded-2xl border p-4 h-[280px]">
           <p className="text-xs font-black uppercase text-slate-400 mb-2">Profit by platform</p>
-          <ResponsiveContainer width="100%" height="90%">
+          <ResponsiveContainer width="100%" height="90%" debounce={50} minHeight={160}>
             <BarChart data={byPlatform}>
               <XAxis dataKey="platform" tick={{ fontSize: 10 }} tickFormatter={(v) => String(v).replace('.de', '')} />
               <YAxis tick={{ fontSize: 10 }} />
@@ -191,7 +191,7 @@ const DashboardAnalyticsPanel: React.FC<Props> = ({ items, expenses, range, rang
         </div>
         <div className="bg-white rounded-2xl border p-4 h-[280px]">
           <p className="text-xs font-black uppercase text-slate-400 mb-2">Profit by category</p>
-          <ResponsiveContainer width="100%" height="90%">
+          <ResponsiveContainer width="100%" height="90%" debounce={50} minHeight={160}>
             <BarChart data={byCategory.slice(0, 8)} layout="vertical">
               <XAxis type="number" tick={{ fontSize: 10 }} />
               <YAxis type="category" dataKey="category" width={80} tick={{ fontSize: 9 }} />
@@ -202,7 +202,7 @@ const DashboardAnalyticsPanel: React.FC<Props> = ({ items, expenses, range, rang
         </div>
         <div className="bg-white rounded-2xl border p-4 h-[240px] lg:col-span-2">
           <p className="text-xs font-black uppercase text-slate-400 mb-2">Days in stock (active items)</p>
-          <ResponsiveContainer width="100%" height="85%">
+          <ResponsiveContainer width="100%" height="85%" debounce={50} minHeight={140}>
             <BarChart data={daysHist}>
               <XAxis dataKey="label" tick={{ fontSize: 10 }} />
               <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />

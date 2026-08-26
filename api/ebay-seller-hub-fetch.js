@@ -5,6 +5,7 @@
  * Routes (Hobby: one serverless function):
  *   POST /api/ebay-seller-hub-fetch              — paste parse or CDP single-order fetch
  *   POST /api/ebay-hub-archive-sync               — incremental Hub scrape (rewrite)
+ *   GET  /api/ebay-hub-preflight                  — CDP tab check before scrape (rewrite)
  *   GET/POST /api/ebay-hub-browser-ingest         — bookmarklet inbox (rewrite)
  */
 import { spawn } from 'node:child_process';
@@ -14,6 +15,7 @@ import {
   parseEbaySellerHubPayoutText,
   payoutLooksComplete,
 } from '../lib/ebaySellerHubPayout.js';
+import { runHubPreflight } from '../scripts/hub-scrape-browser.mjs';
 
 let pendingIngest = null;
 
@@ -206,6 +208,29 @@ async function handleBrowserIngest(req, res) {
   return res.status(405).json({ error: 'Method not allowed' });
 }
 
+async function handleHubPreflight(req, res) {
+  cors(res, 'GET, OPTIONS');
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'GET') {
+    res.setHeader('Allow', 'GET, OPTIONS');
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  if (process.env.VERCEL) {
+    return res.status(200).json({
+      ok: false,
+      code: 'local_only',
+      cdpAvailable: false,
+      loginInProgress: false,
+      hubReady: false,
+      tabs: [],
+    });
+  }
+
+  const result = await runHubPreflight();
+  return res.status(200).json(result);
+}
+
 async function handleArchiveSync(req, res) {
   cors(res, 'POST, OPTIONS');
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -291,6 +316,7 @@ async function handleSellerHubFetch(req, res) {
 export default async function handler(req, res) {
   const route = routeOf(req);
   if (route === 'archive-sync') return handleArchiveSync(req, res);
+  if (route === 'hub-preflight') return handleHubPreflight(req, res);
   if (route === 'browser-ingest') return handleBrowserIngest(req, res);
   return handleSellerHubFetch(req, res);
 }

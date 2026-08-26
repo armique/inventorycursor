@@ -74,4 +74,4 @@ const SettingsModalHost: React.FC<Props> = (props) => {
   );
 };
 
-export default SettingsModalHost;
+export default React.memo(SettingsModalHost);

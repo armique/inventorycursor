@@ -20,11 +20,13 @@ import {
   Undo2,
   Bookmark,
 } from 'lucide-react';
-import type { InventoryItem } from '../types';
+import type { InventoryItem, TaxMode } from '../types';
 import { ItemStatus } from '../types';
 import { formatEUR } from '../utils/formatMoney';
 import { BuyPriceBumpBadge } from './BuyPriceHistory';
-import { saleColumnSplit, canEditManualSellerShipping, shouldShowSellCellMarketplaceFees } from '../utils/saleProceeds';
+import { canEditManualSellerShipping, shouldShowSellCellMarketplaceFees } from '../utils/saleProceeds';
+import { resolveSellColumnSplit } from '../utils/sellColumnDisplay';
+import { POCKET_PROFIT_TAX_MODE } from '../services/financialAggregation';
 import { SellerShippingEditorDialog } from './SaleProceedsPopover';
 import { SellSplitLedger } from './SellSplitLedger';
 import { getItemUserPhotoCount } from '../utils/imageImport';
@@ -77,9 +79,9 @@ export const MobileStockCard: React.FC<{
   showPriceBreakdown?: boolean;
   /** Hub refund not yet stamped on the sold row. */
   refundFallbackEur?: number;
-  /** Hub sell-cell preview when the current breakdown does not match Seller Hub. */
-  hubSuggestedSplit?: ReturnType<typeof saleColumnSplit>;
-  onApplyHubSplit?: () => void;
+  /** Needed for bundle sell totals + Hub-linked sell split. */
+  allItems?: InventoryItem[];
+  taxMode?: TaxMode;
   /** Non-eBay sold rows — tap sell price to type shipping you paid. */
   onSaveShipping?: (amount: number) => void;
   selected?: boolean;
@@ -94,8 +96,8 @@ export const MobileStockCard: React.FC<{
   suggestedFeePct,
   showPriceBreakdown = false,
   refundFallbackEur = 0,
-  hubSuggestedSplit = null,
-  onApplyHubSplit,
+  allItems = [],
+  taxMode = POCKET_PROFIT_TAX_MODE,
   onSaveShipping,
   selected,
   onToggleSelect,
@@ -111,10 +113,16 @@ export const MobileStockCard: React.FC<{
     item.status === ItemStatus.SOLD ||
     item.status === ItemStatus.TRADED ||
     item.status === ItemStatus.GIFTED;
-  const canQuickBundle = Boolean(actions.onQuickBundle) && !soldLike;
-  /** Containers use Unbundle; Split is for single stock SKUs. */
+  // Sold/traded/gifted PC/bundle containers can still take more parts (the new part is
+  // stamped Sold to match) — only individual sold/disposed non-container items stay locked.
+  const isSoldContainer = (item.isPC || item.isBundle) && soldLike;
+  const canQuickBundle = Boolean(actions.onQuickBundle) && (!soldLike || isSoldContainer);
+  /** Containers use Unbundle; Split is for single stock SKUs — or a single sold/traded/
+   *  gifted item whose one sale actually covers several separately-shippable parts. */
   const canSplit =
-    Boolean(actions.onSplitParts) && inStock && canSplitItem(item, item.isPC || item.isBundle ? 1 : 0);
+    Boolean(actions.onSplitParts) &&
+    (inStock || (soldLike && !item.isPC && !item.isBundle)) &&
+    canSplitItem(item, item.isPC || item.isBundle ? 1 : 0);
   const lotQty = canSplit ? resolveIdenticalLotQty(item) : null;
   const partTone = !item.isPC && !item.isBundle ? resolveComponentPartTone(item) : null;
   const partPill = !item.isPC && !item.isBundle ? componentPartPillProps(item) : null;
@@ -175,16 +183,28 @@ export const MobileStockCard: React.FC<{
           </button>
 
           <div className="min-w-0 flex-1 py-0.5">
-            <button
-              type="button"
+            <div
+              role="button"
+              tabIndex={0}
               onClick={() => actions.onEdit(item)}
-              className="w-full text-left"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  actions.onEdit(item);
+                }
+              }}
+              className="w-full text-left cursor-pointer"
             >
               <p className="font-bold text-[13px] leading-tight text-slate-900 line-clamp-1">
                 {item.name}
               </p>
               {(() => {
-                const split = item.sellPrice != null ? saleColumnSplit(item, { refundFallbackEur }) : null;
+                const split =
+                  item.sellPrice != null
+                    ? resolveSellColumnSplit(item, allItems.length ? allItems : [item], taxMode, {
+                        refundFallbackEur,
+                      })
+                    : null;
                 return (
                   <>
                     <p className="mt-0.5 text-[11px] font-semibold text-slate-500 truncate flex items-center gap-1.5">
@@ -248,19 +268,6 @@ export const MobileStockCard: React.FC<{
                             showFees={shouldShowSellCellMarketplaceFees(item, showPriceBreakdown)}
                           />
                         )}
-                        {hubSuggestedSplit && onApplyHubSplit ? (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onApplyHubSplit();
-                            }}
-                            className="text-left opacity-80"
-                            title="Suggested Hub sell cell — tap to review"
-                          >
-                            <SellSplitLedger split={hubSuggestedSplit} showFees />
-                          </button>
-                        ) : null}
                       </div>
                     ) : null}
                   </>
@@ -341,7 +348,7 @@ export const MobileStockCard: React.FC<{
                   </div>
                 );
               })()}
-            </button>
+            </div>
             {actions.onPatchAccessory && !purchaseActions && (
               <div className="mt-1 flex items-center gap-1 flex-wrap" onClick={(e) => e.stopPropagation()}>
                 <ItemAccessoryToggles

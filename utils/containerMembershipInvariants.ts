@@ -46,6 +46,7 @@ function pickOwnerParentId(
 /**
  * Enforce one-parent ownership and sync componentIds ↔ parentContainerId.
  * Idempotent when already consistent (returns the same array reference).
+ * Unchanged rows keep their object identity — only patched / flag-normalized rows are cloned.
  */
 export function enforceContainerMembershipInvariants(items: InventoryItem[]): MembershipEnforceResult {
   if (items.length === 0) {
@@ -53,24 +54,32 @@ export function enforceContainerMembershipInvariants(items: InventoryItem[]): Me
   }
 
   let changed = false;
-  const working = items.map((i) => {
-    const normalized = normalizeExclusiveContainerFlags(i);
-    if (normalized !== i) changed = true;
-    return { ...normalized };
-  });
-  const byId = new Map(working.map((i) => [i.id, i]));
+  const working: InventoryItem[] = new Array(items.length);
+  const byId = new Map<string, InventoryItem>();
+  const indexById = new Map<string, number>();
+  const originalById = new Map<string, InventoryItem>();
+
+  for (let i = 0; i < items.length; i++) {
+    const raw = items[i];
+    originalById.set(raw.id, raw);
+    const normalized = normalizeExclusiveContainerFlags(raw);
+    if (normalized !== raw) changed = true;
+    working[i] = normalized;
+    byId.set(normalized.id, normalized);
+    indexById.set(normalized.id, i);
+  }
 
   const touch = (item: InventoryItem, patch: Partial<InventoryItem>) => {
     const next = { ...item, ...patch };
     byId.set(item.id, next);
-    const idx = working.findIndex((w) => w.id === item.id);
-    if (idx >= 0) working[idx] = next;
+    const idx = indexById.get(item.id);
+    if (idx !== undefined) working[idx] = next;
     changed = true;
     return next;
   };
 
   // 1) Clear invalid parent pointers
-  for (const item of [...working]) {
+  for (const item of working) {
     if (isContainerRow(item)) continue;
     const current = byId.get(item.id)!;
     const pid = current.parentContainerId;
@@ -139,10 +148,10 @@ export function enforceContainerMembershipInvariants(items: InventoryItem[]): Me
   }
 
   const deleteIds: string[] = [];
-  for (const container of [...working]) {
+  for (const container of working) {
     if (!isContainerRow(container)) continue;
     const current = byId.get(container.id)!;
-    const inputSnapshot = items.find((i) => i.id === current.id);
+    const inputSnapshot = originalById.get(current.id);
     const prev = current.componentIds || [];
     const owned = childrenOf.get(current.id) || [];
     const ownedSet = new Set(owned);
@@ -171,7 +180,8 @@ export function enforceContainerMembershipInvariants(items: InventoryItem[]): Me
   const uniqueDelete = [...new Set(deleteIds)];
   let nextItems = working.map((w) => byId.get(w.id) || w);
   if (uniqueDelete.length > 0) {
-    nextItems = nextItems.filter((i) => !uniqueDelete.includes(i.id));
+    const deleteSet = new Set(uniqueDelete);
+    nextItems = nextItems.filter((i) => !deleteSet.has(i.id));
     changed = true;
   }
 
@@ -186,27 +196,40 @@ export function enforceContainerMembershipInvariants(items: InventoryItem[]): Me
  * Detached sold/traded children do not keep the shell alive even if stale componentIds linger.
  */
 export function findEmptyContainerShellIds(items: InventoryItem[]): string[] {
-  return items
-    .filter((container) => {
-      if (!container.isPC && !container.isBundle) return false;
-      const listed = new Set(container.componentIds || []);
-      return !items.some((c) => {
-        if (c.isPC || c.isBundle || c.id === container.id) return false;
-        if (c.parentContainerId === container.id) return true;
-        if (!listed.has(c.id)) return false;
-        // Stale list entry for a part that already left as its own sold/traded row.
-        if (
-          !c.parentContainerId &&
-          (c.status === ItemStatus.SOLD ||
-            c.status === ItemStatus.TRADED ||
-            c.status === ItemStatus.GIFTED)
-        ) {
-          return false;
-        }
-        return true;
-      });
-    })
-    .map((c) => c.id);
+  const byId = new Map<string, InventoryItem>();
+  const containers: InventoryItem[] = [];
+  for (const item of items) {
+    byId.set(item.id, item);
+    if (item.isPC || item.isBundle) containers.push(item);
+  }
+  if (containers.length === 0) return [];
+
+  const keepAlive = new Set<string>();
+  for (const child of items) {
+    if (child.isPC || child.isBundle) continue;
+    if (child.parentContainerId) keepAlive.add(child.parentContainerId);
+  }
+  for (const container of containers) {
+    for (const id of container.componentIds || []) {
+      const child = byId.get(id);
+      if (!child || child.isPC || child.isBundle || child.id === container.id) continue;
+      if (child.parentContainerId === container.id) {
+        keepAlive.add(container.id);
+        continue;
+      }
+      if (
+        !child.parentContainerId &&
+        (child.status === ItemStatus.SOLD ||
+          child.status === ItemStatus.TRADED ||
+          child.status === ItemStatus.GIFTED)
+      ) {
+        continue;
+      }
+      keepAlive.add(container.id);
+    }
+  }
+
+  return containers.filter((c) => !keepAlive.has(c.id)).map((c) => c.id);
 }
 
 /** Parts that already belong to another container (cannot join a new compose). */

@@ -28,9 +28,18 @@ function profileHaystackParts(item: InventoryItem): string[] {
   return parts;
 }
 
+/**
+ * QW6: haystacks are pure functions of the item object, and item edits always replace the
+ * object (React immutable updates), so cache per object identity instead of rebuilding the
+ * string for every item on every keystroke.
+ */
+const haystackCache = new WeakMap<InventoryItem, string>();
+
 function haystack(item: InventoryItem): string {
+  const cached = haystackCache.get(item);
+  if (cached !== undefined) return cached;
   const specs = item.specs ? Object.entries(item.specs).map(([k, v]) => `${k}:${v}`).join(' ') : '';
-  return [
+  const text = [
     item.name,
     item.category,
     item.subCategory,
@@ -48,6 +57,23 @@ function haystack(item: InventoryItem): string {
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
+  haystackCache.set(item, text);
+  return text;
+}
+
+/**
+ * QW6: tokenize the query once per filter pass instead of once per item.
+ * Same semantics as matchesInventorySearch(item, rawQuery) for every item.
+ */
+export function buildInventorySearchMatcher(rawQuery: string): (item: InventoryItem) => boolean {
+  const query = rawQuery.trim().toLowerCase();
+  if (query.length < 2) return () => true;
+  const tokens = tokenize(query);
+  if (tokens.length === 0) return () => true;
+  return (item) => {
+    const text = haystack(item);
+    return tokens.every((t) => text.includes(t));
+  };
 }
 
 /** True when every query token appears in the item name/specs/profile haystack (AND match). */

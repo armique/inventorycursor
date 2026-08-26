@@ -36,10 +36,17 @@ function isUsableUrl(value?: string): value is string {
   return v.startsWith('http://') || v.startsWith('https://');
 }
 
+/** True when order id looks like a real eBay Bestellnummer (not an internal inventory placeholder). */
+export function isRealEbayOrderId(orderId?: string | null): boolean {
+  const id = (orderId || '').trim();
+  if (!id || id.startsWith('inventory-')) return false;
+  return /^\d{1,2}-\d{4,6}-\d{4,6}$/.test(id);
+}
+
 /** eBay order detail page for a buyer/seller order number. */
 export function buildEbayOrderUrl(orderId?: string): string | undefined {
-  const id = orderId?.trim();
-  if (!id) return undefined;
+  if (!isRealEbayOrderId(orderId)) return undefined;
+  const id = orderId!.trim();
   return `https://www.ebay.de/mesh/ord/details?orderid=${encodeURIComponent(id)}`;
 }
 

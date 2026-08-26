@@ -36,7 +36,7 @@ export function DashboardPerformanceChart({
   onOpenDay: (p: DayDetailPayload) => void;
 }) {
   return (
-    <ResponsiveContainer width="100%" height="100%">
+    <ResponsiveContainer width="100%" height="100%" debounce={50} minHeight={200}>
       <BarChart data={chartData} margin={{ top: 8, right: 12, left: -16, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
         <XAxis
@@ -166,7 +166,7 @@ export function DashboardStockPie({
   categoryData: { name: string; value: number }[];
 }) {
   return (
-    <ResponsiveContainer width="100%" height="100%">
+    <ResponsiveContainer width="100%" height="100%" debounce={50} minHeight={200}>
       <PieChart>
         <Pie data={categoryData} cx="50%" cy="50%" innerRadius="42%" outerRadius="68%" paddingAngle={3} dataKey="value">
           {categoryData.map((_, index) => (
