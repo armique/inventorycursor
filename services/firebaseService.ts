@@ -649,11 +649,36 @@ async function signInWithGoogleIdentityServices(
         finish(() => reject(new Error(err?.message || err?.type || "Google sign-in failed.")));
       },
     });
+    // Mobile Safari can silently swallow the popup this opens (no error_callback fires at
+    // all) if it decides the tap-to-popup gesture chain was broken — e.g. by network waits
+    // earlier in this same call. Without this, the button just spins forever with no
+    // feedback. prewarmGoogleSignIn() (called on mount) is the real fix for that gesture
+    // gap; this timeout is the backstop for whenever it still happens anyway.
+    window.setTimeout(() => {
+      finish(() =>
+        reject(new Error("Google sign-in didn't open a popup — check if your browser blocked it, then try again."))
+      );
+    }, 15000);
     try {
       client.requestAccessToken({ prompt: "select_account" });
     } catch (err) {
       finish(() => reject(err instanceof Error ? err : new Error(String(err))));
     }
+  });
+}
+
+/**
+ * Pre-load the Google Identity Services script + resolve the OAuth client id ahead of the
+ * user's tap. Without this, signInWithGoogle()'s first click on mobile does that work
+ * itself before calling requestAccessToken() — and that async gap after the tap is enough
+ * for Safari/iOS to treat the popup it opens as not user-initiated and silently block it
+ * (button just does nothing, no error). Call this on mount of any screen with a sign-in
+ * button so by the time someone taps it, both are already cached and the popup opens
+ * inside the same gesture.
+ */
+export function prewarmGoogleSignIn(): void {
+  void Promise.all([loadGoogleIdentityServices(), resolveGoogleWebClientId()]).catch(() => {
+    /* best-effort — signInWithGoogle() still works if this didn't finish in time */
   });
 }
 

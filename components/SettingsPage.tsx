@@ -10,7 +10,7 @@ import { buildElsterChecklist } from '../services/elsterChecklist';
 import { buildSteuerberaterBundle, downloadSteuerberaterBundle } from '../services/steuerberaterExport';
 import { buildGdprExportBlob, downloadGdprExport } from '../services/gdprExport';
 import { encryptBackupJson } from '../services/encryptedBackup';
-import { isCloudEnabled, getFirebaseConfig, signInWithGoogle, logOut, onAuthChange, getAuthErrorMessage, setLocalDataOnlyMode } from '../services/firebaseService';
+import { isCloudEnabled, getFirebaseConfig, signInWithGoogle, logOut, onAuthChange, getAuthErrorMessage, setLocalDataOnlyMode, prewarmGoogleSignIn } from '../services/firebaseService';
 import {
   analyzeInventoryPhotoArchive,
   archiveSinglePhotoUrl,
@@ -198,6 +198,11 @@ const SettingsPage: React.FC<Props> = ({
   const [user, setUser] = useState<any>(null);
   const [isPushing, setIsPushing] = useState(false);
   const [isSigningInPopup, setIsSigningInPopup] = useState(false);
+  // Warm the Google sign-in script/client id as soon as this screen mounts, not on tap —
+  // see prewarmGoogleSignIn's own comment for why the timing matters on mobile Safari.
+  useEffect(() => {
+    if (isCloudEnabled() && !user) prewarmGoogleSignIn();
+  }, [user]);
   const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
   const [photoArchiveRunning, setPhotoArchiveRunning] = useState(false);
   const [photoArchiveProgress, setPhotoArchiveProgress] = useState<PhotoArchiveProgress | null>(null);
