@@ -17,6 +17,7 @@ import {
   isUsingFirebaseEmulator,
   signInEmulatorWithEmail,
   prefersRedirectSignIn,
+  prewarmGoogleSignIn,
 } from '../services/firebaseService';
 import QuotaMonitor from './QuotaMonitor';
 import GlobalSearch from './GlobalSearch';
@@ -162,6 +163,14 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   const hidePanelChrome = location.pathname.startsWith('/panel/inventory');
 
   const requireAuth = isCloudEnabled && authReady && !authUser;
+
+  // Same fix as SettingsPage's sign-in button: warm the Google Identity Services script
+  // ahead of the tap so mobile Safari doesn't silently block the popup (see
+  // prewarmGoogleSignIn's own comment). This gate is actually the more common place
+  // someone hits "Sign in with Google" from, once cloud sync is on but not yet signed in.
+  React.useEffect(() => {
+    if (requireAuth) prewarmGoogleSignIn();
+  }, [requireAuth]);
 
   if (isCloudEnabled && authReady && authUser && !isAdmin) {
     return (
