@@ -1,10 +1,18 @@
 /**
- * Vercel serverless: exchange GitHub OAuth code for access token.
+ * Vercel serverless: GitHub-related routes, consolidated into one function (Hobby plan
+ * caps at 12 — see the ebay-abrechnung-backup.js consolidation for the same reason).
+ *   (default)          exchange GitHub OAuth code for access token
+ *   ?route=daily-backup  Vercel Cron only — see lib/apiHandlers/dailyBackupHandler.js
+ */
+import { handleDailyBackup } from '../lib/apiHandlers/dailyBackupHandler.js';
+
+/**
+ * Exchange GitHub OAuth code for access token.
  * Set env: GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET
  * GET /api/github-oauth?code=...&redirect_uri=...
  * Returns { access_token, login } or { error }.
  */
-export default async function handler(req, res) {
+async function handleOAuthExchange(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -55,4 +63,10 @@ export default async function handler(req, res) {
   } catch (e) {
     return res.status(500).json({ error: e.message || 'Exchange failed' });
   }
+}
+
+export default async function handler(req, res) {
+  const route = req.query?.route;
+  if (route === 'daily-backup') return handleDailyBackup(req, res);
+  return handleOAuthExchange(req, res);
 }

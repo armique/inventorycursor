@@ -28,5 +28,8 @@
     { "source": "/sitemap.xml", "destination": "/api/sitemap.xml" },
     { "source": "/(.*)", "has": [{ "type": "header", "key": "accept", "value": ".*text/html.*" }], "destination": "/index.html" }
   ],
-  "redirects": [{ "source": "/panel", "destination": "/panel/dashboard", "permanent": false }]
+  "redirects": [{ "source": "/panel", "destination": "/panel/dashboard", "permanent": false }],
+  "crons": [
+    { "path": "/api/github-oauth?route=daily-backup", "schedule": "0 3 * * *" }
+  ]
 }
