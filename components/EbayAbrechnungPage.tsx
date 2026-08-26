@@ -5,7 +5,6 @@ import type { InventoryItem, ItemUpdateOptions, TaxMode } from '../types';
 import { formatEUR, formatSignedEUR } from '../utils/formatMoney';
 import { hasEbaySaleSignals } from '../utils/salePlatform';
 import { isRealizedDisposal } from '../utils/itemDisposition';
-import { inferCategoryFromName } from '../utils/itemCategoryDetect';
 import { buildEbayOrderUrl, isRealEbayOrderId } from '../utils/sourceLinks';
 import {
   shouldSkipForAggregatedSaleLine,
@@ -148,7 +147,7 @@ function resaleSearchHint(title: string): string {
 const PAGE_SIZE = 80;
 const OVERVIEW_STORAGE_KEY = 'ebay-abrechnung-overview-open';
 
-/** Fixed component types offered as filter pills — subCategory matches inferCategoryFromName's output. */
+/** Fixed component types offered as filter pills — subCategory matches classifyAbrechnungRowComponent's output. */
 type ComponentPinDef = { id: string; label: string; subCategory: string };
 const COMPONENT_PIN_CATALOG: ComponentPinDef[] = [
   { id: 'gpu', label: 'GPU', subCategory: 'Graphics Cards' },
@@ -159,8 +158,43 @@ const COMPONENT_PIN_CATALOG: ComponentPinDef[] = [
   { id: 'psu', label: 'PSU', subCategory: 'Power Supplies' },
   { id: 'case', label: 'Cases', subCategory: 'Cases' },
   { id: 'cooling', label: 'Cooling', subCategory: 'Cooling' },
+  { id: 'pc', label: 'PC', subCategory: 'Custom Built PC' },
 ];
 const DEFAULT_COMPONENT_PIN_IDS = ['gpu', 'cpu', 'ram', 'mobo', 'storage'];
+
+// Same signal words as utils/itemCategoryDetect.ts's inferCategoryFromName, but applied
+// differently: a full-PC listing title often mentions its CPU/GPU/RAM together (e.g.
+// "Ryzen 3700X - X570 Gaming Edge - RTX 4070 - 16GB DDR4"), which would trip the GPU pin
+// under a first-match-wins heuristic. Here every category is tested and a title only
+// counts as that single component when exactly one category matches — two or more
+// hardware signals (or an explicit "PC"/"bundle" word) means it's a build, not a
+// standalone part, and it falls out of every component pin (only the PC pin catches it).
+const ABRECHNUNG_PC_RE = /\b(pc|gaming pc|custom build|bundle)\b/i;
+const ABRECHNUNG_COMPONENT_PATTERNS: { subCategory: string; re: RegExp }[] = [
+  { subCategory: 'Graphics Cards', re: /(rtx|gtx|radeon|rx\s?\d{3,5}|quadro|tesla|firepro|nvidia\s+[qkmt]|graphics card|grafikkarte)/i },
+  { subCategory: 'Processors', re: /(intel core|ryzen|threadripper|cpu|prozessor)/i },
+  {
+    subCategory: 'Motherboards',
+    re: /\b(mainboard|motherboard|mobo|chipset|form\s*factor|io[\s-]*shield|(?:a|b|h|x|z)\d{2,4}[a-z0-9-]*)\b/i,
+  },
+  {
+    subCategory: 'RAM',
+    re: /(ddr[2345]|ram\b|memory\b|\d+x\d+\s*gb|12800u|10600u|1333u|2rx8|1rx8|jedec|hynix|samsung m\d|kingston khx|sk hynix)/i,
+  },
+  { subCategory: 'Storage (SSD/HDD)', re: /(ssd|hdd|nvme|m\.2)/i },
+  { subCategory: 'Power Supplies', re: /(netzteil|power supply|psu|watt|80\+)/i },
+  { subCategory: 'Cases', re: /(geh[aä]use|case|micro-atx|matx|atx case)/i },
+  { subCategory: 'Cooling', re: /(aio|k[uü]hler|cooler|liquid freezer|fan|l[uü]fter|120mm|140mm)/i },
+];
+
+function classifyAbrechnungRowComponent(title: string): string {
+  const n = title.toLowerCase();
+  if (ABRECHNUNG_PC_RE.test(n)) return 'Custom Built PC';
+  const matches = ABRECHNUNG_COMPONENT_PATTERNS.filter((p) => p.re.test(n));
+  if (matches.length === 1) return matches[0].subCategory;
+  if (matches.length > 1) return 'Custom Built PC';
+  return 'Spare Parts';
+}
 const COMPONENT_PINS_STORAGE_KEY = 'ebay-abrechnung-component-pins';
 
 function readComponentPinIds(): string[] {
@@ -697,16 +731,16 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
     return { count, pocketEur };
   }, [displayReport, ledgers, refundStateByRowId]);
 
-  // Title → guessed component subCategory, cached once per row set (inferCategoryFromName is
-  // the same heuristic used app-wide for inventory category detection — reused here so a GPU
-  // pill means the same thing it would in Inventory).
+  // Title → guessed component subCategory, cached once per row set. See
+  // classifyAbrechnungRowComponent above: a title with 2+ hardware signals (or an explicit
+  // "PC"/"bundle" word) is a build and only counts toward the PC pin, never a single-part pin.
   const rowComponentSubCategoryById = useMemo(() => {
     const map = new Map<string, string>();
     for (const row of displayReport?.rows || []) {
       if (row.kind !== 'order') continue;
       const title = (row.title || row.description || '').trim();
       if (!title) continue;
-      map.set(row.id, inferCategoryFromName(title).subCategory);
+      map.set(row.id, classifyAbrechnungRowComponent(title));
     }
     return map;
   }, [displayReport]);
