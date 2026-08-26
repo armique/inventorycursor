@@ -385,6 +385,19 @@ export interface InventoryItem extends AiAttribution, SourceLinks {
   ebayOfferId?: string;
   /** Active eBay listing ID last synced via Store Pull (avoids re-matching sold/relisted duplicates). */
   ebayListingId?: string;
+  /**
+   * eBay listing condition — drives the numeric conditionId sent to the Inventory API.
+   * 'forParts' requires aiDescriptionNote to be non-empty (eBay mandates a fault
+   * description for "For parts or not working" listings).
+   */
+  ebayCondition?: 'new' | 'newOther' | 'used' | 'forParts';
+  /** Shipping weight in kg, used to pick the DHL rate tier at publish time. */
+  shippingWeightKg?: number;
+  /** Opt-in only — untracked DHL Warensendung instead of tracked Paket/Päckchen.
+   *  Defaults to tracked when unset; never auto-selected. */
+  ebayShippingMethod?: 'tracked' | 'warensendung';
+  /** Override the subCategory → eBay categoryId mapping for this one item, when needed. */
+  ebayCategoryIdOverride?: string;
 
   // Platform Specific Buy Data
   kleinanzeigenBuyChatUrl?: string;

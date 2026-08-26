@@ -87,6 +87,12 @@ import { searchProductPhotos, type ImageSearchResult } from '../services/imageSe
 import { getEbayUsername, type EbayMyListing } from '../services/ebayService';
 import { ensureEbayListings } from '../services/ebayListingIndex';
 import { matchEbayListingsForItem } from '../utils/ebayListingMatch';
+import { publishItemToEbay } from '../services/ebayPublish';
+import {
+  EBAY_CONDITION_LABEL,
+  EBAY_PUBLISH_BLOCKER_LABEL,
+  getEbayPublishReadiness,
+} from '../utils/ebayListingReadiness';
 
 const BUY_PLATFORMS: Platform[] = [
   'kleinanzeigen.de',
@@ -201,6 +207,18 @@ const ListingStudioModal: React.FC<Props> = ({
   const [receiptUrl, setReceiptUrl] = useState(item.receiptUrl || '');
   const [hasReceipt, setHasReceipt] = useState(!!item.hasReceipt);
 
+  const [ebayCondition, setEbayCondition] = useState<InventoryItem['ebayCondition'] | ''>(
+    item.ebayCondition || ''
+  );
+  const [shippingWeightText, setShippingWeightText] = useState(
+    item.shippingWeightKg != null ? String(item.shippingWeightKg) : ''
+  );
+  const [ebayShippingMethod, setEbayShippingMethod] = useState<
+    NonNullable<InventoryItem['ebayShippingMethod']>
+  >(item.ebayShippingMethod || 'tracked');
+  const [publishing, setPublishing] = useState(false);
+  const [publishResult, setPublishResult] = useState<string | null>(null);
+
   const [parsingSpecs, setParsingSpecs] = useState(false);
   const [generatingTitle, setGeneratingTitle] = useState(false);
   const [genListing, setGenListing] = useState(false);
@@ -262,6 +280,9 @@ const ListingStudioModal: React.FC<Props> = ({
       marketTitle: title,
       marketDescription: description,
       aiDescriptionNote: aiDescriptionNote.trim() || undefined,
+      ebayCondition: ebayCondition || undefined,
+      shippingWeightKg: shippingWeightText.trim() ? parseLocaleNumber(shippingWeightText) : undefined,
+      ebayShippingMethod,
     }),
     [
       item,
@@ -281,10 +302,45 @@ const ListingStudioModal: React.FC<Props> = ({
       title,
       description,
       aiDescriptionNote,
+      ebayCondition,
+      shippingWeightText,
+      ebayShippingMethod,
     ]
   );
 
   const photos = useMemo(() => getItemUserPhotoUrls(workingItem), [workingItem]);
+  const ebayReadiness = useMemo(() => getEbayPublishReadiness(workingItem), [workingItem]);
+
+  const handlePublishToEbay = async () => {
+    setPublishing(true);
+    setPublishResult(null);
+    setError(null);
+    try {
+      // Flush unsaved condition/weight/shipping fields before publishing so the API
+      // call and the saved item never disagree about what was actually sent.
+      await persistPatch({
+        ebayCondition: ebayCondition || undefined,
+        shippingWeightKg: shippingWeightText.trim() ? parseLocaleNumber(shippingWeightText) : undefined,
+        ebayShippingMethod,
+      });
+      const result = await publishItemToEbay(workingItem);
+      if (!result.ok || !result.listingId) {
+        setError(result.error || 'Publish failed');
+        return;
+      }
+      await persistPatch({
+        listedOnEbay: true,
+        ebaySku: result.sku,
+        ebayOfferId: result.offerId,
+        ebayListingId: result.listingId,
+      });
+      setPublishResult(`Live on eBay — listing ${result.listingId}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Publish failed');
+    } finally {
+      setPublishing(false);
+    }
+  };
 
   useEffect(() => {
     if (previewPhotoIndex === null) return;
@@ -442,6 +498,10 @@ const ListingStudioModal: React.FC<Props> = ({
     setParentContainerId(item.parentContainerId || '');
     setReceiptUrl(item.receiptUrl || '');
     setHasReceipt(!!item.hasReceipt);
+    setEbayCondition(item.ebayCondition || '');
+    setShippingWeightText(item.shippingWeightKg != null ? String(item.shippingWeightKg) : '');
+    setEbayShippingMethod(item.ebayShippingMethod || 'tracked');
+    setPublishResult(null);
     setPreviewPhotoIndex(null);
     setError(null);
     setMobileQuad('item');
@@ -1471,6 +1531,89 @@ const ListingStudioModal: React.FC<Props> = ({
                   Deal / proof
                 </button>
               </div>
+            </div>
+
+            <div className={`${ADD_FLOW_PANEL} p-2.5 space-y-1.5`}>
+              <h4 className={ADD_FLOW_LABEL}>eBay listing</h4>
+              <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                <label className="block space-y-0.5">
+                  <span className="text-[9px] font-black uppercase text-slate-400">Condition</span>
+                  <select
+                    className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-bold text-slate-900 outline-none focus:border-rose-400"
+                    value={ebayCondition}
+                    onChange={(e) => {
+                      const next = e.target.value as typeof ebayCondition;
+                      setEbayCondition(next);
+                      void persistPatch({ ebayCondition: next || undefined });
+                    }}
+                  >
+                    <option value="">Auto (from OVP/Defective)</option>
+                    {(Object.keys(EBAY_CONDITION_LABEL) as (keyof typeof EBAY_CONDITION_LABEL)[]).map((k) => (
+                      <option key={k} value={k}>
+                        {EBAY_CONDITION_LABEL[k]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block space-y-0.5">
+                  <span className="text-[9px] font-black uppercase text-slate-400">Weight (kg)</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-bold text-slate-900 outline-none focus:border-rose-400"
+                    value={shippingWeightText}
+                    placeholder="e.g. 1.2"
+                    onChange={(e) => setShippingWeightText(e.target.value)}
+                    onBlur={() => {
+                      if (shippingWeightText.trim() === '') {
+                        void persistPatch({ shippingWeightKg: undefined });
+                        return;
+                      }
+                      const n = parseLocaleNumber(shippingWeightText);
+                      if (!Number.isFinite(n) || n <= 0) return;
+                      setShippingWeightText(String(n));
+                      void persistPatch({ shippingWeightKg: n });
+                    }}
+                  />
+                </label>
+              </div>
+              {ebayCondition === 'forParts' && !aiDescriptionNote.trim() ? (
+                <p className="text-[10px] font-bold text-rose-600">
+                  "For parts" requires a fault note below (eBay requires disclosing the defect).
+                </p>
+              ) : null}
+              <label className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={ebayShippingMethod === 'warensendung'}
+                  onChange={(e) => {
+                    const next = e.target.checked ? 'warensendung' : 'tracked';
+                    setEbayShippingMethod(next);
+                    void persistPatch({ ebayShippingMethod: next });
+                  }}
+                  className="rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                />
+                Use untracked DHL Warensendung (cheap, no tracking — your risk)
+              </label>
+              {!ebayReadiness.ok ? (
+                <ul className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 space-y-0.5">
+                  {ebayReadiness.blockers.map((b) => (
+                    <li key={b}>• {EBAY_PUBLISH_BLOCKER_LABEL[b]}</li>
+                  ))}
+                </ul>
+              ) : null}
+              {publishResult ? (
+                <p className="text-[10px] font-bold text-emerald-700">{publishResult}</p>
+              ) : null}
+              <button
+                type="button"
+                disabled={publishing || !ebayReadiness.ok}
+                onClick={() => void handlePublishToEbay()}
+                className="w-full inline-flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg bg-slate-900 text-white text-[10px] font-black uppercase disabled:opacity-40"
+              >
+                {publishing ? <Loader2 size={12} className="animate-spin" /> : <ShoppingBag size={12} />}
+                {item.ebayListingId ? 'Re-publish to eBay' : 'Publish to eBay'}
+              </button>
             </div>
           </aside>
 

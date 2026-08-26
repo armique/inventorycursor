@@ -80,11 +80,18 @@ function ebayAppConfig() {
   };
 }
 
-/** User OAuth scopes for seller order + inventory + payout/fee read. */
+/**
+ * User OAuth scopes for seller order + inventory + payout/fee read, plus inventory WRITE
+ * (needed to publish listings — see handleEbayPublishItem below). Changing this list means
+ * existing refresh tokens were granted under the old scope set — reconnect eBay in Settings
+ * ("Connect eBay") after deploying this change, or publish calls will 401 with an invalid-scope
+ * error even though the read routes keep working fine.
+ */
 const EBAY_USER_SCOPES = [
   'https://api.ebay.com/oauth/api_scope',
   'https://api.ebay.com/oauth/api_scope/sell.fulfillment.readonly',
   'https://api.ebay.com/oauth/api_scope/sell.inventory.readonly',
+  'https://api.ebay.com/oauth/api_scope/sell.inventory',
   'https://api.ebay.com/oauth/api_scope/sell.finances',
 ].join(' ');
 
@@ -448,6 +455,38 @@ async function ebayJsonGet(token, url) {
     throw err;
   }
   return ebayRes.json();
+}
+
+/** PUT/POST to the Sell Inventory API. Returns parsed JSON, or null for a 204/empty body. */
+async function ebayJsonWrite(token, env, method, path, payload) {
+  const ebayRes = await fetch(`${ebayApiHost(env)}${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'Accept-Language': 'de-DE',
+      'Content-Language': 'de-DE',
+    },
+    body: JSON.stringify(payload),
+  });
+  const text = await ebayRes.text();
+  const data = text ? JSON.parse(text) : null;
+  if (ebayRes.status === 401) {
+    const err = new Error('eBay token expired or invalid — reconnect eBay in Settings.');
+    err.status = 401;
+    throw err;
+  }
+  if (!ebayRes.ok) {
+    const message =
+      data?.errors?.map((e) => e.message || e.longMessage).filter(Boolean).join(' | ') ||
+      text.slice(0, 500) ||
+      `eBay ${method} ${path} failed (${ebayRes.status})`;
+    const err = new Error(message);
+    err.status = ebayRes.status;
+    err.ebayErrors = data?.errors;
+    throw err;
+  }
+  return data;
 }
 
 async function fetchInventoryListings(token) {
@@ -1055,6 +1094,189 @@ async function handleEbayFinances(req, res) {
   }
 }
 
+/**
+ * Business config that has no per-item equivalent — set once in eBay Seller Hub, referenced
+ * by every publish call. There is no API to "discover the right one"; you set these directly.
+ */
+function ebayPublishConfig() {
+  return {
+    fulfillmentPolicyId: pickEnv('EBAY_FULFILLMENT_POLICY_ID'),
+    paymentPolicyId: pickEnv('EBAY_PAYMENT_POLICY_ID'),
+    returnPolicyId: pickEnv('EBAY_RETURN_POLICY_ID'),
+    merchantLocationKey: pickEnv('EBAY_MERCHANT_LOCATION_KEY'),
+  };
+}
+
+/**
+ * One-time (idempotent) setup: create the merchant inventory location every offer needs.
+ * Safe to call repeatedly — eBay returns 409 if it already exists, which we treat as success.
+ * POST { line1, city, postalCode, country? } — your address as it should appear to eBay
+ * (not shown to buyers for a "warehouse" location type).
+ */
+async function handleEbaySetupLocation(req, res) {
+  try {
+    const token = await ensureUserAccessToken(req);
+    const { env } = ebayAppConfig();
+    const { merchantLocationKey } = ebayPublishConfig();
+    if (!merchantLocationKey) {
+      return res.status(503).json({ error: 'Missing EBAY_MERCHANT_LOCATION_KEY on server.' });
+    }
+    const body = parseBody(req);
+    const { line1, city, postalCode, country } = body;
+    if (!line1 || !city || !postalCode) {
+      return res.status(400).json({ error: 'line1, city, postalCode required.' });
+    }
+    try {
+      await ebayJsonWrite(
+        token,
+        env,
+        'POST',
+        `/sell/inventory/v1/location/${encodeURIComponent(merchantLocationKey)}`,
+        {
+          location: { address: { addressLine1: line1, city, postalCode, country: country || 'DE' } },
+          locationTypes: ['WAREHOUSE'],
+          merchantLocationStatus: 'ENABLED',
+        }
+      );
+    } catch (e) {
+      if (e.status !== 409) throw e; // 409 = location already exists — fine.
+    }
+    return res.status(200).json({ ok: true, merchantLocationKey });
+  } catch (e) {
+    return res.status(e.status || 500).json({ error: e instanceof Error ? e.message : 'Location setup failed' });
+  }
+}
+
+function getUserTokenFromRequest(req) {
+  if (req.method === 'POST') {
+    const body = parseBody(req);
+    return body.token || (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  }
+  return (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || req.query?.token;
+}
+
+async function ensureUserAccessToken(req) {
+  const token = getUserTokenFromRequest(req);
+  if (!token) {
+    const err = new Error('No eBay access token supplied. Connect eBay in Settings first.');
+    err.status = 401;
+    throw err;
+  }
+  return token;
+}
+
+/**
+ * The actual publish flow: inventory_item → offer (create or update) → publish.
+ * POST { sku, title, description, imageUrls[], price, currency?, quantity, conditionId,
+ *        categoryId, aspects, weightKg, existingOfferId? }
+ * Returns { sku, offerId, listingId }.
+ */
+async function handleEbayPublishItem(req, res) {
+  try {
+    const token = await ensureUserAccessToken(req);
+    const { env, marketplace } = ebayAppConfig();
+    const { fulfillmentPolicyId, paymentPolicyId, returnPolicyId, merchantLocationKey } = ebayPublishConfig();
+    const missingPolicy = !fulfillmentPolicyId || !paymentPolicyId || !returnPolicyId || !merchantLocationKey;
+    if (missingPolicy) {
+      return res.status(503).json({
+        error:
+          'eBay Business Policies not configured on the server. Set EBAY_FULFILLMENT_POLICY_ID, ' +
+          'EBAY_PAYMENT_POLICY_ID, EBAY_RETURN_POLICY_ID, EBAY_MERCHANT_LOCATION_KEY (see .env.example).',
+      });
+    }
+
+    const body = parseBody(req);
+    const sku = String(body.sku || '').trim();
+    const title = String(body.title || '').trim().slice(0, 80);
+    const description = String(body.description || '').trim();
+    const imageUrls = Array.isArray(body.imageUrls) ? body.imageUrls.filter(Boolean) : [];
+    const price = parseListingPrice(body.price);
+    const quantity = parseLineQuantity(body.quantity) || 1;
+    const conditionId = String(body.conditionId || '3000');
+    const categoryId = String(body.categoryId || '').trim();
+    const aspects = body.aspects && typeof body.aspects === 'object' ? body.aspects : {};
+    const weightKg = Number(body.weightKg);
+    const shippingCostEur = parseListingPrice(body.shippingCostEur);
+    const existingOfferId = body.existingOfferId ? String(body.existingOfferId) : '';
+
+    if (!sku) return res.status(400).json({ error: 'sku required' });
+    if (!title) return res.status(400).json({ error: 'title required' });
+    if (!description) return res.status(400).json({ error: 'description required' });
+    if (!imageUrls.length) return res.status(400).json({ error: 'At least one https image URL required.' });
+    if (imageUrls.some((u) => !/^https:\/\//i.test(u))) {
+      return res.status(400).json({ error: 'All imageUrls must be public https:// URLs.' });
+    }
+    if (price == null) return res.status(400).json({ error: 'Valid price required.' });
+    if (!categoryId) return res.status(400).json({ error: 'categoryId required.' });
+
+    // 1) Inventory item — the physical product record. PUT is create-or-replace (idempotent by sku).
+    await ebayJsonWrite(token, env, 'PUT', `/sell/inventory/v1/inventory_item/${encodeURIComponent(sku)}`, {
+      availability: { shipToLocationAvailability: { quantity } },
+      condition: conditionId,
+      product: {
+        title,
+        description,
+        imageUrls,
+        aspects,
+      },
+      ...(Number.isFinite(weightKg) && weightKg > 0
+        ? { packageWeightAndSize: { weight: { value: weightKg, unit: 'KILOGRAM' } } }
+        : {}),
+    });
+
+    // 2) Offer — the listing itself on top of that inventory item.
+    const offerPayload = {
+      sku,
+      marketplaceId: marketplace || 'EBAY_DE',
+      format: 'FIXED_PRICE',
+      availableQuantity: quantity,
+      categoryId,
+      listingDescription: description,
+      listingPolicies: {
+        fulfillmentPolicyId,
+        paymentPolicyId,
+        returnPolicyId,
+        ...(shippingCostEur != null
+          ? {
+              shippingCostOverrides: [
+                { priority: 1, shippingCost: { value: String(shippingCostEur), currency: 'EUR' } },
+              ],
+            }
+          : {}),
+      },
+      pricingSummary: { price: { value: String(price), currency: 'EUR' } },
+      merchantLocationKey,
+    };
+
+    let offerId = existingOfferId;
+    if (offerId) {
+      await ebayJsonWrite(token, env, 'PUT', `/sell/inventory/v1/offer/${encodeURIComponent(offerId)}`, offerPayload);
+    } else {
+      const created = await ebayJsonWrite(token, env, 'POST', '/sell/inventory/v1/offer', offerPayload);
+      offerId = created?.offerId;
+      if (!offerId) throw new Error('eBay did not return an offerId.');
+    }
+
+    // 3) Publish — goes live, returns the listingId.
+    const published = await ebayJsonWrite(
+      token,
+      env,
+      'POST',
+      `/sell/inventory/v1/offer/${encodeURIComponent(offerId)}/publish`,
+      {}
+    );
+    const listingId = published?.listingId;
+    if (!listingId) throw new Error('eBay published the offer but returned no listingId.');
+
+    return res.status(200).json({ sku, offerId, listingId });
+  } catch (e) {
+    return res.status(e.status || 500).json({
+      error: e instanceof Error ? e.message : 'Publish failed',
+      ebayErrors: e.ebayErrors,
+    });
+  }
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') {
@@ -1075,5 +1297,7 @@ export default async function handler(req, res) {
   if (route === 'oauth_authorize_url') return handleEbayOAuthAuthorizeUrl(req, res);
   if (route === 'oauth_exchange') return handleEbayOAuthExchange(req, res);
   if (route === 'oauth_refresh') return handleEbayOAuthRefresh(req, res);
+  if (route === 'setup_location') return handleEbaySetupLocation(req, res);
+  if (route === 'publish_item') return handleEbayPublishItem(req, res);
   return handleEbayOrder(req, res);
 }

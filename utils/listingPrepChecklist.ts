@@ -55,9 +55,11 @@ export function getListingPrepChecklist(item: InventoryItem): ListingPrepCheckli
 }
 
 export function isListingPrepEligible(item: InventoryItem): boolean {
+  // Defective/for-parts items ARE listable (as "For parts or not working") — they're
+  // gated separately in ebayListingReadiness.ts, which requires a fault note before
+  // that condition is allowed to publish. This checklist only covers title/description/photos.
   return (
     (item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED) &&
-    !item.isDefective &&
     !item.isDraft &&
     !item.parentContainerId
   );
