@@ -1288,6 +1288,23 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
     [onUpdate]
   );
 
+  // Splitter menu inside the match picker (same underlying SplitPartsModal as Inventory) —
+  // candidates like "1 working 1 defekt" often haven't been split into separate rows yet.
+  const onSplitApply = useCallback(
+    (updates: InventoryItem[], deleteIds?: string[]) => {
+      onUpdate(updates, deleteIds, {
+        skipFieldPreserve: true,
+        flushCloud: true,
+        actionNote: {
+          action: 'Abrechnung split',
+          details: `Split ${updates.length} part(s) from match picker`,
+        },
+      });
+      setLinkNote(`Split into ${updates.length} part(s) — pick the sold one to link.`);
+    },
+    [onUpdate]
+  );
+
   const compare = useMemo(() => {
     if (!displayReport) return null;
     const sorts = displayReport.rows.map((r) => r.createdSort).filter(Boolean).sort();
@@ -2129,6 +2146,7 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
                 onClose={() => setMatchRow(null)}
                 onLink={onLinkItem}
                 onLinkBundle={onLinkBundle}
+                onSplitApply={onSplitApply}
                 onRecoverPriorSale={onRecoverPriorSale}
                 onSearchResale={onSearchResale}
               />

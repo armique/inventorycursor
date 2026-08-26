@@ -683,6 +683,35 @@ export function buildIdenticalCopyDrafts(
   }));
 }
 
+/**
+ * Pre-filled 2-part draft for the "1 working, 1 defekt" auto-detect suggestion
+ * (utils/detectWorkingDefektSplit.ts) — part #2 is flagged defective, price-weighted lower
+ * (or locked to the detected €N if the title stated one) instead of a plain 50/50 split.
+ */
+export function buildWorkingDefektSplitDrafts(
+  item: Pick<InventoryItem, 'name' | 'buyPrice' | 'category' | 'subCategory' | 'isDefective'>,
+  defektPriceEur?: number
+): SplitPartDraft[] {
+  const category = item.category || 'Components';
+  const subCategory = item.subCategory || '';
+  const seed: SplitPartDraft[] = [
+    { key: 'identical-0', presetId: 'identical', label: '#1', name: '', buyPrice: 0, weight: 1, category, subCategory, isDefective: false },
+    {
+      key: 'identical-1',
+      presetId: 'identical',
+      label: '#2',
+      name: '',
+      buyPrice: defektPriceEur ?? 0,
+      weight: DEFECTIVE_PART_WEIGHT,
+      category,
+      subCategory,
+      isDefective: true,
+      buyLocked: defektPriceEur != null,
+    },
+  ];
+  return buildIdenticalCopyDrafts(item, 2, seed, 'smart');
+}
+
 export type SplitApplyResult = {
   /** Null when standalone mode carved out every bit of the source's value — nothing of
    *  it is meant to survive, so the caller should delete the source rather than keep it. */

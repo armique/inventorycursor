@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, ChevronRight, ExternalLink, Flag, Link2, Loader2, Plus, Tag, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, ExternalLink, Flag, Link2, Loader2, Plus, Scissors, Tag, X } from 'lucide-react';
 import { ItemStatus, type InventoryItem, type TaxMode } from '../types';
 import { formatSignedEUR } from '../utils/formatMoney';
 import { isRealizedDisposal } from '../utils/itemDisposition';
@@ -29,6 +29,9 @@ import {
 } from '../utils/orderMatcherNeedsReview';
 import { orderCancellationCostAbs } from '../utils/ebaySaleAdjustments';
 import { applyRefundFeeAbsorption, hasAbsorbedRefundFee } from '../utils/refundFeeAbsorption';
+import SplitPartsModal from './SplitPartsModal';
+import { detectWorkingDefektSplit } from '../utils/detectWorkingDefektSplit';
+import { buildSplitApplyItems, buildWorkingDefektSplitDrafts } from '../utils/splitParts';
 
 type Props = {
   row: EbayTxRow;
@@ -39,6 +42,7 @@ type Props = {
   onClose: () => void;
   onLink: (next: InventoryItem) => void;
   onLinkBundle: (updates: InventoryItem[]) => void;
+  onSplitApply?: (updates: InventoryItem[], deleteIds?: string[]) => void;
   onRecoverPriorSale?: (item: InventoryItem) => void;
   onSearchResale?: (title: string) => void;
   /** panel = inline right column on Abrechnung page; modal = centered overlay */
@@ -211,6 +215,9 @@ type MatchPickerRowProps = {
   onToggleSelected: (itemId: string) => void;
   onApply: (item: InventoryItem, renameToOrderTitle: boolean) => void;
   onRecoverPriorSale?: (item: InventoryItem) => void;
+  onSplit?: (item: InventoryItem) => void;
+  /** "1 working, 1 defekt" title detection — pre-filled one-click split, suggest-only. */
+  onApplyDetectedSplit?: (item: InventoryItem) => void;
 };
 
 function MatchPickerRow({
@@ -226,12 +233,15 @@ function MatchPickerRow({
   onToggleSelected,
   onApply,
   onRecoverPriorSale,
+  onSplit,
+  onApplyDetectedSplit,
 }: MatchPickerRowProps) {
   const soldDay = inventorySoldDay(item);
   const itemDayKey = dayKey(item.sellDate || item.containerSoldDate);
   const invSell = Number(item.saleProceeds?.buyerTotalEur ?? item.sellPrice) || 0;
   // Parts of PC / bundle / mix never get Link — only the parent shell does.
   const isContainerPart = nestOnly || Boolean(parent) || Boolean(item.parentContainerId);
+  const detectedSplit = !isContainerPart ? detectWorkingDefektSplit(item.name) : null;
   const recoverable = onRecoverPriorSale && !isContainerPart ? getRecoverablePriorAbrechnungSale(item) : null;
   const childTone = nested ? resolveComponentPartTone(item) : null;
   const isPc = parent?.isPC ?? item.isPC;
@@ -345,6 +355,19 @@ function MatchPickerRow({
               : `Restore prior sale${recoverable.sellPrice != null ? ` · €${recoverable.sellPrice.toFixed(2)}` : ''}`}
           </button>
         ) : null}
+        {detectedSplit && onApplyDetectedSplit ? (
+          <button
+            type="button"
+            disabled={busyId != null}
+            onClick={() => onApplyDetectedSplit(item)}
+            className="mt-1 inline-flex items-center rounded-md border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+            title="Detected from the title — never applies without this click"
+          >
+            ⚠ Detected: 1 working + 1 defekt
+            {detectedSplit.defektPriceEur != null ? ` (€${detectedSplit.defektPriceEur.toFixed(2)})` : ''}
+            {' — Split now'}
+          </button>
+        ) : null}
       </div>
       {isContainerPart ? (
         <span className="mt-0.5 shrink-0 text-[9px] font-bold uppercase tracking-wide text-slate-400 px-1">
@@ -386,6 +409,18 @@ function MatchPickerRow({
           >
             {linkBusy ? <Loader2 size={13} className="animate-spin" /> : <Tag size={13} strokeWidth={2.25} />}
           </button>
+          {onSplit ? (
+            <button
+              type="button"
+              disabled={busyId != null}
+              onClick={() => onSplit(item)}
+              aria-label="Split into parts"
+              className="h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm hover:border-slate-400 hover:text-slate-900 disabled:opacity-50"
+              title="Split into parts — e.g. 1 working + 1 defekt weren't separated yet"
+            >
+              <Scissors size={13} strokeWidth={2.25} />
+            </button>
+          ) : null}
         </div>
       )}
     </div>
@@ -401,6 +436,7 @@ const EbayAbrechnungMatchPicker: React.FC<Props> = ({
   onClose,
   onLink,
   onLinkBundle,
+  onSplitApply,
   onRecoverPriorSale,
   onSearchResale,
   variant = 'panel',
@@ -409,6 +445,7 @@ const EbayAbrechnungMatchPicker: React.FC<Props> = ({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [collapsedContainers, setCollapsedContainers] = useState<Set<string>>(() => new Set());
+  const [splitTarget, setSplitTarget] = useState<InventoryItem | null>(null);
   const [needsReviewFlagged, setNeedsReviewFlagged] = useState(() => isOrderMatcherNeedsReview(row.id));
   useEffect(() => {
     setNeedsReviewFlagged(isOrderMatcherNeedsReview(row.id));
@@ -456,6 +493,27 @@ const EbayAbrechnungMatchPicker: React.FC<Props> = ({
           `Absorbed from ${isFullRefund ? 'fully' : 'partially'} refunded order ${row.orderId}`
         )
       );
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  // "1 working, 1 defekt" auto-detect suggestion — pre-fills the same split mechanics as
+  // the manual Splitter (buildWorkingDefektSplitDrafts + buildSplitApplyItems), but only
+  // ever runs on this explicit click, never automatically.
+  const handleApplyDetectedSplit = (item: InventoryItem) => {
+    if (!onSplitApply) return;
+    const detection = detectWorkingDefektSplit(item.name);
+    if (!detection) return;
+    setBusyId(item.id);
+    try {
+      const drafts = buildWorkingDefektSplitDrafts(item, detection.defektPriceEur);
+      const result = buildSplitApplyItems(item, drafts, items, { standalone: true });
+      if (result.parent) {
+        onSplitApply([result.parent, ...result.children]);
+      } else {
+        onSplitApply(result.children, [item.id]);
+      }
     } finally {
       setBusyId(null);
     }
@@ -760,6 +818,8 @@ const EbayAbrechnungMatchPicker: React.FC<Props> = ({
                       onToggleSelected={toggleSelected}
                       onApply={apply}
                       onRecoverPriorSale={onRecoverPriorSale}
+                      onSplit={onSplitApply ? setSplitTarget : undefined}
+                      onApplyDetectedSplit={onSplitApply ? handleApplyDetectedSplit : undefined}
                     />
                     {isContainer ? (
                       <p className={`px-1.5 pb-1 text-[9px] font-bold uppercase tracking-wider ${isPc ? 'text-indigo-500' : 'text-violet-500'}`}>
@@ -848,16 +908,42 @@ const EbayAbrechnungMatchPicker: React.FC<Props> = ({
     </div>
   );
 
-  if (isPanel) return body;
+  const splitModal =
+    splitTarget && onSplitApply
+      ? createPortal(
+          <SplitPartsModal
+            item={splitTarget}
+            items={items}
+            onClose={() => setSplitTarget(null)}
+            onApply={(updates, deleteIds) => {
+              onSplitApply(updates, deleteIds);
+              setSplitTarget(null);
+            }}
+          />,
+          document.body
+        )
+      : null;
+
+  if (isPanel) {
+    return (
+      <>
+        {body}
+        {splitModal}
+      </>
+    );
+  }
 
   return createPortal(
-    <div
-      className="fixed inset-0 z-[240] flex items-center justify-center bg-slate-900/50 p-3"
-      onClick={onClose}
-      role="presentation"
-    >
-      {body}
-    </div>,
+    <>
+      <div
+        className="fixed inset-0 z-[240] flex items-center justify-center bg-slate-900/50 p-3"
+        onClick={onClose}
+        role="presentation"
+      >
+        {body}
+      </div>
+      {splitModal}
+    </>,
     document.body
   );
 };
