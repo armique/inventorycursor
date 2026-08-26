@@ -10,7 +10,7 @@ const HOBBY_MAX = 12;
 const apiDir = path.join(process.cwd(), 'api');
 const files = fs
   .readdirSync(apiDir)
-  .filter((name) => name.endsWith('.js'))
+  .filter((name) => /\.(js|mjs|ts)$/.test(name))
   .sort();
 
 assert.ok(

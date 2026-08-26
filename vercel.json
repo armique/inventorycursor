@@ -23,6 +23,8 @@
     { "source": "/api/ebay-hub-archive-sync", "destination": "/api/ebay-seller-hub-fetch?route=archive-sync" },
     { "source": "/api/ebay-hub-preflight", "destination": "/api/ebay-seller-hub-fetch?route=hub-preflight" },
     { "source": "/api/ebay-hub-browser-ingest", "destination": "/api/ebay-seller-hub-fetch?route=browser-ingest" },
+    { "source": "/api/ebay-abrechnung-matcher-backup", "destination": "/api/ebay-abrechnung-backup?route=matcher" },
+    { "source": "/api/ebay-abrechnung-csvs", "destination": "/api/ebay-abrechnung-backup?route=csvs" },
     { "source": "/sitemap.xml", "destination": "/api/sitemap.xml" },
     { "source": "/(.*)", "has": [{ "type": "header", "key": "accept", "value": ".*text/html.*" }], "destination": "/index.html" }
   ],
