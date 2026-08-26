@@ -442,6 +442,7 @@ const EbayAbrechnungMatchPicker: React.FC<Props> = ({
   variant = 'panel',
 }) => {
   const [query, setQuery] = useState('');
+  const [hideLinked, setHideLinked] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [collapsedContainers, setCollapsedContainers] = useState<Set<string>>(() => new Set());
@@ -472,9 +473,16 @@ const EbayAbrechnungMatchPicker: React.FC<Props> = ({
     () => findEbayTxInventoryMatches(items, row, ledger, query, 12),
     [items, row, ledger, query]
   );
+  // "Already linked" = has an ebayOrderId at all (this order or a different one) — the
+  // toggle is for decluttering the search, not for the "already linked to THIS order"
+  // summary flag below, which still needs matches to compute correctly.
+  const visibleMatches = useMemo(
+    () => (hideLinked ? matches.filter((hit) => !hit.item.ebayOrderId) : matches),
+    [matches, hideLinked]
+  );
   const matchTree = useMemo(
-    () => buildMatchTree(matches, items, row.orderId || ''),
-    [matches, items, row.orderId]
+    () => buildMatchTree(visibleMatches, items, row.orderId || ''),
+    [visibleMatches, items, row.orderId]
   );
   const alreadyLinked = matches.some((hit) => hit.alreadyLinked);
   const stubPreview = useMemo(() => createInventoryItemFromEbayTx(row, ledger), [row, ledger]);
@@ -730,6 +738,20 @@ const EbayAbrechnungMatchPicker: React.FC<Props> = ({
           className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-[11px] font-semibold outline-none focus:border-indigo-400"
           autoFocus
         />
+        <button
+          type="button"
+          onClick={() => setHideLinked((v) => !v)}
+          className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${
+            hideLinked
+              ? 'border-indigo-300 bg-indigo-100 text-indigo-800'
+              : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+          }`}
+          aria-pressed={hideLinked}
+          title="Hide items that already have an eBay order linked (this one or another one)"
+        >
+          <Check size={10} strokeWidth={3} className={hideLinked ? '' : 'opacity-0'} />
+          Hide already-linked items
+        </button>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto px-1.5 pb-2">
         <p className="px-1.5 py-1 text-[10px] text-slate-400 uppercase tracking-wider font-bold">

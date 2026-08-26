@@ -599,7 +599,20 @@ export function stripIdenticalQtyFromName(name: string): string {
  * isDefective badge. Replaces any tag already present rather than stacking them.
  */
 export function withConditionSuffix(name: string, isDefective: boolean): string {
-  const base = String(name || '').replace(/\s*\((?:Working|Faulty)\)\s*$/i, '').trim();
+  const raw = String(name || '');
+  // Strip a trailing "(Working)"/"(Faulty)" tag even if the user is mid-edit inside it
+  // (e.g. backspaced past the closing paren, or partway through "Worki"/"Faul") — matching
+  // only an exact "(Working)"/"(Faulty)" would leave the half-deleted remnant in place and
+  // stack a fresh tag on top of it every keystroke.
+  const openIdx = raw.lastIndexOf('(');
+  let base = raw;
+  if (openIdx !== -1) {
+    const tail = raw.slice(openIdx + 1).replace(/\)\s*$/, '').trim().toLowerCase();
+    if (tail === '' || 'working'.startsWith(tail) || 'faulty'.startsWith(tail)) {
+      base = raw.slice(0, openIdx);
+    }
+  }
+  base = base.trim();
   return `${base} (${isDefective ? 'Faulty' : 'Working'})`;
 }
 
