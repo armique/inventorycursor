@@ -1344,6 +1344,48 @@ async function handleEbayAccountLocations(req, res) {
   }
 }
 
+/**
+ * Verifies/discovers real eBay category IDs — for confirming the hardcoded best-guess IDs
+ * in utils/ebayListingReadiness.ts against your actual account's marketplace category tree.
+ * GET ?q=Grafikkarten[&marketplaceId=EBAY_DE] — returns eBay's own suggested categories for
+ * that search term, each with its real numeric id, full ancestor path, and whether it's a
+ * leaf (only leaf categories can actually be used on a listing).
+ */
+async function handleEbayTaxonomySuggest(req, res) {
+  try {
+    const token = await ensureUserAccessToken(req);
+    const { env, marketplace } = ebayAppConfig();
+    const mp = (req.query?.marketplaceId && String(req.query.marketplaceId)) || marketplace || 'EBAY_DE';
+    const q = String(req.query?.q || '').trim();
+    if (!q) return res.status(400).json({ error: 'q (search term) required' });
+    const host = ebayApiHost(env);
+
+    const treeData = await ebayJsonGet(
+      token,
+      `${host}/commerce/taxonomy/v1/get_default_category_tree_id?marketplace_id=${encodeURIComponent(mp)}`
+    );
+    const treeId = treeData.categoryTreeId;
+    if (!treeId) return res.status(502).json({ error: 'eBay did not return a category tree id.' });
+
+    const suggestData = await ebayJsonGet(
+      token,
+      `${host}/commerce/taxonomy/v1/category_tree/${encodeURIComponent(treeId)}/get_category_suggestions?q=${encodeURIComponent(q)}`
+    );
+    const suggestions = (suggestData.categorySuggestions || []).map((s) => ({
+      categoryId: s.category?.categoryId,
+      categoryName: s.category?.categoryName,
+      isLeaf: s.category?.leafCategoryTreeNode !== false,
+      ancestors: (s.categoryTreeNodeAncestors || [])
+        .map((a) => a.categoryName)
+        .reverse()
+        .join(' > '),
+    }));
+    return res.status(200).json({ treeId, marketplaceId: mp, suggestions });
+  } catch (e) {
+    return res.status(e.status || 500).json({ error: e instanceof Error ? e.message : 'Taxonomy lookup failed' });
+  }
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') {
@@ -1368,5 +1410,6 @@ export default async function handler(req, res) {
   if (route === 'publish_item') return handleEbayPublishItem(req, res);
   if (route === 'account_policies') return handleEbayAccountPolicies(req, res);
   if (route === 'account_locations') return handleEbayAccountLocations(req, res);
+  if (route === 'taxonomy_suggest') return handleEbayTaxonomySuggest(req, res);
   return handleEbayOrder(req, res);
 }

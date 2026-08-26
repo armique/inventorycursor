@@ -221,6 +221,7 @@ const ListingStudioModal: React.FC<Props> = ({
   const [conditionToggles, setConditionToggles] = useState<string[]>(item.conditionToggles || []);
   const [eanText, setEanText] = useState(item.ean || '');
   const [publishing, setPublishing] = useState(false);
+  const [syncingPhotos, setSyncingPhotos] = useState(false);
   const [publishResult, setPublishResult] = useState<string | null>(null);
 
   const [parsingSpecs, setParsingSpecs] = useState(false);
@@ -318,6 +319,13 @@ const ListingStudioModal: React.FC<Props> = ({
 
   const photos = useMemo(() => getItemUserPhotoUrls(workingItem), [workingItem]);
   const ebayReadiness = useMemo(() => getEbayPublishReadiness(workingItem), [workingItem]);
+  // photos_not_hosted doesn't block the button — Publish syncs them to the cloud itself
+  // (see handlePublishToEbay) instead of making you go do that separately first.
+  const ebayNeedsPhotoSync = ebayReadiness.blockers.includes('photos_not_hosted');
+  const ebayHardBlockers = useMemo(
+    () => ebayReadiness.blockers.filter((b) => b !== 'photos_not_hosted'),
+    [ebayReadiness.blockers]
+  );
 
   const handlePublishToEbay = async () => {
     setPublishing(true);
@@ -333,7 +341,21 @@ const ListingStudioModal: React.FC<Props> = ({
         conditionToggles: conditionToggles.length ? conditionToggles : undefined,
         ean: eanText.trim() || undefined,
       });
-      const result = await publishItemToEbay(workingItem);
+
+      let itemToPublish = workingItem;
+      if (ebayNeedsPhotoSync && photos.length) {
+        setSyncingPhotos(true);
+        try {
+          const uploaded = await prepareInventoryImagesForStorage(photos, { itemId: item.id });
+          const photoPatch = { imageUrl: uploaded[0] || '', imageUrls: uploaded };
+          await persistPatch(photoPatch);
+          itemToPublish = { ...workingItem, ...photoPatch };
+        } finally {
+          setSyncingPhotos(false);
+        }
+      }
+
+      const result = await publishItemToEbay(itemToPublish);
       if (!result.ok || !result.listingId) {
         setError(result.error || 'Publish failed');
         return;
@@ -1650,24 +1672,33 @@ const ListingStudioModal: React.FC<Props> = ({
                   onBlur={() => void persistPatch({ ean: eanText.trim() || undefined })}
                 />
               </label>
-              {!ebayReadiness.ok ? (
+              {ebayHardBlockers.length ? (
                 <ul className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 space-y-0.5">
-                  {ebayReadiness.blockers.map((b) => (
+                  {ebayHardBlockers.map((b) => (
                     <li key={b}>• {EBAY_PUBLISH_BLOCKER_LABEL[b]}</li>
                   ))}
                 </ul>
+              ) : null}
+              {ebayNeedsPhotoSync ? (
+                <p className="text-[10px] font-semibold text-sky-700 bg-sky-50 border border-sky-200 rounded-lg px-2 py-1.5">
+                  Photos are still local-only — Publish will sync them to the cloud first, automatically.
+                </p>
               ) : null}
               {publishResult ? (
                 <p className="text-[10px] font-bold text-emerald-700">{publishResult}</p>
               ) : null}
               <button
                 type="button"
-                disabled={publishing || !ebayReadiness.ok}
+                disabled={publishing || ebayHardBlockers.length > 0}
                 onClick={() => void handlePublishToEbay()}
                 className="w-full inline-flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg bg-slate-900 text-white text-[10px] font-black uppercase disabled:opacity-40"
               >
                 {publishing ? <Loader2 size={12} className="animate-spin" /> : <ShoppingBag size={12} />}
-                {item.ebayListingId ? 'Re-publish to eBay' : 'Publish to eBay'}
+                {syncingPhotos
+                  ? 'Syncing photos…'
+                  : item.ebayListingId
+                    ? 'Re-publish to eBay'
+                    : 'Publish to eBay'}
               </button>
             </div>
           </aside>

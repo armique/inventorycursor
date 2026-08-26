@@ -12,12 +12,12 @@ import { getItemUserPhotoUrls } from './imageImport';
 // ---------------------------------------------------------------------------
 // Category mapping — subCategory → eBay.de categoryId + required item aspects.
 //
-// IMPORTANT: these categoryIds are best-effort from eBay's public category tree and are
-// NOT verified against your live account. Before the first real publish in each category,
-// confirm the id with:
-//   GET https://api.ebay.com/commerce/taxonomy/v1/category_tree/{DE_TREE_ID}/get_item_aspects_for_category?category_id={id}
-// A wrong categoryId fails the publish call loudly (400 error) rather than listing wrong —
-// it will not silently misfile the item.
+// Verified 2026-08-27 against the real account via /api/ebay?route=taxonomy_suggest
+// (commerce/taxonomy/v1 get_category_suggestions). 8/9 were already correct; Cooling was
+// wrong (92379 didn't correspond to anything real) and has been fixed to 131486. If you add
+// a new subCategory here, verify it the same way before relying on it — a wrong id fails
+// the publish call loudly (400 error) rather than listing wrong, but a *plausible-looking*
+// wrong id (like 92379 was) won't be obviously wrong until eBay rejects it.
 // ---------------------------------------------------------------------------
 
 export type EbayAspectBuilder = (item: InventoryItem) => Record<string, string[]>;
@@ -114,8 +114,8 @@ const EBAY_CATEGORY_MAP: EbayCategoryMapping[] = [
   },
   {
     subCategory: 'Cooling',
-    categoryId: '92379',
-    label: 'Kühlung',
+    categoryId: '131486',
+    label: 'CPU-Lüfter & Kühlkörper',
     buildAspects: (item) => ({ Brand: [brandFromName(item)] }),
   },
   {
