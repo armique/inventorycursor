@@ -998,9 +998,9 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
     [items, displayReport, resyncedItemProceeds, onUpdate]
   );
 
-  const feeFixCount = useMemo(() => {
-    if (!displayReport?.rows?.length) return 0;
-    let n = 0;
+  const staleFeeOrderIds = useMemo(() => {
+    if (!displayReport?.rows?.length) return [] as string[];
+    const ids: string[] = [];
     for (const row of displayReport.rows) {
       if (row.kind !== 'order' || !(row.orderId || '').trim()) continue;
       const linkedItem = linkedByOrder.get(row.orderId.trim().toLowerCase());
@@ -1010,10 +1010,12 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
       const haveSell = roundMoney(linkedItem.saleProceeds?.buyerTotalEur ?? linkedItem.sellPrice ?? 0);
       const wantFee = roundMoney(Math.abs(ledger?.fvfEur || 0) + Math.abs(ledger?.adsEur || 0) + Math.abs(ledger?.labelEur || 0));
       const haveFee = roundMoney(linkedItem.feeAmount || 0);
-      if (Math.abs(wantSell - haveSell) >= 0.02 || Math.abs(wantFee - haveFee) >= 0.02) n++;
+      if (Math.abs(wantSell - haveSell) >= 0.02 || Math.abs(wantFee - haveFee) >= 0.02) ids.push(row.orderId.trim());
     }
-    return n;
+    return ids;
   }, [displayReport, linkedByOrder, ledgers]);
+
+  const feeFixCount = staleFeeOrderIds.length;
 
   const onFixLinkedFees = useCallback(() => {
     if (!displayReport?.rows?.length) return;
@@ -1067,6 +1069,21 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
     },
     [resyncLinkedItemFees]
   );
+
+  // Auto-heal drift without waiting for a manual "Fix fees" click or a label edit: a
+  // silently-synced order (see the eBay API sync in App.tsx) can link to inventory before
+  // its DHL label is known, or a later CSV/report re-import can change fees/label on an
+  // order that was already linked. Whenever this page has stale linked items open, quietly
+  // resync them — same logic as the manual button, just triggered automatically. Guarded by
+  // the exact set of stale order ids so a fix that doesn't fully converge doesn't loop.
+  const feeAutoFixSigRef = useRef<string>('');
+  useEffect(() => {
+    if (loading || busy || !staleFeeOrderIds.length) return;
+    const sig = staleFeeOrderIds.slice().sort().join(',');
+    if (feeAutoFixSigRef.current === sig) return;
+    feeAutoFixSigRef.current = sig;
+    onFixLinkedFees();
+  }, [staleFeeOrderIds, loading, busy, onFixLinkedFees]);
 
   // Refunded/cancelled orders whose fee has been manually absorbed into some item's buy
   // price (utils/refundFeeAbsorption.ts) — the item stays a "candidate" awaiting relink to
