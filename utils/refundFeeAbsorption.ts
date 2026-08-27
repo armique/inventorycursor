@@ -270,6 +270,13 @@ export function findOwnOrderFullRefundReverts(
     if (ledger.itemEur < 0.01 && ledger.grossEur < 0.01) continue;
     const pocket = ledger.pocketEur;
     if (pocket == null || !Number.isFinite(pocket) || pocket > 0.01) continue;
+    // A negative pocket alone isn't proof of a refund — a thin-margin sale can go negative
+    // from ordinary FVF + ad + label deductions with no refund involved at all (confirmed
+    // live: a real, unrefunded €54.23 sale with normal fees). "Fully refunded" needs an
+    // actual adverse line on the order — a refund/case/dispute row, which lands in the
+    // ledger's `otherEur` bucket (buildEbayTxOrderLedgers only routes rows there when they
+    // aren't the order/label/ad-fee kind) — not just fees eating the whole sale.
+    if (!(ledger.otherEur < -0.005)) continue;
     if (hasOwnOrderRefundRevert(item, orderId)) continue;
     const fee = orderCancellationCostAbs(pocket);
     updates.push(...applyOwnOrderRefundRevert(item, orderId, fee, items));
