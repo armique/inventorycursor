@@ -1017,40 +1017,52 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
 
   const feeFixCount = staleFeeOrderIds.length;
 
-  const onFixLinkedFees = useCallback(() => {
-    if (!displayReport?.rows?.length) return;
-    const updates: InventoryItem[] = [];
-    for (const row of displayReport.rows) {
-      if (row.kind !== 'order' || !(row.orderId || '').trim()) continue;
-      const linkedItem = linkedByOrder.get(row.orderId.trim().toLowerCase());
-      if (!linkedItem) continue;
-      const ledger = ledgers.get(row.orderId.trim()) || null;
-      const updated = resyncedItemProceeds(linkedItem, row, ledger);
-      if (!updated) continue;
-      const changed =
-        Math.abs((updated.sellPrice || 0) - (linkedItem.sellPrice || 0)) >= 0.02 ||
-        Math.abs((updated.feeAmount || 0) - (linkedItem.feeAmount || 0)) >= 0.02;
-      if (changed) updates.push(updated);
-    }
-    if (!updates.length) {
-      setLinkNote('All Abrechnung-linked items already match their order fees.');
-      return;
-    }
-    onUpdate(updates, undefined, {
-      skipFieldPreserve: true,
-      skipMembershipSync: true,
-      skipContainerSync: true,
-      skipContainerSaleMetaSync: true,
-      flushCloud: true,
-      actionNote: {
-        action: 'Abrechnung fee resync',
-        details: `${updates.length} linked item(s) ← current order fees/label`,
-      },
-    });
-    setLinkNote(
-      `Fixed fees on ${updates.length} linked item${updates.length === 1 ? '' : 's'} — price breakdown now matches Abrechnung.`
-    );
-  }, [displayReport, linkedByOrder, ledgers, resyncedItemProceeds, onUpdate]);
+  const onFixLinkedFees = useCallback(
+    (opts?: { silent?: boolean; flushCloud?: boolean }) => {
+      if (!displayReport?.rows?.length) return;
+      const updates: InventoryItem[] = [];
+      for (const row of displayReport.rows) {
+        if (row.kind !== 'order' || !(row.orderId || '').trim()) continue;
+        const linkedItem = linkedByOrder.get(row.orderId.trim().toLowerCase());
+        if (!linkedItem) continue;
+        const ledger = ledgers.get(row.orderId.trim()) || null;
+        const updated = resyncedItemProceeds(linkedItem, row, ledger);
+        if (!updated) continue;
+        const changed =
+          Math.abs((updated.sellPrice || 0) - (linkedItem.sellPrice || 0)) >= 0.02 ||
+          Math.abs((updated.feeAmount || 0) - (linkedItem.feeAmount || 0)) >= 0.02;
+        if (changed) updates.push(updated);
+      }
+      if (!updates.length) {
+        if (!opts?.silent) setLinkNote('All Abrechnung-linked items already match their order fees.');
+        return;
+      }
+      onUpdate(updates, undefined, {
+        skipFieldPreserve: true,
+        skipMembershipSync: true,
+        skipContainerSync: true,
+        skipContainerSaleMetaSync: true,
+        // A manual "Fix fees" click flushes right away — the user is waiting on it. The
+        // silent auto-heal (below) never forces an immediate cloud write: on a large,
+        // long-lived order history this can touch many items at once, and forcing that
+        // through right on page load — especially on a weak connection — is exactly the
+        // kind of big sudden write that can leave the cloud-sync retry banner stuck spinning.
+        // Local save is still instant either way; the cloud push just rides the normal
+        // debounced/retry path like any other background edit.
+        flushCloud: opts?.flushCloud ?? true,
+        actionNote: {
+          action: 'Abrechnung fee resync',
+          details: `${updates.length} linked item(s) ← current order fees/label`,
+        },
+      });
+      if (!opts?.silent) {
+        setLinkNote(
+          `Fixed fees on ${updates.length} linked item${updates.length === 1 ? '' : 's'} — price breakdown now matches Abrechnung.`
+        );
+      }
+    },
+    [displayReport, linkedByOrder, ledgers, resyncedItemProceeds, onUpdate]
+  );
 
   const setOrderLabel = useCallback(
     async (orderId: string, amountEur: number, name?: string) => {
@@ -1082,7 +1094,7 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
     const sig = staleFeeOrderIds.slice().sort().join(',');
     if (feeAutoFixSigRef.current === sig) return;
     feeAutoFixSigRef.current = sig;
-    onFixLinkedFees();
+    onFixLinkedFees({ silent: true, flushCloud: false });
   }, [staleFeeOrderIds, loading, busy, onFixLinkedFees]);
 
   // Refunded/cancelled orders whose fee has been manually absorbed into some item's buy
@@ -1851,7 +1863,7 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
             {report?.rows?.length && linkedByOrder.size > 0 ? (
               <button
                 type="button"
-                onClick={onFixLinkedFees}
+                onClick={() => onFixLinkedFees()}
                 disabled={busy || feeFixCount === 0}
                 title={
                   feeFixCount > 0
