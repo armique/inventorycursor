@@ -677,13 +677,22 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
       .finally(() => setEbaySyncBusy(false));
   }, []);
 
-  // Deliberately NOT auto-run on mount. It used to fire here immediately alongside the CSV
-  // library load — on a device whose local storage was just cleared/is still populating, the
-  // API sync could read the CSV report list before it finished loading, see nothing covered
-  // yet, and dump the ENTIRE order history in as "new" api-sync rows — duplicating every order
-  // already in the CSVs (this is what inflated a real €64.8k report into a fake €131.2k one).
-  // The manual "Sync eBay orders" button below is the only trigger now, so it only ever runs
-  // once you can see CSV data is already loaded.
+  // Auto-runs again on visiting this page — but now gated on `loading` being false, not on
+  // mount. The old version fired immediately alongside the CSV library load: on a device whose
+  // local storage was just cleared/still populating, the API sync could read the CSV report
+  // list before it finished loading, see nothing covered yet, and dump the ENTIRE order
+  // history in as "new" api-sync rows — duplicating every order already in the CSVs (this is
+  // what inflated a real €64.8k report into a fake €131.2k one). Waiting for `loading` to
+  // actually turn false — the same signal the manual button's disabled state already uses —
+  // means it only ever runs once CSV data is confirmed loaded, so it can correctly tell "new"
+  // orders from ones already covered.
+  const autoSyncRanRef = useRef(false);
+  useEffect(() => {
+    if (loading || autoSyncRanRef.current) return;
+    autoSyncRanRef.current = true;
+    runEbaySync();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
 
   const hasImportedCsv = useMemo(
     () => reports.some((r) => (r.rows?.length ?? 0) > 0),
