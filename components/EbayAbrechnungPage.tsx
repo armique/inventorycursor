@@ -477,16 +477,9 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate, actionH
   // read — see the long comment on runEbaySync below for the exact bug this class of race
   // already caused once (duplicated orders). Reverting a real sale to stock based on a
   // stale/partial ledger read during that window is the same race with worse stakes.
+  // (The effect that actually flips this is declared further down, after reloadLocal —
+  // it needs to await that too, not just the cloud fetch; see the comment there for why.)
   const [cloudReportsSettled, setCloudReportsSettled] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
-    void runEbayTxCloudSyncOnce().finally(() => {
-      if (!cancelled) setCloudReportsSettled(true);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState(() => readViewState().search ?? '');
   const [kindFilter, setKindFilter] = useState<EbayTxKind | 'all' | 'refunded' | 'matcher'>(
@@ -720,6 +713,30 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate, actionH
     return () => {
       cancelled = true;
       window.removeEventListener(EBAY_TX_REPORT_UPDATED_EVENT, onUpdated);
+    };
+  }, [reloadLocal]);
+
+  // cloudReportsSettled must mean "the local `reports` state actually reflects the cloud
+  // pull," not just "the cloud fetch promise resolved." Those are two different moments:
+  // runEbayTxCloudSyncOnce() resolving only means applyEbayTxCloudState() finished writing
+  // to IndexedDB and fired EBAY_TX_REPORT_UPDATED_EVENT — reloadLocal() still has to read
+  // that back and call setReports() before `report`/`ledgers` here actually reflect it. On
+  // a small report that gap is a few ms and invisible; on a real, large order history (500+
+  // linked orders) it's enough that the refund auto-revert / sell-date effects below could
+  // still fire against the OLD reports state even though this flag had already gone true —
+  // which is exactly what showed up as the linked count flipping by one on some reloads.
+  // Explicitly awaiting reloadLocal() here (not just relying on the event listener above,
+  // whose completion this effect can't observe) closes that gap.
+  useEffect(() => {
+    let cancelled = false;
+    void runEbayTxCloudSyncOnce()
+      .then(() => reloadLocal())
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setCloudReportsSettled(true);
+      });
+    return () => {
+      cancelled = true;
     };
   }, [reloadLocal]);
 
