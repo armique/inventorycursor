@@ -1208,10 +1208,21 @@ const App: React.FC = () => {
     });
   }, [mergeActionHistoryFromLocal, mergeExpensesFromLocal, mergeInventoryWithLocal, requestFastCloudFlush]);
 
-  // Another tab/window saved newer inventory data than this tab has — stop autosaving here
-  // and tell the user to reload, instead of silently overwriting the newer save.
+  // Another tab/window (same browser) saved newer local inventory data than this tab has —
+  // this is a narrow race between two tabs' local IndexedDB writes, not a real conflict; the
+  // Firestore live listener above already keeps `items` current across devices/tabs on its
+  // own. Reload automatically to pick up that newer local save, exactly as if this tab had
+  // just now caught up live — but only when nothing here is unsaved yet, so a silent reload
+  // can never discard an in-flight edit. If something IS unsaved, fall back to the banner
+  // instead of autosaving here and silently overwriting the newer save.
   useEffect(() => {
-    setInventoryItemsStaleListener(() => setTabDataStale(true));
+    setInventoryItemsStaleListener(() => {
+      if (hasUnsavedChanges.current) {
+        setTabDataStale(true);
+        return;
+      }
+      window.location.reload();
+    });
     return () => setInventoryItemsStaleListener(null);
   }, []);
 
