@@ -237,6 +237,12 @@ function init(): { db: Firestore; auth: Auth; storage: FirebaseStorage } | null 
       // (previous behavior) when IndexedDB isn't available (e.g. some private-browsing modes).
       db = initializeFirestore(app, {
         localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+        // Some networks (VPNs, certain routers/firewalls, some antivirus proxies) silently
+        // break Firestore's default streaming transport — writes/listens just hang forever
+        // with no error (confirmed live: the Write channel got torn down mid-stream, 503s on
+        // the long-poll GET). Auto-detecting falls back to long-polling on those networks
+        // while still using the faster streaming transport everywhere else.
+        experimentalAutoDetectLongPolling: true,
       });
     } catch (persistErr) {
       console.warn("[firebase] Persistent local cache unavailable, falling back to memory-only:", persistErr);

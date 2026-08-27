@@ -527,10 +527,23 @@ const SettingsPage: React.FC<Props> = ({
     }
     setIsPushing(true);
     try {
-      if (onForcePush) await onForcePush();
+      if (onForcePush) {
+        // A broken network transport can leave the underlying write promise hanging forever
+        // with no error (seen live: Firestore's streaming channel silently torn down) — cap
+        // it so the button always ends up telling you something instead of spinning forever.
+        const timeout = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('timeout')), 20000)
+        );
+        await Promise.race([onForcePush(), timeout]);
+      }
       showToast('Saved to Cloud', 'success');
     } catch(e) {
-      showToast('Failed to save', 'error');
+      showToast(
+        e instanceof Error && e.message === 'timeout'
+          ? 'Save timed out — check your network connection and try again'
+          : 'Failed to save',
+        'error'
+      );
     } finally {
       setIsPushing(false);
     }
