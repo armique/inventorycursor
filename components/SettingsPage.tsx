@@ -903,7 +903,7 @@ const SettingsPage: React.FC<Props> = ({
     if (!ghToken) return;
     setCreateBackupRepoLoading(true);
     try {
-      const { full_name, html_url } = await createRepo(ghToken, name, { private: false, description: 'Inventory backup (backup.json)' });
+      const { full_name, html_url } = await createRepo(ghToken, name, { private: true, description: 'Inventory backup (backup.json)' });
       saveGitHubConfig(full_name, ghToken);
       setGitHubRepo(full_name);
       setCreateBackupRepoName('');
@@ -922,7 +922,7 @@ const SettingsPage: React.FC<Props> = ({
     setCreateAppRepoLoading(true);
     setCreatedAppRepoUrl(null);
     try {
-      const { full_name, html_url } = await createRepo(ghToken, name, { private: false, description: 'Inventory app' });
+      const { full_name, html_url } = await createRepo(ghToken, name, { private: true, description: 'Inventory app' });
       setCreatedAppRepoUrl(html_url || `https://github.com/${full_name}`);
       showToast(`Repo ${full_name} created. Push your code from your computer (see below).`, 'success');
     } catch (err: any) {
