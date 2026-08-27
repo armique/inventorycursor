@@ -232,13 +232,34 @@ export async function applyEbayTxCloudState(remote: EbayTxCloudState, keepLocalR
   notifyEbayTxReportUpdated();
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function syncEbayTxReportsWithCloud(): Promise<void> {
   if (!isCloudEnabled()) return;
   const localLib = await loadEbayTransactionLibrary();
   const localStats = await loadEbayTxCloudStats();
-  const remote = await fetchEbayTxReportsFromCloud();
   const localLabels = await loadEbayTxLabelOverrides();
   const localHas = localLib.reports.length > 0 || Object.keys(localLabels).length > 0;
+  let remote = await fetchEbayTxReportsFromCloud();
+  // fetchEbayTxReportsFromCloud() returns null both when the cloud genuinely has nothing
+  // AND when the read itself failed (auth token not fully warmed up right after a fresh
+  // sign-in, a cold Firestore connection, a transient network blip) — those two cases are
+  // indistinguishable from here, but only one of them is safe to treat as final. This
+  // wrapper is memoized per page load (see runEbayTxCloudSyncOnce below), so getting this
+  // wrong on the first try meant a device could show a permanently empty Abrechnung page
+  // for the rest of that session even though its real order history was sitting untouched
+  // in the cloud the whole time. When local is also empty, retry a couple of times before
+  // accepting "empty" — a device that actually has cloud data almost always succeeds on
+  // the second or third try; a device that's genuinely new stays empty either way.
+  if (!remote && !localHas) {
+    for (const backoffMs of [800, 1600]) {
+      await delay(backoffMs);
+      remote = await fetchEbayTxReportsFromCloud();
+      if (remote) break;
+    }
+  }
   const clearedAt = readEbayTxClearedAt();
   if (!remote) {
     if (localHas) await pushEbayTxReportsToCloud();
