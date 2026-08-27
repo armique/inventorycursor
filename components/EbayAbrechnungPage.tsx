@@ -10,7 +10,7 @@ import {
   shouldSkipForAggregatedSaleLine,
   getSoldContainerDisplayTotals,
 } from '../services/financialAggregation';
-import { POCKET_PROFIT_TAX_MODE } from '../services/financialAggregation';
+import { POCKET_PROFIT_TAX_MODE, roundMoney } from '../services/financialAggregation';
 import {
   applyEbayTxLabelOverrides,
   buildEbayTxOrderLedgers,
@@ -67,7 +67,9 @@ import { downloadEbayTxJsonBackup } from '../utils/ebayTxReportJsonExport';
 import {
   linkInventoryItemToEbayTx,
   unlinkEbayTxOrderFromInventory,
+  saleProceedsFromEbayTxLedger,
 } from '../utils/linkInventoryItemToEbayTx';
+import { calculateSaleProfit } from '../utils/saleProfit';
 import {
   applyInventoryUpdatesInChunks,
   bulkStripAllEbaySoldLinks,
@@ -826,6 +828,21 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
     () => applyEbayTxLabelOverrides(buildEbayTxOrderLedgers(displayReport?.rows || []), labelOverrides),
     [displayReport, labelOverrides]
   );
+  const linkedByOrder = useMemo(() => {
+    const map = new Map<string, InventoryItem>();
+    const linkScore = (item: InventoryItem) =>
+      (item.isBundle || item.isPC ? 4 : 0) + (item.parentContainerId ? 0 : 2);
+    for (const item of items) {
+      const orderId = (item.ebayOrderId || '').trim();
+      if (!orderId) continue;
+      const key = orderId.toLowerCase();
+      const existing = map.get(key);
+      if (!existing || linkScore(item) > linkScore(existing)) {
+        map.set(key, item);
+      }
+    }
+    return map;
+  }, [items]);
   const refundNetByOrderId = useMemo(
     () => buildEbayTxRefundNetByOrderId(displayReport?.rows || []),
     [displayReport]
@@ -918,29 +935,138 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
     [displayReport]
   );
 
-  const setOrderLabel = useCallback(async (orderId: string, amountEur: number, name?: string) => {
-    setLabelOverrides(await upsertEbayTxLabelOverride(orderId, amountEur, name));
-  }, []);
+  // Setting/clearing a DHL label price recomputes this order's ledger, but an item linked
+  // to it *before* that label existed was saved with whatever fee split was known at link
+  // time — nothing kept it in sync afterward. That's exactly the "Abrechnung pocket vs
+  // Inventory price breakdown disagree by the label amount" bug: the order's live pocket
+  // was always correct, the already-linked item's own saved breakdown just went stale.
+  // Bundles/PCs split proceeds equally across parts at link time — resyncing just the
+  // parent here would desync it from its own children, so those are left for a manual
+  // relink instead of guessing at a per-part split. Shared by the per-order resync below
+  // (fires on every label edit) and the bulk "Fix fees" backfill (fixes items that went
+  // stale before this existed).
+  const resyncedItemProceeds = useCallback(
+    (linkedItem: InventoryItem, row: EbayTxRow, ledger: EbayTxOrderLedger | null): InventoryItem | null => {
+      if (linkedItem.isBundle || linkedItem.isPC) return null;
+      const proceeds = saleProceedsFromEbayTxLedger(row, ledger);
+      const buyerTotal = proceeds.buyerTotalEur || 0;
+      const fee =
+        (proceeds.transactionFeeEur || 0) +
+        (proceeds.adFeeEur || 0) +
+        (proceeds.shippingLabelEur || 0) +
+        (proceeds.otherFeeEur || 0);
+      const profit = calculateSaleProfit(buyerTotal, Number(linkedItem.buyPrice) || 0, fee, taxMode);
+      return {
+        ...linkedItem,
+        sellPrice: buyerTotal,
+        originalSellPrice: buyerTotal,
+        profit: parseFloat(profit.toFixed(2)),
+        hasFee: fee >= 0.01,
+        feeAmount: roundMoney(fee),
+        saleProceeds: proceeds,
+      };
+    },
+    [taxMode]
+  );
 
-  const clearOrderLabel = useCallback(async (orderId: string) => {
-    setLabelOverrides(await removeEbayTxLabelOverride(orderId));
-  }, []);
-
-  const linkedByOrder = useMemo(() => {
-    const map = new Map<string, InventoryItem>();
-    const linkScore = (item: InventoryItem) =>
-      (item.isBundle || item.isPC ? 4 : 0) + (item.parentContainerId ? 0 : 2);
-    for (const item of items) {
-      const orderId = (item.ebayOrderId || '').trim();
-      if (!orderId) continue;
-      const key = orderId.toLowerCase();
-      const existing = map.get(key);
-      if (!existing || linkScore(item) > linkScore(existing)) {
-        map.set(key, item);
+  const resyncLinkedItemFees = useCallback(
+    (orderId: string, overrides: Record<string, EbayTxLabelOverride>) => {
+      const key = orderId.trim().toLowerCase();
+      if (!key) return;
+      const linkScore = (it: InventoryItem) => (it.isBundle || it.isPC ? 4 : 0) + (it.parentContainerId ? 0 : 2);
+      let linkedItem: InventoryItem | null = null;
+      for (const it of items) {
+        if ((it.ebayOrderId || '').trim().toLowerCase() !== key) continue;
+        if (!linkedItem || linkScore(it) > linkScore(linkedItem)) linkedItem = it;
       }
+      if (!linkedItem) return;
+      const rows = displayReport?.rows || [];
+      const row = rows.find((r) => r.kind === 'order' && (r.orderId || '').trim().toLowerCase() === key);
+      if (!row) return;
+      const freshLedger = applyEbayTxLabelOverrides(buildEbayTxOrderLedgers(rows), overrides).get(row.orderId.trim()) || null;
+      const updated = resyncedItemProceeds(linkedItem, row, freshLedger);
+      if (!updated) return;
+      onUpdate([updated], undefined, {
+        skipFieldPreserve: true,
+        skipMembershipSync: true,
+        skipContainerSync: true,
+        skipContainerSaleMetaSync: true,
+        flushCloud: true,
+        actionNote: { action: 'Abrechnung fee resync', details: `${orderId} → ${linkedItem.name} (label updated)` },
+      });
+    },
+    [items, displayReport, resyncedItemProceeds, onUpdate]
+  );
+
+  const feeFixCount = useMemo(() => {
+    if (!displayReport?.rows?.length) return 0;
+    let n = 0;
+    for (const row of displayReport.rows) {
+      if (row.kind !== 'order' || !(row.orderId || '').trim()) continue;
+      const linkedItem = linkedByOrder.get(row.orderId.trim().toLowerCase());
+      if (!linkedItem || linkedItem.isBundle || linkedItem.isPC) continue;
+      const ledger = ledgers.get(row.orderId.trim()) || null;
+      const wantSell = roundMoney(ledger?.pocketEur != null ? (ledger.itemEur || 0) + (ledger.buyerShipEur || 0) : 0);
+      const haveSell = roundMoney(linkedItem.saleProceeds?.buyerTotalEur ?? linkedItem.sellPrice ?? 0);
+      const wantFee = roundMoney(Math.abs(ledger?.fvfEur || 0) + Math.abs(ledger?.adsEur || 0) + Math.abs(ledger?.labelEur || 0));
+      const haveFee = roundMoney(linkedItem.feeAmount || 0);
+      if (Math.abs(wantSell - haveSell) >= 0.02 || Math.abs(wantFee - haveFee) >= 0.02) n++;
     }
-    return map;
-  }, [items]);
+    return n;
+  }, [displayReport, linkedByOrder, ledgers]);
+
+  const onFixLinkedFees = useCallback(() => {
+    if (!displayReport?.rows?.length) return;
+    const updates: InventoryItem[] = [];
+    for (const row of displayReport.rows) {
+      if (row.kind !== 'order' || !(row.orderId || '').trim()) continue;
+      const linkedItem = linkedByOrder.get(row.orderId.trim().toLowerCase());
+      if (!linkedItem) continue;
+      const ledger = ledgers.get(row.orderId.trim()) || null;
+      const updated = resyncedItemProceeds(linkedItem, row, ledger);
+      if (!updated) continue;
+      const changed =
+        Math.abs((updated.sellPrice || 0) - (linkedItem.sellPrice || 0)) >= 0.02 ||
+        Math.abs((updated.feeAmount || 0) - (linkedItem.feeAmount || 0)) >= 0.02;
+      if (changed) updates.push(updated);
+    }
+    if (!updates.length) {
+      setLinkNote('All Abrechnung-linked items already match their order fees.');
+      return;
+    }
+    onUpdate(updates, undefined, {
+      skipFieldPreserve: true,
+      skipMembershipSync: true,
+      skipContainerSync: true,
+      skipContainerSaleMetaSync: true,
+      flushCloud: true,
+      actionNote: {
+        action: 'Abrechnung fee resync',
+        details: `${updates.length} linked item(s) ← current order fees/label`,
+      },
+    });
+    setLinkNote(
+      `Fixed fees on ${updates.length} linked item${updates.length === 1 ? '' : 's'} — price breakdown now matches Abrechnung.`
+    );
+  }, [displayReport, linkedByOrder, ledgers, resyncedItemProceeds, onUpdate]);
+
+  const setOrderLabel = useCallback(
+    async (orderId: string, amountEur: number, name?: string) => {
+      const next = await upsertEbayTxLabelOverride(orderId, amountEur, name);
+      setLabelOverrides(next);
+      resyncLinkedItemFees(orderId, next);
+    },
+    [resyncLinkedItemFees]
+  );
+
+  const clearOrderLabel = useCallback(
+    async (orderId: string) => {
+      const next = await removeEbayTxLabelOverride(orderId);
+      setLabelOverrides(next);
+      resyncLinkedItemFees(orderId, next);
+    },
+    [resyncLinkedItemFees]
+  );
 
   // Refunded/cancelled orders whose fee has been manually absorbed into some item's buy
   // price (utils/refundFeeAbsorption.ts) — the item stays a "candidate" awaiting relink to
@@ -1702,6 +1828,25 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
                 Fix sell dates
                 {sellDateFixCount > 0 ? (
                   <span className="tabular-nums rounded-md bg-sky-200/80 px-1.5 py-0.5 text-[10px]">{sellDateFixCount}</span>
+                ) : null}
+              </button>
+            ) : null}
+            {report?.rows?.length && linkedByOrder.size > 0 ? (
+              <button
+                type="button"
+                onClick={onFixLinkedFees}
+                disabled={busy || feeFixCount === 0}
+                title={
+                  feeFixCount > 0
+                    ? `Recompute price breakdown on ${feeFixCount} item(s) whose fees/label went stale (e.g. a label was added after linking)`
+                    : 'All linked items already match their order fees/label'
+                }
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-900 text-xs font-bold hover:bg-emerald-100 disabled:opacity-50"
+              >
+                <RefreshCw size={14} />
+                Fix fees
+                {feeFixCount > 0 ? (
+                  <span className="tabular-nums rounded-md bg-emerald-200/80 px-1.5 py-0.5 text-[10px]">{feeFixCount}</span>
                 ) : null}
               </button>
             ) : null}
