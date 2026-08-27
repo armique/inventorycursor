@@ -865,8 +865,8 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave, buildKind = 'pc' }) =
          below={!editId ? <AddFlowBuilderModeSwitch active={isBundleKind ? 'bundle' : 'pc'} /> : undefined}
        />
 
-       <div className="flex flex-1 gap-4 overflow-hidden min-h-0">
-          
+       <div className="flex flex-1 gap-4 overflow-x-auto overflow-y-hidden min-h-0">
+
           {/* LEFT: SLOTS */}
           <div className="w-[360px] xl:w-[390px] flex flex-col gap-3 shrink-0 overflow-y-auto pb-6 scrollbar-hide">
              <div className={`${ADD_FLOW_PANEL} p-4 space-y-2`}>
@@ -921,7 +921,7 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave, buildKind = 'pc' }) =
           </div>
 
           {/* CENTER: SELECTION / SEARCH */}
-          <div className="flex-1 flex flex-col gap-4 min-h-0">
+          <div className="flex-1 min-w-[320px] flex flex-col gap-4 min-h-0">
              {renderPartPicker(false)}
           </div>
 

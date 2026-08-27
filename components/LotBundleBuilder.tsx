@@ -267,7 +267,7 @@ const LotBundleBuilder: React.FC<Props> = ({ items, onSave }) => {
         below={!editId ? <AddFlowBuilderModeSwitch active="mixed" /> : undefined}
       />
 
-      <div className="flex flex-1 gap-4 overflow-hidden min-h-0">
+      <div className="flex flex-1 gap-4 overflow-x-auto overflow-y-hidden min-h-0">
         <div className="w-[340px] flex flex-col gap-3 shrink-0 overflow-y-auto">
           <div className={`${ADD_FLOW_PANEL} p-4`}>
             <label className={ADD_FLOW_LABEL}>Mixed name</label>
@@ -335,7 +335,7 @@ const LotBundleBuilder: React.FC<Props> = ({ items, onSave }) => {
           />
         </div>
 
-        <div className={`${ADD_FLOW_PANEL} flex-1 flex flex-col min-h-0 overflow-hidden`}>
+        <div className={`${ADD_FLOW_PANEL} flex-1 min-w-[320px] flex flex-col min-h-0 overflow-hidden`}>
           <div className="p-4 border-b border-slate-100">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />

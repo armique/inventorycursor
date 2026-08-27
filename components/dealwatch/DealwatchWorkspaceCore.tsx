@@ -509,7 +509,7 @@ const DealwatchWorkspaceCore: React.FC<DealwatchWorkspaceProps> = ({ embedded = 
                 {t.id === 'ka-sales' ? ` ${kaSales.length}` : ''}
               </button>
             ))}
-            <div className="ml-auto flex items-center gap-1.5">
+            <div className="ml-auto flex flex-wrap items-center gap-1.5">
               {(tab === 'matches' || tab === 'watchlist') && (
                 <div className="flex border border-slate-200 bg-white">
                   {LISTING_VIEWS.map(({ id, label, Icon }) => (
