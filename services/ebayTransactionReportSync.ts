@@ -19,6 +19,11 @@ import {
   type EbayTxLabelOverride,
   type EbayTxLibrary,
 } from './ebayTransactionReportStore';
+import {
+  getOrderMatcherNeedsReviewMap,
+  mergeOrderMatcherNeedsReviewMap,
+  type NeedsReviewEntry,
+} from '../utils/orderMatcherNeedsReview';
 
 /** Local marker so an intentional Clear is not immediately refilled from stale cloud. */
 const EBAY_TX_CLEARED_AT_KEY = 'ebay_tx_reports_cleared_at';
@@ -87,6 +92,7 @@ export async function buildEbayTxCloudStateFromLocal(): Promise<EbayTxCloudState
   return {
     reports: library.reports.map(stripRows),
     labelOverrides,
+    needsReview: getOrderMatcherNeedsReviewMap(),
     coverage: ebayTxImportedCoverage(library.reports),
     pocket,
     combinedSummary,
@@ -197,6 +203,7 @@ export async function applyEbayTxCloudState(remote: EbayTxCloudState, keepLocalR
         .map((r) => ({ ...r, rows: byReport.get(r.meta.id) || [] }));
       if (reports.length) await saveEbayTransactionLibrary({ reports });
     }
+    mergeOrderMatcherNeedsReviewMap((remote.needsReview || {}) as Record<string, NeedsReviewEntry>);
     await persistEbayTxCloudStats(remote);
     notifyEbayTxReportUpdated();
     return;
@@ -228,6 +235,7 @@ export async function applyEbayTxCloudState(remote: EbayTxCloudState, keepLocalR
   await saveEbayTxLabelOverrides(
     mergeLabelOverrides(localLabels, (remote.labelOverrides || {}) as Record<string, EbayTxLabelOverride>)
   );
+  mergeOrderMatcherNeedsReviewMap((remote.needsReview || {}) as Record<string, NeedsReviewEntry>);
   await persistEbayTxCloudStats(remote);
   notifyEbayTxReportUpdated();
 }

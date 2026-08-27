@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, ChevronRight, ExternalLink, Flag, Link2, Loader2, Plus, Scissors, Tag, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, Flag, Link2, Loader2, Plus, Scissors, Tag, X } from 'lucide-react';
 import { ItemStatus, type InventoryItem, type TaxMode } from '../types';
 import { formatSignedEUR } from '../utils/formatMoney';
 import { isRealizedDisposal } from '../utils/itemDisposition';
@@ -27,6 +27,7 @@ import {
   flagOrderMatcherNeedsReview,
   unflagOrderMatcherNeedsReview,
 } from '../utils/orderMatcherNeedsReview';
+import { scheduleEbayTxReportsCloudPush } from '../services/ebayTransactionReportSync';
 import { orderCancellationCostAbs } from '../utils/ebaySaleAdjustments';
 import { applyRefundFeeAbsorption, hasAbsorbedRefundFee } from '../utils/refundFeeAbsorption';
 import SplitPartsModal from './SplitPartsModal';
@@ -47,6 +48,12 @@ type Props = {
   onSearchResale?: (title: string) => void;
   /** panel = inline right column on Abrechnung page; modal = centered overlay */
   variant?: 'panel' | 'modal';
+  /** Manual move to the next/previous not-yet-linked order — for when the current one
+   *  can't be linked (no match, needs research) and you just want to move on. */
+  onNext?: () => void;
+  onPrev?: () => void;
+  hasNext?: boolean;
+  hasPrev?: boolean;
 };
 
 export type ChipTone = 'slate' | 'sky' | 'emerald' | 'amber' | 'violet' | 'rose';
@@ -451,6 +458,10 @@ const EbayAbrechnungMatchPicker: React.FC<Props> = ({
   onRecoverPriorSale,
   onSearchResale,
   variant = 'panel',
+  onNext,
+  onPrev,
+  hasNext,
+  hasPrev,
 }) => {
   const [query, setQuery] = useState('');
   const [hideLinked, setHideLinked] = useState(false);
@@ -462,10 +473,17 @@ const EbayAbrechnungMatchPicker: React.FC<Props> = ({
   useEffect(() => {
     setNeedsReviewFlagged(isOrderMatcherNeedsReview(row.id));
   }, [row.id]);
-  useEffect(() => {
-    if (needsReviewFlagged) flagOrderMatcherNeedsReview(row.id);
+  // Written directly from the click handler below, not reactively off needsReviewFlagged —
+  // that state also gets reset every time `row.id` changes (just navigating between orders),
+  // which would otherwise rewrite the flag's timestamp (and push to cloud) on every order
+  // viewed, not just on an actual toggle.
+  const toggleNeedsReview = () => {
+    const next = !needsReviewFlagged;
+    setNeedsReviewFlagged(next);
+    if (next) flagOrderMatcherNeedsReview(row.id);
     else unflagOrderMatcherNeedsReview(row.id);
-  }, [needsReviewFlagged, row.id]);
+    scheduleEbayTxReportsCloudPush();
+  };
   const isPanel = variant === 'panel';
   const address = addressFromEbayTxRow(row);
   const itemEur = ledger?.itemEur || row.itemSubtotalEur;
@@ -705,9 +723,33 @@ const EbayAbrechnungMatchPicker: React.FC<Props> = ({
             </p>
           )}
         </div>
+        {onPrev ? (
+          <button
+            type="button"
+            onClick={onPrev}
+            disabled={!hasPrev}
+            className="p-1 rounded-lg text-slate-400 hover:bg-slate-100 shrink-0 disabled:opacity-30 disabled:hover:bg-transparent"
+            title="Previous order"
+            aria-label="Previous order"
+          >
+            <ChevronLeft size={16} />
+          </button>
+        ) : null}
+        {onNext ? (
+          <button
+            type="button"
+            onClick={onNext}
+            disabled={!hasNext}
+            className="p-1 rounded-lg text-slate-400 hover:bg-slate-100 shrink-0 disabled:opacity-30 disabled:hover:bg-transparent"
+            title="Skip to next order without linking"
+            aria-label="Next order"
+          >
+            <ChevronRight size={16} />
+          </button>
+        ) : null}
         <button
           type="button"
-          onClick={() => setNeedsReviewFlagged((f) => !f)}
+          onClick={toggleNeedsReview}
           className={`p-1 rounded-lg shrink-0 ${
             needsReviewFlagged ? 'text-violet-700 bg-violet-100' : 'text-slate-400 hover:bg-slate-100'
           }`}

@@ -3172,6 +3172,7 @@ const App: React.FC = () => {
                 items={items}
                 taxMode={businessSettings.taxMode}
                 onUpdate={handleUpdate}
+                actionHistory={actionHistory}
               />
             }
           />

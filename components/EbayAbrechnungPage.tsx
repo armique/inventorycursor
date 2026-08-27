@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowUpDown, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronUp, Download, ExternalLink, FileSpreadsheet, Link2, Loader2, Pencil, Plus, RefreshCw, Trash2, Unlink, Upload, X } from 'lucide-react';
-import type { InventoryItem, ItemUpdateOptions, TaxMode } from '../types';
+import { ArrowUpDown, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronUp, Clock, Download, ExternalLink, FileSpreadsheet, Flag, Link2, Loader2, Pencil, Plus, RefreshCw, Trash2, Unlink, Upload, X } from 'lucide-react';
+import type { ActionHistoryEntry, InventoryItem, ItemUpdateOptions, TaxMode } from '../types';
 import { formatEUR, formatSignedEUR } from '../utils/formatMoney';
 import { hasEbaySaleSignals } from '../utils/salePlatform';
 import { isRealizedDisposal } from '../utils/itemDisposition';
@@ -57,6 +57,7 @@ import {
   EBAY_TX_REPORT_UPDATED_EVENT,
   readEbayTxClearedAt,
   runEbayTxCloudSyncOnce,
+  scheduleEbayTxReportsCloudPush,
 } from '../services/ebayTransactionReportSync';
 import {
   backfillEbayTxLinkedSellDates,
@@ -64,6 +65,12 @@ import {
 } from '../utils/backfillEbayTxLinkedSellDates';
 import { findOwnOrderFullRefundReverts } from '../utils/refundFeeAbsorption';
 import { downloadEbayTxJsonBackup } from '../utils/ebayTxReportJsonExport';
+import {
+  getOrderMatcherNeedsReviewKeys,
+  flagOrderMatcherNeedsReview,
+  unflagOrderMatcherNeedsReview,
+  NEEDS_REVIEW_CHANGED_EVENT,
+} from '../utils/orderMatcherNeedsReview';
 import {
   linkInventoryItemToEbayTx,
   unlinkEbayTxOrderFromInventory,
@@ -88,6 +95,7 @@ type Props = {
   items: InventoryItem[];
   taxMode: TaxMode;
   onUpdate: (items: InventoryItem[], deleteIds?: string[], options?: ItemUpdateOptions) => void;
+  actionHistory?: ActionHistoryEntry[];
 };
 
 const KIND_TONE: Record<EbayTxKind, string> = {
@@ -215,6 +223,29 @@ function classifyAbrechnungRowComponent(title: string): string {
 }
 const COMPONENT_PINS_STORAGE_KEY = 'ebay-abrechnung-component-pins';
 const HIDE_LINKED_STORAGE_KEY = 'ebay-abrechnung-hide-linked';
+// View state (page/filters/sort) so leaving and returning to Abrechnung doesn't dump you
+// back at page 1 with every filter cleared. Per-device (localStorage), same as the other
+// UI-only prefs on this page — not meaningful enough to justify cloud sync plumbing.
+const VIEW_STATE_STORAGE_KEY = 'ebay-abrechnung-view-state';
+
+type EbayAbrechnungViewState = {
+  page?: number;
+  search?: string;
+  kindFilter?: EbayTxKind | 'all' | 'refunded' | 'matcher';
+  sort?: EbayTxSort | null;
+  selectedId?: string;
+};
+
+function readViewState(): EbayAbrechnungViewState {
+  try {
+    const raw = localStorage.getItem(VIEW_STATE_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
 
 function readHideLinked(): boolean {
   try {
@@ -433,9 +464,9 @@ function resolveEbayTxViewReport(
   return mergeEbayTxReports(reports);
 }
 
-const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
+const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate, actionHistory = [] }) => {
   const [reports, setReports] = useState<EbayTxReport[]>([]);
-  const [selectedId, setSelectedId] = useState<string>('all');
+  const [selectedId, setSelectedId] = useState<string>(() => readViewState().selectedId ?? 'all');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   // `loading` only reflects this page's own local IndexedDB read, which resolves almost
@@ -457,9 +488,25 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
     };
   }, []);
   const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
-  const [kindFilter, setKindFilter] = useState<EbayTxKind | 'all' | 'refunded' | 'matcher'>('order');
+  const [search, setSearch] = useState(() => readViewState().search ?? '');
+  const [kindFilter, setKindFilter] = useState<EbayTxKind | 'all' | 'refunded' | 'matcher'>(
+    () => readViewState().kindFilter ?? 'order'
+  );
   const [hideLinked, setHideLinked] = useState(readHideLinked);
+  // "Needs review" flags live in localStorage (utils/orderMatcherNeedsReview.ts), synced to
+  // the cloud alongside label overrides — not React state, so the list re-reads it on the
+  // shared change event whenever the picker (or a cloud merge) toggles one.
+  const [needsReviewKeys, setNeedsReviewKeys] = useState<Set<string>>(() => getOrderMatcherNeedsReviewKeys());
+  useEffect(() => {
+    const onChanged = () => setNeedsReviewKeys(getOrderMatcherNeedsReviewKeys());
+    window.addEventListener(NEEDS_REVIEW_CHANGED_EVENT, onChanged);
+    return () => window.removeEventListener(NEEDS_REVIEW_CHANGED_EVENT, onChanged);
+  }, []);
+  const toggleRowNeedsReview = useCallback((rowId: string) => {
+    if (getOrderMatcherNeedsReviewKeys().has(rowId)) unflagOrderMatcherNeedsReview(rowId);
+    else flagOrderMatcherNeedsReview(rowId);
+    scheduleEbayTxReportsCloudPush();
+  }, []);
   // Bumped only when a CSV/report import actually merges new or revised order rows —
   // the one moment a CSV-sourced order's numbers can change. Drives the fee auto-heal
   // below instead of a plain-mount scan; see that effect for why.
@@ -493,8 +540,18 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
       return [...prev, id];
     });
   }, []);
-  const [page, setPage] = useState(0);
-  const [sort, setSort] = useState<EbayTxSort | null>(null);
+  const [page, setPage] = useState(() => readViewState().page ?? 0);
+  const [sort, setSort] = useState<EbayTxSort | null>(() => readViewState().sort ?? null);
+
+  useEffect(() => {
+    try {
+      const state: EbayAbrechnungViewState = { page, search, kindFilter, sort, selectedId };
+      localStorage.setItem(VIEW_STATE_STORAGE_KEY, JSON.stringify(state));
+    } catch {
+      /* ignore */
+    }
+  }, [page, search, kindFilter, sort, selectedId]);
+
   const [labelOverrides, setLabelOverrides] = useState<Record<string, EbayTxLabelOverride>>({});
   const [cloudStats, setCloudStats] = useState<EbayTxCloudStats | null>(null);
   const [matchRow, setMatchRow] = useState<EbayTxRow | null>(null);
@@ -1057,6 +1114,37 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
 
   const feeFixCount = staleFeeOrderIds.length;
 
+  const [showLinkHistory, setShowLinkHistory] = useState(false);
+  const LINK_HISTORY_ACTIONS = useMemo(
+    () =>
+      new Set([
+        'Abrechnung created',
+        'Abrechnung linked',
+        'Abrechnung bundle linked',
+        'Abrechnung unlinked',
+        'Abrechnung link undone',
+        'Abrechnung bundle link undone',
+      ]),
+    []
+  );
+  const linkHistoryEntries = useMemo(() => {
+    const filtered = actionHistory.filter((e) => LINK_HISTORY_ACTIONS.has(e.action));
+    // Oldest first to compute a running "which link number was this" tally, then reversed
+    // for display (newest first, like every other list on this page). Unlink/undo entries
+    // carry the count as it stood at that point — they don't decrement it, since the
+    // question this answers is "how far into your order history was this," not "how many
+    // are linked right now."
+    const ascending = [...filtered].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    let count = 0;
+    const withCount = ascending.map((entry) => {
+      if (entry.action === 'Abrechnung created' || entry.action === 'Abrechnung linked' || entry.action === 'Abrechnung bundle linked') {
+        count++;
+      }
+      return { ...entry, linkCountAtTime: count };
+    });
+    return withCount.reverse();
+  }, [actionHistory, LINK_HISTORY_ACTIONS]);
+
   const onFixLinkedFees = useCallback(
     (opts?: { silent?: boolean; flushCloud?: boolean }) => {
       if (!displayReport?.rows?.length) return;
@@ -1187,7 +1275,15 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
     });
   }, [visibleRows, sort, ledgers, linkedByOrder]);
 
+  // Skip the very first run — that's the restored page landing alongside the restored
+  // filters on mount, not the user actually changing a filter. Only reset to page 0 on a
+  // real, subsequent filter change.
+  const filtersMountedRef = useRef(false);
   useEffect(() => {
+    if (!filtersMountedRef.current) {
+      filtersMountedRef.current = true;
+      return;
+    }
     setPage(0);
   }, [kindFilter, search, sort, hideLinked, activeComponentPin]);
 
@@ -1514,6 +1610,43 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
     },
     [sortedRows, rowIsLinked, page]
   );
+
+  // Manual Next/Prev in the match picker — for when the current order can't be linked
+  // (no match, needs research) and you just want to move on without an action, unlike
+  // advanceOrClose above which only fires after a successful link. Skips already-linked
+  // rows in either direction, same convention as advanceOrClose.
+  const goToAdjacentRow = useCallback(
+    (direction: 1 | -1) => {
+      if (!matchRow) return;
+      const startIdx = sortedRows.findIndex((row) => row.id === matchRow.id);
+      if (startIdx === -1) return;
+      for (let i = startIdx + direction; i >= 0 && i < sortedRows.length; i += direction) {
+        const candidate = sortedRows[i];
+        if (rowIsLinked(candidate)) continue;
+        const candidatePage = Math.floor(i / PAGE_SIZE);
+        if (candidatePage !== page) setPage(candidatePage);
+        setMatchRow(candidate);
+        return;
+      }
+    },
+    [matchRow, sortedRows, rowIsLinked, page]
+  );
+  const hasAdjacentRow = useCallback(
+    (direction: 1 | -1) => {
+      if (!matchRow) return false;
+      const startIdx = sortedRows.findIndex((row) => row.id === matchRow.id);
+      if (startIdx === -1) return false;
+      for (let i = startIdx + direction; i >= 0 && i < sortedRows.length; i += direction) {
+        if (!rowIsLinked(sortedRows[i])) return true;
+      }
+      return false;
+    },
+    [matchRow, sortedRows, rowIsLinked]
+  );
+  const goToNextRow = useCallback(() => goToAdjacentRow(1), [goToAdjacentRow]);
+  const goToPrevRow = useCallback(() => goToAdjacentRow(-1), [goToAdjacentRow]);
+  const hasNextRow = useMemo(() => hasAdjacentRow(1), [hasAdjacentRow]);
+  const hasPrevRow = useMemo(() => hasAdjacentRow(-1), [hasAdjacentRow]);
 
   const onLinkItem = useCallback(
     (next: InventoryItem) => {
@@ -1925,6 +2058,18 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
                 {feeFixCount > 0 ? (
                   <span className="tabular-nums rounded-md bg-emerald-200/80 px-1.5 py-0.5 text-[10px]">{feeFixCount}</span>
                 ) : null}
+              </button>
+            ) : null}
+            {linkHistoryEntries.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setShowLinkHistory(true)}
+                title="See every link/unlink on this page, in order"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50"
+              >
+                <Clock size={14} />
+                History
+                <span className="tabular-nums rounded-md bg-slate-200/80 px-1.5 py-0.5 text-[10px]">{linkHistoryEntries.length}</span>
               </button>
             ) : null}
           </div>
@@ -2588,6 +2733,8 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
                       onClearLabel={clearOrderLabel}
                       onMatch={() => setMatchRow((cur) => (cur?.id === row.id ? null : row))}
                       onUnlinkItem={onUnlinkItem}
+                      needsReview={needsReviewKeys.has(row.id)}
+                      onToggleNeedsReview={() => toggleRowNeedsReview(row.id)}
                     />
                   ))}
                 </tbody>
@@ -2612,6 +2759,8 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
                   onClearLabel={clearOrderLabel}
                   onMatch={() => setMatchRow((cur) => (cur?.id === row.id ? null : row))}
                   onUnlinkItem={onUnlinkItem}
+                  needsReview={needsReviewKeys.has(row.id)}
+                  onToggleNeedsReview={() => toggleRowNeedsReview(row.id)}
                 />
               ))}
             </div>
@@ -2666,6 +2815,10 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
                 onSplitApply={onSplitApply}
                 onRecoverPriorSale={onRecoverPriorSale}
                 onSearchResale={onSearchResale}
+                onNext={goToNextRow}
+                onPrev={goToPrevRow}
+                hasNext={hasNextRow}
+                hasPrev={hasPrevRow}
               />
             ) : null}
           </div>
@@ -2684,12 +2837,70 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
                 onSplitApply={onSplitApply}
                 onRecoverPriorSale={onRecoverPriorSale}
                 onSearchResale={onSearchResale}
+                onNext={goToNextRow}
+                onPrev={goToPrevRow}
+                hasNext={hasNextRow}
+                hasPrev={hasPrevRow}
               />
             </div>
           ) : null}
           </div>
         </div>
       )}
+      {showLinkHistory
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-3"
+              onClick={() => setShowLinkHistory(false)}
+            >
+              <div
+                className="w-full max-w-lg max-h-[85vh] flex flex-col rounded-2xl bg-white shadow-xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-slate-100">
+                  <p className="text-sm font-black text-slate-900">Linking history</p>
+                  <button
+                    type="button"
+                    onClick={() => setShowLinkHistory(false)}
+                    className="p-1 rounded-lg text-slate-400 hover:bg-slate-100"
+                    aria-label="Close"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+                <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-slate-100">
+                  {linkHistoryEntries.map((entry) => {
+                    const isUndo = entry.action.includes('undone');
+                    const isUnlink = entry.action === 'Abrechnung unlinked';
+                    const dotClass = isUndo || isUnlink ? 'bg-purple-400' : 'bg-emerald-500';
+                    let when = entry.timestamp;
+                    try {
+                      when = new Date(entry.timestamp).toLocaleString();
+                    } catch {
+                      /* keep raw ISO string */
+                    }
+                    return (
+                      <div key={entry.id} className="px-4 py-2.5 flex items-start gap-2.5">
+                        <span className={`mt-1.5 h-1.5 w-1.5 rounded-full shrink-0 ${dotClass}`} />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-slate-800">
+                            {entry.action}
+                            {entry.itemName ? <span className="font-semibold text-slate-600"> · {entry.itemName}</span> : null}
+                          </p>
+                          {entry.details ? <p className="text-[11px] text-slate-500 mt-0.5">{entry.details}</p> : null}
+                          <p className="text-[10px] text-slate-400 mt-0.5 tabular-nums">
+                            {when} · #{entry.linkCountAtTime} linked so far
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
     </div>
   );
 };
@@ -2947,6 +3158,8 @@ function TxRow({
   onClearLabel,
   onMatch,
   onUnlinkItem,
+  needsReview,
+  onToggleNeedsReview,
 }: {
   row: EbayTxRow;
   ledger: EbayTxOrderLedger | null;
@@ -2961,6 +3174,8 @@ function TxRow({
   onClearLabel: (orderId: string) => void;
   onMatch: () => void;
   onUnlinkItem?: (item: InventoryItem, orderId: string) => void;
+  needsReview?: boolean;
+  onToggleNeedsReview?: () => void;
 }) {
   const { detail, isOrder, isFullRefund, isPartialRefund, ads, label, fvf, pocket, realOrderId, orderUrl } =
     deriveTxRowDisplay(row, ledger, refundState);
@@ -3071,6 +3286,24 @@ function TxRow({
                 <Unlink size={11} strokeWidth={2.25} />
               </button>
             ) : null}
+            {onToggleNeedsReview ? (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onToggleNeedsReview();
+                }}
+                className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border ${
+                  needsReview
+                    ? 'border-violet-300 bg-violet-100 text-violet-700 hover:bg-violet-200'
+                    : 'border-slate-200 bg-white text-slate-300 hover:text-slate-500 hover:border-slate-300'
+                }`}
+                title={needsReview ? 'Flagged for review — click to clear' : 'Flag this order for review'}
+                aria-label="Toggle needs review"
+              >
+                <Flag size={11} strokeWidth={2.25} />
+              </button>
+            ) : null}
           </div>
         ) : (
           <span className="text-slate-300">—</span>
@@ -3135,6 +3368,8 @@ function TxCard({
   onClearLabel,
   onMatch,
   onUnlinkItem,
+  needsReview,
+  onToggleNeedsReview,
 }: {
   row: EbayTxRow;
   ledger: EbayTxOrderLedger | null;
@@ -3147,6 +3382,8 @@ function TxCard({
   onClearLabel: (orderId: string) => void;
   onMatch: () => void;
   onUnlinkItem?: (item: InventoryItem, orderId: string) => void;
+  needsReview?: boolean;
+  onToggleNeedsReview?: () => void;
 }) {
   const { detail, isOrder, isFullRefund, isPartialRefund, ads, label, fvf, pocket, realOrderId, orderUrl } =
     deriveTxRowDisplay(row, ledger, refundState);
@@ -3184,6 +3421,21 @@ function TxCard({
           >
             <ExternalLink size={14} strokeWidth={2.25} />
           </a>
+        ) : null}
+        {onToggleNeedsReview ? (
+          <button
+            type="button"
+            onClick={onToggleNeedsReview}
+            className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border ${
+              needsReview
+                ? 'border-violet-300 bg-violet-100 text-violet-700'
+                : 'border-slate-200 bg-white text-slate-400'
+            }`}
+            title={needsReview ? 'Flagged for review — tap to clear' : 'Flag this order for review'}
+            aria-label="Toggle needs review"
+          >
+            <Flag size={16} strokeWidth={2.25} />
+          </button>
         ) : null}
       </div>
 

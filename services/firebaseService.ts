@@ -2099,6 +2099,8 @@ const EBAY_TX_REPORTS_DOC_ID = "state";
 export type EbayTxCloudState = {
   reports: Array<{ meta: Record<string, unknown>; summary: Record<string, unknown> }>;
   labelOverrides: Record<string, unknown>;
+  /** Order-matcher "needs review" flags, keyed by row id — see utils/orderMatcherNeedsReview.ts. */
+  needsReview?: Record<string, unknown>;
   coverage: Record<string, unknown> | null;
   pocket: Record<string, unknown> | null;
   combinedSummary: Record<string, unknown> | null;
