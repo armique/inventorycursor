@@ -1970,6 +1970,23 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
       </div>
 
       {!displayReport ? (
+        !cloudReportsSettled ? (
+          // Local reports are empty (fresh device / just-cleared site data) and the cloud
+          // pull hasn't confirmed yet whether that's genuinely true. Without this, the page
+          // jumped straight to "drop your CSV here" — which looks identical to a real empty
+          // account, even when your real order history is mid-download from the cloud. That
+          // read as the page silently doing nothing until a manual reload happened to land
+          // after the pull finished.
+          <div className="flex-1 flex items-center justify-center p-6">
+            <div className="max-w-lg w-full rounded-2xl border-2 border-dashed border-slate-200 bg-white px-6 py-12 text-center">
+              <Loader2 className="mx-auto text-slate-400 animate-spin" size={28} />
+              <p className="mt-3 text-sm font-bold text-slate-800">Checking the cloud for your Abrechnung data…</p>
+              <p className="mt-1 text-xs text-slate-500">
+                This can take a few seconds after a fresh sign-in or clearing site data.
+              </p>
+            </div>
+          </div>
+        ) : (
         <div className="flex-1 flex items-center justify-center p-6">
           <button
             type="button"
@@ -1988,6 +2005,7 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
             </p>
           </button>
         </div>
+        )
       ) : (
         <div className="flex-1 min-h-0 flex flex-col overflow-y-auto md:overflow-hidden">
           {overviewOpen ? (
