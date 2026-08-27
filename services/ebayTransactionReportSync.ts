@@ -1,6 +1,8 @@
 import {
+  fetchEbayTxReportRowsFromCloud,
   fetchEbayTxReportsFromCloud,
   isCloudEnabled,
+  writeEbayTxReportRowsToCloud,
   writeEbayTxReportsToCloud,
   type EbayTxCloudState,
 } from './firebaseService';
@@ -51,6 +53,7 @@ import {
   summarizeEbayTxOrderLedgers,
   type EbayTxMeta,
   type EbayTxReport,
+  type EbayTxRow,
   type EbayTxSummary,
 } from '../utils/ebayTransactionReport';
 
@@ -114,7 +117,13 @@ export async function pushEbayTxReportsToCloud(): Promise<void> {
   const state = await buildEbayTxCloudStateFromLocal();
   await persistEbayTxCloudStats(state);
   try {
-    await writeEbayTxReportsToCloud(state);
+    // Actual row data, previously never synced at all — only meta/summary were. This is
+    // the piece that let a device's local storage getting cleared silently lose real data.
+    const library = await loadEbayTransactionLibrary();
+    const rowsByReport: Record<string, unknown[]> = {};
+    for (const r of library.reports) rowsByReport[r.meta.id] = r.rows || [];
+    const { rowChunks } = await writeEbayTxReportRowsToCloud(rowsByReport);
+    await writeEbayTxReportsToCloud({ ...state, rowChunks });
   } catch (err) {
     if (err instanceof Error && err.message === 'Not signed in') return;
     throw err;
@@ -168,8 +177,25 @@ export async function applyEbayTxCloudState(remote: EbayTxCloudState, keepLocalR
   const local = await loadEbayTransactionLibrary();
   const remoteHasReports = (remote.reports || []).length > 0;
   const localHasRows = local.reports.some((r) => r.rows?.length);
-  // A failed IndexedDB read returns []. Never replace a full local library with rowless cloud stubs.
+  // A failed IndexedDB read returns []. Local is genuinely empty (fresh device, or storage
+  // just got cleared) — pull the real row data down from its shards instead of leaving this
+  // device with only summary stats and an empty order table (the bug that caused a device to
+  // look like it had "lost" 500+ linked orders when it never actually had cloud rows to lose).
   if (keepLocalRows && !local.reports.length && remoteHasReports) {
+    const flatRows = await fetchEbayTxReportRowsFromCloud(remote.rowChunks || 0);
+    if (flatRows.length) {
+      const byReport = new Map<string, EbayTxRow[]>();
+      for (const { rid, row } of flatRows) {
+        const list = byReport.get(rid) || [];
+        list.push(row as EbayTxRow);
+        byReport.set(rid, list);
+      }
+      const reports = (remote.reports || [])
+        .map((raw) => asReport(raw as { meta?: EbayTxMeta; summary?: EbayTxSummary }))
+        .filter((r): r is EbayTxReport => Boolean(r))
+        .map((r) => ({ ...r, rows: byReport.get(r.meta.id) || [] }));
+      if (reports.length) await saveEbayTransactionLibrary({ reports });
+    }
     await persistEbayTxCloudStats(remote);
     notifyEbayTxReportUpdated();
     return;

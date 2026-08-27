@@ -2181,6 +2181,8 @@ export type EbayTxCloudState = {
   pocket: Record<string, unknown> | null;
   combinedSummary: Record<string, unknown> | null;
   updatedAt: string;
+  /** Number of `rows-{i}` shard docs holding the actual row data (see writeEbayTxReportRowsToCloud). */
+  rowChunks?: number;
 };
 
 export async function fetchEbayTxReportsFromCloud(): Promise<EbayTxCloudState | null> {
@@ -2207,6 +2209,76 @@ export async function writeEbayTxReportsToCloud(state: EbayTxCloudState): Promis
     stripUndefined({ ...state, updatedAt: state.updatedAt || new Date().toISOString() }),
   );
   recordFirestoreWrites(1);
+}
+
+/**
+ * Push the actual Abrechnung row data (previously never synced at all — only meta/summary
+ * were, via writeEbayTxReportsToCloud above). Rows are sharded into `rows-{i}` docs under the
+ * same collection, same size-safe chunker used for the inventory sync pack, tagged with which
+ * report each row belongs to so they can be regrouped on the way back down.
+ */
+export async function writeEbayTxReportRowsToCloud(
+  rowsByReport: Record<string, unknown[]>
+): Promise<{ rowChunks: number }> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.db || !user) throw new Error("Not signed in");
+  const flat: { rid: string; row: unknown }[] = [];
+  for (const [rid, rows] of Object.entries(rowsByReport)) {
+    for (const row of rows) flat.push({ rid, row });
+  }
+  const chunks = await chunkItemsForFirestore(flat);
+  const colRef = collection(ctx.db, "users", user.uid, EBAY_TX_REPORTS_COLLECTION);
+  const existing = await getDocs(colRef);
+  recordFirestoreReads(Math.max(1, existing.size));
+  const staleRowDocs = existing.docs.filter(
+    (d) => /^rows-\d+$/.test(d.id) && Number(d.id.slice(5)) >= chunks.length
+  );
+
+  const BATCH_MAX = 400;
+  let batch = writeBatch(ctx.db);
+  let count = 0;
+  for (let i = 0; i < chunks.length; i++) {
+    batch.set(doc(colRef, `rows-${i}`), { items: chunks[i] });
+    count++;
+    if (count >= BATCH_MAX) {
+      await batch.commit();
+      batch = writeBatch(ctx.db);
+      count = 0;
+    }
+  }
+  for (const d of staleRowDocs) {
+    batch.delete(d.ref);
+    count++;
+    if (count >= BATCH_MAX) {
+      await batch.commit();
+      batch = writeBatch(ctx.db);
+      count = 0;
+    }
+  }
+  if (count > 0) await batch.commit();
+  recordFirestoreWrites(chunks.length);
+  recordFirestoreDeletes(staleRowDocs.length);
+  return { rowChunks: chunks.length };
+}
+
+/** Reassemble the sharded row data written by writeEbayTxReportRowsToCloud. */
+export async function fetchEbayTxReportRowsFromCloud(
+  rowChunks: number
+): Promise<{ rid: string; row: unknown }[]> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.db || !user || !rowChunks || rowChunks <= 0) return [];
+  const out: { rid: string; row: unknown }[] = [];
+  for (let i = 0; i < rowChunks; i++) {
+    const snap = await getDoc(doc(ctx.db, "users", user.uid, EBAY_TX_REPORTS_COLLECTION, `rows-${i}`));
+    recordFirestoreReads(1);
+    if (snap.exists()) {
+      const items = (snap.data() as { items?: { rid: string; row: unknown }[] }).items || [];
+      out.push(...items);
+    }
+  }
+  return out;
 }
 
 // --- EBAY PURCHASE INDEX (buyer history archive, survives eBay's ~90-day API window) ---
