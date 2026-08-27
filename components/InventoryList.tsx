@@ -33,7 +33,7 @@ import {
   containerChildProfitDisplayMap,
   containerChildSoldDisplayMap,
   expandSoldContainerPriceSync,
-  syncSoldContainerFamily,
+  syncSoldContainerFamilyEqual,
 } from '../utils/containerChildSoldDisplay';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { getCompatibleItemsForItem } from '../services/compatibility';
@@ -7717,7 +7717,7 @@ const InventoryList: React.FC<Props> = ({
                    ebayUsername: updated.ebayUsername ?? i.ebayUsername,
                    customer: updated.customer ?? i.customer,
                  }));
-                 const synced = syncSoldContainerFamily(updated, datedChildren);
+                 const synced = syncSoldContainerFamilyEqual(updated, datedChildren);
                  const updatedChildren = synced.children;
                  
                  onUpdate([{ ...synced.container, profit: 0 }, ...updatedChildren]);

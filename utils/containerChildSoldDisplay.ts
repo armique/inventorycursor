@@ -285,6 +285,14 @@ export function containerChildSoldSharePatches(
 /**
  * After a sell/buy cell edit on a sold PC/bundle or one of its parts, rewrite
  * that family only. Standalone rows keep a single-item profit sync.
+ *
+ * Uses the equal split (syncSoldContainerFamilyEqual), matching the convention
+ * Abrechnung linking already uses ("Sheets ÷ N" — every part gets the same
+ * share). This used to redistribute by weighted buy-price share instead
+ * (syncSoldContainerFamily) — two different rules touching the same sold
+ * family, each overwriting the other's numbers whenever the other one ran,
+ * was exactly what showed up as a bundle part's sell price silently
+ * flip-flopping between two values over and over.
  */
 export function expandSoldContainerPriceSync(
   edited: InventoryItem,
@@ -321,7 +329,7 @@ export function expandSoldContainerPriceSync(
     nextContainer = { ...container, buyPrice: roundMoney(Number(edited.buyPrice) || 0) };
   }
 
-  const synced = syncSoldContainerFamily(nextContainer, nextChildren);
+  const synced = syncSoldContainerFamilyEqual(nextContainer, nextChildren);
   const out = [synced.container, ...synced.children];
   if (!out.some((i) => i.id === edited.id)) out.push(edited);
   return out;
