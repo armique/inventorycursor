@@ -6,6 +6,7 @@ import type {
   Expense,
   InventoryItem,
 } from '../types';
+import type { EbayOrderRecord } from '../services/ebayOrderIndex';
 
 /** Full-fidelity snapshot of everything needed to restore the app — same shape used
  *  by the local JSON download/restore and the GitHub backup push. */
@@ -21,6 +22,8 @@ export interface BackupData {
   dashboard?: DashboardPreferences;
   actionHistory?: ActionHistoryEntry[];
   bulkImports?: BulkImportRecord[];
+  /** Cached eBay order history (API + CSV merged) — so a JSON backup can restore it too. */
+  ebayOrders?: EbayOrderRecord[];
   exportedAt: string;
 }
 
@@ -35,6 +38,7 @@ export function buildFullBackupPayload(snapshot: {
   dashboardPreferences?: DashboardPreferences;
   actionHistory?: ActionHistoryEntry[];
   bulkImports?: BulkImportRecord[];
+  ebayOrders?: EbayOrderRecord[];
 }): BackupData {
   return {
     inventory: snapshot.items,
@@ -47,6 +51,7 @@ export function buildFullBackupPayload(snapshot: {
     ...(snapshot.dashboardPreferences ? { dashboard: snapshot.dashboardPreferences } : {}),
     ...(snapshot.actionHistory?.length ? { actionHistory: snapshot.actionHistory } : {}),
     ...(snapshot.bulkImports?.length ? { bulkImports: snapshot.bulkImports } : {}),
+    ...(snapshot.ebayOrders?.length ? { ebayOrders: snapshot.ebayOrders } : {}),
     exportedAt: new Date().toISOString(),
   };
 }

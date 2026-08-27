@@ -48,6 +48,8 @@ import {
 } from '../services/ebayTransactionReportStore';
 import { mergeDhlLabelPresets, type DhlLabelPreset } from '../utils/dhlLabelPresets';
 import { syncNewEbayOrdersOnAppVisit } from '../services/ebayApiOrderSync';
+import { backfillEbayOrders, type BackfillProgress } from '../services/ebayOrderBackfill';
+import { getSuggestedBackfillRange } from '../services/ebayOrderIndex';
 import EbayToolSearchInput from './EbayToolSearchInput';
 import EbayAbrechnungMatchPicker from './EbayAbrechnungMatchPicker';
 import {
@@ -445,6 +447,9 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
   const [linkNote, setLinkNote] = useState<string | null>(null);
   const [ebaySyncBusy, setEbaySyncBusy] = useState(false);
   const [ebaySyncNote, setEbaySyncNote] = useState<{ kind: 'ok' | 'error'; text: string; hint?: string } | null>(null);
+  const [backfillBusy, setBackfillBusy] = useState(false);
+  const [backfillNote, setBackfillNote] = useState<string | null>(null);
+  const backfillCancelRef = useRef<{ cancelled: boolean }>({ cancelled: false });
   const [overviewOpen, setOverviewOpen] = useState(readOverviewOpen);
   const [suggestions, setSuggestions] = useState<EbayTxBulkMatchSuggestion[] | null>(null);
   const [suggestBusy, setSuggestBusy] = useState(false);
@@ -598,6 +603,44 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
       window.removeEventListener(EBAY_TX_REPORT_UPDATED_EVENT, onUpdated);
     };
   }, [reloadLocal]);
+
+  /**
+   * One-time (or resumable) full-history pull straight from the eBay API — every order the
+   * account has ever had, not just the last ~30 days runEbaySync checks. Chunked in 45-day
+   * windows so a slow/failed range doesn't lose earlier progress; getSuggestedBackfillRange
+   * automatically resumes from wherever a previous run left off instead of re-fetching
+   * everything, so clicking this again later only pulls the gap.
+   */
+  const runFullBackfill = useCallback(() => {
+    setBackfillBusy(true);
+    setBackfillNote(null);
+    backfillCancelRef.current = { cancelled: false };
+    const today = new Date().toISOString().slice(0, 10);
+    const range = getSuggestedBackfillRange('2020-01-01', today);
+    void backfillEbayOrders(
+      range.from,
+      range.to,
+      (p: BackfillProgress) => {
+        setBackfillNote(`Fetching ${p.rangeLabel} — chunk ${p.chunkIndex + 1}/${p.chunkCount} · ${p.ordersFetchedTotal} orders so far`);
+      },
+      backfillCancelRef.current
+    )
+      .then((result) => {
+        if (result.cancelled) {
+          setBackfillNote('Cancelled.');
+          return;
+        }
+        if (result.error) {
+          setBackfillNote(`Stopped early: ${result.error} (progress was saved — click again to resume from here)`);
+          return;
+        }
+        setBackfillNote(
+          `Done — ${result.ordersFetched} orders fetched from the API, ${result.added} new, ${result.merged} merged into existing records.`
+        );
+      })
+      .catch((e) => setBackfillNote(e instanceof Error ? e.message : 'Backfill failed'))
+      .finally(() => setBackfillBusy(false));
+  }, []);
 
   /** Pull recent orders via the OAuth API and add any new ones as Bestellung rows,
    *  ready to link. Runs once on visiting this page, and again on demand from the
@@ -1464,6 +1507,16 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
             </button>
             <button
               type="button"
+              onClick={runFullBackfill}
+              disabled={backfillBusy || loading}
+              title="One-time (or resumable) pull of your ENTIRE eBay order history via the API — chunked, safe to stop and resume, only fetches the gap on a second run"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-900 text-xs font-bold hover:bg-indigo-100 disabled:opacity-50"
+            >
+              {backfillBusy ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+              Build order history
+            </button>
+            <button
+              type="button"
               onClick={() => fileRef.current?.click()}
               disabled={busy}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 disabled:opacity-60"
@@ -1510,6 +1563,20 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
           <p className={`mt-2 text-xs font-semibold ${ebaySyncNote.kind === 'error' ? 'text-amber-700' : 'text-violet-700'}`}>
             {ebaySyncNote.text}
             {ebaySyncNote.hint ? <span className="block mt-0.5 font-medium text-amber-600">{ebaySyncNote.hint}</span> : null}
+          </p>
+        ) : null}
+        {backfillNote ? (
+          <p className="mt-2 text-xs font-semibold text-indigo-700 flex items-center gap-2">
+            {backfillNote}
+            {backfillBusy ? (
+              <button
+                type="button"
+                onClick={() => { backfillCancelRef.current.cancelled = true; }}
+                className="shrink-0 px-2 py-0.5 rounded border border-indigo-300 text-[10px] font-bold uppercase text-indigo-700 hover:bg-indigo-100"
+              >
+                Stop
+              </button>
+            ) : null}
           </p>
         ) : null}
       </div>

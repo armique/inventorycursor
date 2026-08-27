@@ -73,6 +73,7 @@ import { DEFAULT_CATEGORIES } from './services/constants';
 import { migrateCategoriesRecord, migrateContainerItem } from './utils/containerTaxonomy';
 import { todayLocalDateKey } from './utils/calendarDate';
 import { buildFullBackupPayload, downloadFullBackupJson } from './utils/fullBackupExport';
+import { loadEbayOrderIndex, upsertEbayOrders, type EbayOrderRecord } from './services/ebayOrderIndex';
 import {
   loadInventoryItemsForBoot,
   writeInventoryItemsToDB,
@@ -628,6 +629,7 @@ const App: React.FC = () => {
         dashboardPreferences: dashboardPrefs,
         actionHistory,
         bulkImports,
+        ebayOrders: loadEbayOrderIndex().orders,
       })
     );
   }, [items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields, dashboardPrefs, actionHistory, bulkImports]);
@@ -2672,6 +2674,7 @@ const App: React.FC = () => {
     dashboard?: unknown;
     actionHistory?: ActionHistoryEntry[];
     bulkImports?: BulkImportRecord[];
+    ebayOrders?: EbayOrderRecord[];
   }) => {
     const inv = Array.isArray(data.inventory) ? data.inventory : (Array.isArray((data as any).Inventory) ? (data as any).Inventory : []);
     const tr = Array.isArray(data.trash) ? data.trash : [];
@@ -2702,6 +2705,11 @@ const App: React.FC = () => {
     setCategories(cats);
     setCategoryFields(fields);
     setBusinessSettings(sets);
+    if (Array.isArray(data.ebayOrders) && data.ebayOrders.length) {
+      // Upsert by orderId, not a blind replace — matches how the API/CSV sync already merges,
+      // so restoring a backup only fills gaps rather than overwriting anything newer.
+      upsertEbayOrders(data.ebayOrders);
+    }
     void saveToLocalStorage(inv, tr, exp, sets, goal, cats, fields, undefined, restoredDash, mergedAH, mergedBI);
     if (isCloudEnabled() && authUser) {
       try {
