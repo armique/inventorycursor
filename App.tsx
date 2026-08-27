@@ -654,6 +654,7 @@ const App: React.FC = () => {
   const gamificationPulledRef = useRef(false);
   const dailyBackupRanRef = useRef(false);
   const dailyGitHubBackupRanRef = useRef(false);
+  const githubBackupInFlightRef = useRef(false);
   const ebayTxDailyExportRanRef = useRef(false);
   const gamificationWriteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const updateGamification = useCallback((updater: (prev: GamificationState) => GamificationState) => {
@@ -1685,52 +1686,89 @@ const App: React.FC = () => {
     return () => clearTimeout(t);
   }, [authUser, appState, items.length, getSyncSnapshot]);
 
-  // Daily GitHub snapshot — independent of Firestore/cloud sync, works from any device
-  // (phone, PC, deployed site, local dev) as long as this browser has a saved repo/token
-  // (Settings > Backup). Each push is its own commit, so git history is the retention.
+  // Shared by both triggers below: the on-open timer and the tab-close/hide listener.
+  // runDailyGitHubBackupIfDue's own localStorage-dated gate ("already pushed today") is
+  // the real throttle — whichever trigger fires first each day wins, the other is a no-op.
+  // The in-flight ref only prevents two overlapping pushes racing (e.g. rapid tab-switching)
+  // before that gate's write actually lands.
+  const runGithubBackupIfDue = useCallback(async () => {
+    if (githubBackupInFlightRef.current) return;
+    if (!getStoredGitHubBackupConfig()) return;
+    const snap = getSyncSnapshot();
+    if (!snap.items.length) return;
+    githubBackupInFlightRef.current = true;
+    try {
+      const [txLibrary, txLabelOverrides] = await Promise.all([
+        loadEbayTransactionLibrary(),
+        loadEbayTxLabelOverrides(),
+      ]);
+      const result = await runDailyGitHubBackupIfDue(
+        {
+          inventory: snap.items,
+          trash: snap.trash,
+          expenses: snap.expenses,
+          recurringExpenses: snap.recurringExpenses,
+          categories: snap.categories,
+          categoryFields: snap.categoryFields,
+          settings: snap.businessSettings,
+          goals: { monthly: snap.monthlyGoal },
+          dashboard: snap.dashboardPrefs,
+          actionHistory: snap.actionHistory,
+          bulkImports: snap.bulkImports,
+          ebayOrders: loadEbayOrderIndex().orders,
+          ebayTxReports: txLibrary.reports,
+          ebayTxLabelOverrides: txLabelOverrides,
+        },
+        todayLocalDateKey(),
+      );
+      if (result.ran) {
+        console.info(`[github-backup] Pushed snapshot (${result.sha.slice(0, 7)})`);
+      }
+    } catch (e) {
+      // Never surface as a blocking error — the next open/close (or manual sync) retries.
+      console.warn('[github-backup] Snapshot push failed:', e);
+    } finally {
+      githubBackupInFlightRef.current = false;
+    }
+  }, [getSyncSnapshot]);
+
+  // Daily GitHub snapshot on open — independent of Firestore/cloud sync, works from any
+  // device (phone, PC, deployed site, local dev) as long as this browser has a saved
+  // repo/token (Settings > Backup). Each push is its own commit, so git history is the
+  // retention. Belt-and-suspenders alongside the close/hide trigger below — most days,
+  // that one fires first and this is a no-op.
   useEffect(() => {
     if (appState !== 'READY') return;
     if (dailyGitHubBackupRanRef.current || items.length === 0) return;
     if (!getStoredGitHubBackupConfig()) return;
     dailyGitHubBackupRanRef.current = true;
     const t = setTimeout(() => {
-      const snap = getSyncSnapshot();
-      scheduleBackgroundWork(async () => {
-        try {
-          const [txLibrary, txLabelOverrides] = await Promise.all([
-            loadEbayTransactionLibrary(),
-            loadEbayTxLabelOverrides(),
-          ]);
-          const result = await runDailyGitHubBackupIfDue(
-            {
-              inventory: snap.items,
-              trash: snap.trash,
-              expenses: snap.expenses,
-              recurringExpenses: snap.recurringExpenses,
-              categories: snap.categories,
-              categoryFields: snap.categoryFields,
-              settings: snap.businessSettings,
-              goals: { monthly: snap.monthlyGoal },
-              dashboard: snap.dashboardPrefs,
-              actionHistory: snap.actionHistory,
-              bulkImports: snap.bulkImports,
-              ebayOrders: loadEbayOrderIndex().orders,
-              ebayTxReports: txLibrary.reports,
-              ebayTxLabelOverrides: txLabelOverrides,
-            },
-            todayLocalDateKey(),
-          );
-          if (result.ran) {
-            console.info(`[github-backup] Pushed daily snapshot (${result.sha.slice(0, 7)})`);
-          }
-        } catch (e) {
-          // Never surface as a blocking error — the next boot (or manual sync) retries.
-          console.warn('[github-backup] Daily snapshot failed:', e);
-        }
-      });
+      scheduleBackgroundWork(runGithubBackupIfDue);
     }, 30000);
     return () => clearTimeout(t);
-  }, [appState, items.length, getSyncSnapshot]);
+  }, [appState, items.length, runGithubBackupIfDue]);
+
+  // Same GitHub snapshot, triggered by leaving the app instead of opening it — covers the
+  // common case of never keeping the tab open for 30s straight. `visibilitychange` (tab
+  // switched away, phone backgrounded, or the tab closing) is the reliable signal here;
+  // `beforeunload`/`unload` are increasingly restricted and unreliable on mobile Safari.
+  // `pagehide` is a second safety net for the actual-close case. Both funnel into the same
+  // once-per-day gate above, so switching tabs repeatedly never triggers more than one push.
+  useEffect(() => {
+    if (appState !== 'READY') return;
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== 'hidden') return;
+      void runGithubBackupIfDue();
+    };
+    // pagehide fires unconditionally on actual close/navigation — no visibility check needed.
+    const onPageHide = () => void runGithubBackupIfDue();
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('pagehide', onPageHide);
+    };
+  }, [appState, runGithubBackupIfDue]);
 
   // Daily CSV copy of the Abrechnung table into data/ebay-abrechnung/ (local dev server only).
   useEffect(() => {
