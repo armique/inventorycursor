@@ -457,7 +457,14 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
   const [labelOverrides, setLabelOverrides] = useState<Record<string, EbayTxLabelOverride>>({});
   const [cloudStats, setCloudStats] = useState<EbayTxCloudStats | null>(null);
   const [matchRow, setMatchRow] = useState<EbayTxRow | null>(null);
-  const [linkNote, setLinkNote] = useState<string | null>(null);
+  // Undo is optional and only ever passed by the two link actions below — every other
+  // setLinkNote(message) call in this file is unchanged and simply carries no undo.
+  const [linkNoteState, setLinkNoteState] = useState<{ message: string; undo?: () => void } | null>(null);
+  const setLinkNote = useCallback((message: string | null, undo?: () => void) => {
+    setLinkNoteState(message ? { message, undo } : null);
+  }, []);
+  const linkNote = linkNoteState?.message ?? null;
+  const linkNoteUndo = linkNoteState?.undo ?? null;
   const [ebaySyncBusy, setEbaySyncBusy] = useState(false);
   const [ebaySyncNote, setEbaySyncNote] = useState<{ kind: 'ok' | 'error'; text: string; hint?: string } | null>(null);
   const [backfillBusy, setBackfillBusy] = useState(false);
@@ -1281,9 +1288,33 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
     }
   }, []);
 
+  // After a Link/Create/bundle action, jump straight to the next not-yet-linked order
+  // instead of just closing — the common case is working through a whole batch of orders
+  // in one sitting. Skips `justHandledRowId` explicitly rather than relying on `items`
+  // reflecting the just-applied link, since that state update hasn't landed in this
+  // closure yet. Follows the page if the next row lands outside the current one.
+  const advanceOrClose = useCallback(
+    (justHandledRowId: string) => {
+      const startIdx = sortedRows.findIndex((row) => row.id === justHandledRowId);
+      const searchFrom = startIdx === -1 ? 0 : startIdx + 1;
+      for (let i = searchFrom; i < sortedRows.length; i++) {
+        const candidate = sortedRows[i];
+        if (candidate.id === justHandledRowId || rowIsLinked(candidate)) continue;
+        const candidatePage = Math.floor(i / PAGE_SIZE);
+        if (candidatePage !== page) setPage(candidatePage);
+        setMatchRow(candidate);
+        return;
+      }
+      setMatchRow(null);
+    },
+    [sortedRows, rowIsLinked, page]
+  );
+
   const onLinkItem = useCallback(
     (next: InventoryItem) => {
-      const created = !items.some((item) => item.id === next.id);
+      const previous = items.find((item) => item.id === next.id) || null;
+      const created = !previous;
+      const handledRowId = matchRow?.id || '';
       onUpdate([next], undefined, {
         skipFieldPreserve: true,
         skipMembershipSync: true,
@@ -1298,16 +1329,39 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
         },
       });
       const pocket = next.saleProceeds?.netPayoutEur;
+      const undo = () => {
+        if (created) {
+          onUpdate([], [next.id], {
+            skipFieldPreserve: true,
+            skipMembershipSync: true,
+            skipContainerSync: true,
+            skipContainerSaleMetaSync: true,
+            flushCloud: true,
+            actionNote: { action: 'Abrechnung link undone', details: `Removed ${next.name}` },
+          });
+        } else {
+          onUpdate([previous], undefined, {
+            skipFieldPreserve: true,
+            skipMembershipSync: true,
+            skipContainerSync: true,
+            skipContainerSaleMetaSync: true,
+            flushCloud: true,
+            actionNote: { action: 'Abrechnung link undone', details: `Restored ${previous.name}` },
+          });
+        }
+        setLinkNote(created ? `Removed ${next.name}` : `Restored ${previous!.name}`);
+      };
       setLinkNote(
         (created ? `Created ${next.name}` : `Linked ${next.name}`) +
           ` ← ${next.ebayOrderId}` +
           (next.sellDate ? ` · sold ${next.sellDate}` : '') +
           (created ? ` · buy €${formatEUR(Number(next.buyPrice))}` : '') +
-          (pocket != null ? ` · pocket €${formatEUR(pocket)}` : '')
+          (pocket != null ? ` · pocket €${formatEUR(pocket)}` : ''),
+        undo
       );
-      setMatchRow(null);
+      advanceOrClose(handledRowId);
     },
-    [items, onUpdate]
+    [items, onUpdate, matchRow, advanceOrClose]
   );
 
   const onRecoverPriorSale = useCallback(
@@ -1371,6 +1425,14 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
       const bundle = updates.find(
         (item) => (item.isBundle || item.isPC) && item.ebayOrderId
       );
+      const handledRowId = matchRow?.id || '';
+      // Bundle link only ever touches items that already existed (container + parts, or
+      // selected existing rows) — snapshot each one's prior state so Undo can put every
+      // one of them back exactly, through the same container-sync path as the link itself.
+      const previousById = new Map(items.map((item) => [item.id, item]));
+      const previousStates = updates
+        .map((item) => previousById.get(item.id))
+        .filter((item): item is InventoryItem => Boolean(item));
       onUpdate(updates, undefined, {
         skipFieldPreserve: true,
         skipMembershipSync: false,
@@ -1385,15 +1447,30 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
         },
       });
       const pocket = bundle?.saleProceeds?.netPayoutEur;
+      const undo =
+        previousStates.length === updates.length
+          ? () => {
+              onUpdate(previousStates, undefined, {
+                skipFieldPreserve: true,
+                skipMembershipSync: false,
+                skipContainerSync: false,
+                skipContainerSaleMetaSync: true,
+                flushCloud: true,
+                actionNote: { action: 'Abrechnung bundle link undone', details: `Restored ${bundle?.name || 'bundle'}` },
+              });
+              setLinkNote(`Restored ${bundle?.name || 'bundle'} to before the link`);
+            }
+          : undefined;
       setLinkNote(
         `Linked sold bundle ${bundle?.name || ''} ← ${bundle?.ebayOrderId || 'order'}` +
           (bundle?.sellDate ? ` · sold ${bundle.sellDate}` : '') +
           (pocket != null ? ` · pocket €${formatEUR(pocket)}` : '') +
-          ` · ${Math.max(0, (bundle?.componentIds || []).length)} parts · equal split`
+          ` · ${Math.max(0, (bundle?.componentIds || []).length)} parts · equal split`,
+        undo
       );
-      setMatchRow(null);
+      advanceOrClose(handledRowId);
     },
-    [onUpdate]
+    [items, onUpdate, matchRow, advanceOrClose]
   );
 
   // Splitter menu inside the match picker (same underlying SplitPartsModal as Inventory) —
@@ -1629,7 +1706,23 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
           </div>
         </div>
         {error ? <p className="mt-2 text-xs font-semibold text-red-600">{error}</p> : null}
-        {linkNote ? <p className="mt-2 text-xs font-semibold text-emerald-700">{linkNote}</p> : null}
+        {linkNote ? (
+          <p className="mt-2 text-xs font-semibold text-emerald-700 flex items-center gap-2 flex-wrap">
+            {linkNote}
+            {linkNoteUndo ? (
+              <button
+                type="button"
+                onClick={() => {
+                  linkNoteUndo();
+                  setLinkNote(null);
+                }}
+                className="inline-flex items-center px-2 py-0.5 rounded-md border border-emerald-300 bg-white text-emerald-800 text-[10px] font-black uppercase tracking-wider hover:bg-emerald-50"
+              >
+                Undo
+              </button>
+            ) : null}
+          </p>
+        ) : null}
         {ebaySyncNote ? (
           <p className={`mt-2 text-xs font-semibold ${ebaySyncNote.kind === 'error' ? 'text-amber-700' : 'text-violet-700'}`}>
             {ebaySyncNote.text}

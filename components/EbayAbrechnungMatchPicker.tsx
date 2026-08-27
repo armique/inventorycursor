@@ -531,7 +531,10 @@ const EbayAbrechnungMatchPicker: React.FC<Props> = ({
   };
 
   useEffect(() => {
-    setQuery('');
+    // Search text deliberately survives a row change — linking a run of identical items
+    // (same product, several orders in a row) is common, and retyping the same search on
+    // every single order was pure friction. The native "×" on the search input (or just
+    // clearing it) is the reset when the next order is for something different.
     setBusyId(null);
     setSelectedIds(new Set());
     setCollapsedContainers(new Set());
