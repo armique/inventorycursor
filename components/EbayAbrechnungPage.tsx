@@ -214,6 +214,15 @@ function classifyAbrechnungRowComponent(title: string): string {
   return 'Spare Parts';
 }
 const COMPONENT_PINS_STORAGE_KEY = 'ebay-abrechnung-component-pins';
+const HIDE_LINKED_STORAGE_KEY = 'ebay-abrechnung-hide-linked';
+
+function readHideLinked(): boolean {
+  try {
+    return localStorage.getItem(HIDE_LINKED_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 
 function readComponentPinIds(): string[] {
   try {
@@ -432,7 +441,7 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [kindFilter, setKindFilter] = useState<EbayTxKind | 'all' | 'refunded' | 'matcher'>('order');
-  const [hideLinked, setHideLinked] = useState(false);
+  const [hideLinked, setHideLinked] = useState(readHideLinked);
   // Bumped only when a CSV/report import actually merges new or revised order rows —
   // the one moment a CSV-sourced order's numbers can change. Drives the fee auto-heal
   // below instead of a plain-mount scan; see that effect for why.
@@ -448,6 +457,14 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
       /* ignore */
     }
   }, [componentPinIds]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(HIDE_LINKED_STORAGE_KEY, hideLinked ? '1' : '0');
+    } catch {
+      /* ignore */
+    }
+  }, [hideLinked]);
 
   const toggleComponentPinVisible = useCallback((id: string) => {
     setComponentPinIds((prev) => {
