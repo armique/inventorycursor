@@ -438,6 +438,24 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
   const [selectedId, setSelectedId] = useState<string>('all');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  // `loading` only reflects this page's own local IndexedDB read, which resolves almost
+  // instantly — it says nothing about App.tsx's separate Firestore pull for these reports
+  // (services/ebayTransactionReportSync.ts), which can take real seconds. Any effect that
+  // AUTOMATICALLY MUTATES inventory from `ledgers` (the refund auto-revert, the sell-date
+  // auto-fix) needs to wait for that cloud pull to actually land, not just the fast local
+  // read — see the long comment on runEbaySync below for the exact bug this class of race
+  // already caused once (duplicated orders). Reverting a real sale to stock based on a
+  // stale/partial ledger read during that window is the same race with worse stakes.
+  const [cloudReportsSettled, setCloudReportsSettled] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void runEbayTxCloudSyncOnce().finally(() => {
+      if (!cancelled) setCloudReportsSettled(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [kindFilter, setKindFilter] = useState<EbayTxKind | 'all' | 'refunded' | 'matcher'>('order');
@@ -1224,9 +1242,11 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
   // "fix" for a row whose real, about-to-arrive data didn't actually need one, then finding
   // the reverse "fix" once hydration finishes a moment later. That's what shows up as this
   // note (and the linked-count nearby) never quite settling across reloads. Debouncing past
-  // a quiet period lets the last hydration burst land before we compute/apply anything.
+  // a quiet period lets the last hydration burst land before we compute/apply anything. Also
+  // gated on cloudReportsSettled — see that flag's comment — so this never even starts its
+  // debounce timer until the actual Firestore pull for these reports has landed.
   useEffect(() => {
-    if (!report?.rows?.length || !items.length || loading || busy) return;
+    if (!report?.rows?.length || !items.length || loading || busy || !cloudReportsSettled) return;
     const t = setTimeout(() => {
       const { updates } = backfillEbayTxLinkedSellDates(items, report.rows);
       if (!updates.length) return;
@@ -1253,13 +1273,15 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
       );
     }, 800);
     return () => clearTimeout(t);
-  }, [busy, items, loading, onUpdate, report]);
+  }, [busy, cloudReportsSettled, items, loading, onUpdate, report]);
 
   // Auto-revert: an item's OWN order comes back fully refunded — unambiguous (it's that
   // exact item's sale, no candidate to pick), so this applies without a confirm step. Same
-  // hydration-race debounce as the sell-date effect above; see that comment for why.
+  // hydration-race debounce as the sell-date effect above, plus the same cloudReportsSettled
+  // gate — this one actually mutates buyPrice/status, so acting on a stale/partial ledger
+  // read during page-load hydration is a real, not just cosmetic, mistake.
   useEffect(() => {
-    if (!report?.rows?.length || !items.length || loading || busy) return;
+    if (!report?.rows?.length || !items.length || loading || busy || !cloudReportsSettled) return;
     const t = setTimeout(() => {
       const updates = findOwnOrderFullRefundReverts(items, ledgers);
       if (!updates.length) return;
@@ -1285,7 +1307,7 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
       );
     }, 800);
     return () => clearTimeout(t);
-  }, [busy, items, ledgers, loading, onUpdate, report]);
+  }, [busy, cloudReportsSettled, items, ledgers, loading, onUpdate, report]);
 
   const matcherOrderCount = useMemo(() => {
     if (!report?.rows?.length) return 0;
