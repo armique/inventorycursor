@@ -211,9 +211,27 @@ export async function rebuildApiSyncReport(): Promise<{ report: EbayTxReport; ne
     (o) => o.sources.includes('api') && o.orderId && !csvOrderIds.has(o.orderId)
   );
 
-  const rows = apiOrders
-    .flatMap(orderRecordToTxRows)
-    .sort((a, b) => (b.createdSort || '').localeCompare(a.createdSort || ''));
+  const rows = apiOrders.flatMap(orderRecordToTxRows);
+
+  // This report is fully rebuilt from orderIndex on every visit — if an order that was
+  // already known here (e.g. today's sale, correctly linked) doesn't come back in this
+  // sweep, that's far more likely a transient gap in the local order-index cache (still
+  // catching up right after a sync) than the order having genuinely vanished. Silently
+  // dropping it would tear its row set apart from what's linked in inventory — exactly
+  // what turned into a false "fully refunded" auto-revert, and separately, a linked-order
+  // count that changes on every reload for no real reason. Keep the previous rows for any
+  // order not covered by CSV and not present in this sweep, rather than losing them.
+  const seenOrderIds = new Set(rows.filter((r) => r.kind === 'order' && r.orderId).map((r) => r.orderId));
+  if (previousApiReport) {
+    for (const row of previousApiReport.rows || []) {
+      if (!row.orderId) continue;
+      if (csvOrderIds.has(row.orderId)) continue;
+      if (seenOrderIds.has(row.orderId)) continue;
+      rows.push(row);
+    }
+  }
+
+  rows.sort((a, b) => (b.createdSort || '').localeCompare(a.createdSort || ''));
   const days = rows.map((r) => r.createdSort).filter(Boolean).sort();
 
   const report: EbayTxReport = {
