@@ -1688,7 +1688,7 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
           </button>
         </div>
       ) : (
-        <div className="flex-1 min-h-0 flex flex-col">
+        <div className="flex-1 min-h-0 flex flex-col overflow-y-auto md:overflow-hidden">
           {overviewOpen ? (
           <div className="shrink-0 px-4 pt-3 space-y-3">
           {reports.length > 0 ? (
