@@ -182,6 +182,22 @@ export async function rebuildApiSyncReport(): Promise<{ report: EbayTxReport; ne
     (previousApiReport?.rows || []).filter((r) => r.kind === 'order').map((r) => r.orderId)
   );
 
+  // Safety net: a report whose own summary claims real orders but whose `rows` array is empty
+  // is not "genuinely zero orders" — it's the exact fingerprint of a device that pulled cloud
+  // stats without the real row data (the bug that caused orders to double on a fresh device
+  // login). Refuse rather than treat everything below as newly-uncovered and dump it in again.
+  const rowlessReport = library.reports.find(
+    (r) =>
+      r.meta.id !== API_SYNC_REPORT_ID &&
+      (r.summary?.orderCount || 0) > 0 &&
+      !(r.rows || []).some((row) => row.kind === 'order')
+  );
+  if (rowlessReport) {
+    throw new Error(
+      `"${rowlessReport.meta.fileName || rowlessReport.meta.id}" shows ${rowlessReport.summary.orderCount} orders in its summary but has no order rows loaded locally yet — reload the page so real data can finish loading, then try again.`
+    );
+  }
+
   const csvOrderIds = new Set<string>();
   for (const report of library.reports) {
     if (report.meta.id === API_SYNC_REPORT_ID) continue;

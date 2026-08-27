@@ -2,6 +2,7 @@ import {
   fetchEbayTxReportRowsFromCloud,
   fetchEbayTxReportsFromCloud,
   isCloudEnabled,
+  waitForAuthReady,
   writeEbayTxReportRowsToCloud,
   writeEbayTxReportsToCloud,
   type EbayTxCloudState,
@@ -292,12 +293,21 @@ let inFlightCloudSync: Promise<void> | null = null;
  * (empty, near-instant) local IndexedDB read, while this pull is deliberately deferred via
  * requestIdleCallback and can take seconds — plenty of time for the API auto-sync to run first,
  * see zero CSV-covered orders, and dump the entire order history in as "new".
+ *
+ * Also waits for Firebase's own auth-ready signal first (see waitForAuthReady) — the Abrechnung
+ * page can call this before App.tsx's own authUser-gated effect ever runs, and
+ * fetchEbayTxReportsFromCloud() reads auth.currentUser directly, which is still null during
+ * that window even on a device that IS signed in. Without this wait, the very first call could
+ * silently run against "not signed in yet", get treated as "no cloud data", and — being
+ * memoized — never retry for the rest of the session.
  */
 export function runEbayTxCloudSyncOnce(): Promise<void> {
   if (!inFlightCloudSync) {
-    inFlightCloudSync = syncEbayTxReportsWithCloud().catch((e) => {
-      console.warn('eBay Abrechnung cloud sync failed:', e);
-    });
+    inFlightCloudSync = waitForAuthReady()
+      .then(() => syncEbayTxReportsWithCloud())
+      .catch((e) => {
+        console.warn('eBay Abrechnung cloud sync failed:', e);
+      });
   }
   return inFlightCloudSync;
 }

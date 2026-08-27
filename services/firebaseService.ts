@@ -808,6 +808,31 @@ export function getCurrentUser(): User | null {
   return ctx?.auth?.currentUser ?? null;
 }
 
+let authReadyPromise: Promise<void> | null = null;
+
+/**
+ * Resolves once Firebase's initial auth check has completed (the first onAuthStateChanged
+ * firing — user or null, doesn't matter which). Firebase restores a signed-in session
+ * asynchronously; `auth.currentUser` is null until that finishes, which on a real device can
+ * take a noticeable moment (a redirect-based sign-in especially — see prefersRedirectSignIn).
+ * Anything that reads auth.currentUser directly (not just React's `authUser` state, which is
+ * itself only set from this same callback) needs to wait on this first, or it can silently
+ * read "not signed in" during that window instead of actually waiting for the real answer.
+ */
+export function waitForAuthReady(): Promise<void> {
+  const ctx = init();
+  if (!ctx?.auth) return Promise.resolve();
+  if (!authReadyPromise) {
+    authReadyPromise = new Promise((resolve) => {
+      const unsub = onAuthStateChanged(ctx.auth, () => {
+        unsub();
+        resolve();
+      });
+    });
+  }
+  return authReadyPromise;
+}
+
 // --- STORAGE HELPERS (item images) ---
 
 /**

@@ -53,6 +53,7 @@ import { getSuggestedBackfillRange, loadEbayOrderIndex } from '../services/ebayO
 import EbayToolSearchInput from './EbayToolSearchInput';
 import EbayAbrechnungMatchPicker from './EbayAbrechnungMatchPicker';
 import {
+  clearEbayTransactionReportsEverywhere,
   EBAY_TX_REPORT_UPDATED_EVENT,
   readEbayTxClearedAt,
   runEbayTxCloudSyncOnce,
@@ -1252,6 +1253,25 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
     }
   }, [coverage, displayReport, labelOverrides]);
 
+  const [clearBusy, setClearBusy] = useState(false);
+  const onClearEverywhere = useCallback(async () => {
+    const sure = window.confirm(
+      'This permanently deletes every imported CSV and synced eBay order in Abrechnung — on this device AND in the cloud, for every device signed into this account. Inventory items and their sold/linked status are NOT touched.\n\n' +
+        'Use this only to recover from bad/duplicated data — you will need to re-import your CSV(s) afterward.\n\n' +
+        'Continue?'
+    );
+    if (!sure) return;
+    setClearBusy(true);
+    try {
+      await clearEbayTransactionReportsEverywhere();
+      setLinkNote('Cleared everywhere. Re-import your Transaktionsbericht CSV(s) to rebuild.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Clear failed.');
+    } finally {
+      setClearBusy(false);
+    }
+  }, []);
+
   const onLinkItem = useCallback(
     (next: InventoryItem) => {
       const created = !items.some((item) => item.id === next.id);
@@ -1568,6 +1588,16 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
                 Save backup
               </button>
             ) : null}
+            <button
+              type="button"
+              onClick={() => void onClearEverywhere()}
+              disabled={clearBusy}
+              title="Wipe all Abrechnung CSVs/synced orders on every device and in the cloud — recovery tool for bad/duplicated data. Inventory items are not touched."
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-800 text-xs font-bold hover:bg-red-100 disabled:opacity-50"
+            >
+              {clearBusy ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+              Clear all
+            </button>
             {report?.rows?.length && (linkedByOrder.size > 0 || sellDateFixCount > 0) ? (
               <button
                 type="button"
