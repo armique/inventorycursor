@@ -676,11 +676,12 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
     setEbaySyncBusy(true);
     // Wait for App.tsx's own Firestore pull to land real CSV rows locally first — see the
     // comment on runEbayTxCloudSyncOnce for why `loading` alone isn't a wide-enough guard.
-    // Capped: a broken network transport can leave this hanging forever with no error (same
+    // Capped end-to-end (cloud pull AND the actual eBay API calls, not just the first half) —
+    // a broken network transport can leave any of these hanging forever with no error (same
     // class of bug fixed for the Settings "Save now" button) — better to surface a clear
     // timeout than spin forever.
-    void withTimeout(runEbayTxCloudSyncOnce(), 20000, 'Cloud sync')
-      .then(() => syncNewEbayOrdersOnAppVisit({ force }))
+    const wholeSync = runEbayTxCloudSyncOnce().then(() => syncNewEbayOrdersOnAppVisit({ force }));
+    void withTimeout(wholeSync, 30000, 'eBay sync')
       .then((outcome) => {
         if (outcome.status === 'ok') {
           setEbaySyncNote(
