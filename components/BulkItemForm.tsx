@@ -889,7 +889,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
         />
       </div>
 
-      <main className="flex flex-1 min-h-0 flex-col gap-2 px-1 sm:px-2 pb-[max(5.5rem,calc(4rem+env(safe-area-inset-bottom)))] lg:flex-row lg:gap-2.5 lg:pb-2">
+      <main className="flex flex-1 min-h-0 flex-col gap-2 overflow-y-auto px-1 sm:px-2 pb-[max(5.5rem,calc(4rem+env(safe-area-inset-bottom)))] lg:flex-row lg:gap-2.5 lg:overflow-hidden lg:pb-2">
         <aside
           className={`${ADD_FLOW_PANEL} flex w-full shrink-0 flex-col overflow-hidden lg:max-h-full lg:w-[min(100%,22rem)] lg:max-w-[38%] lg:self-stretch`}
         >
@@ -1104,7 +1104,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
           </div>
         </section>
 
-        <section className={`${ADD_FLOW_PANEL} flex min-h-[14rem] flex-1 flex-col overflow-hidden lg:min-h-0`}>
+        <section className={`${ADD_FLOW_PANEL} flex min-h-[14rem] flex-col lg:flex-1 lg:min-h-0 lg:overflow-hidden`}>
           <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50/70 px-3 py-2">
             <div>
               <h2 className="text-sm font-black text-slate-900">Import sheet</h2>
@@ -1116,7 +1116,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
               {Math.abs(allocatedTotal - totalCost) > 0.1 ? `Difference €${formatEUR(allocatedTotal - totalCost)}` : 'Costs balanced'}
             </span>
           </div>
-          <div className="flex-1 min-h-0 overflow-auto">
+          <div className="overflow-x-auto lg:flex-1 lg:min-h-0 lg:overflow-y-auto">
             <table className="w-full min-w-[520px] table-fixed border-collapse text-left">
               <colgroup>
                 <col className="w-10" />
