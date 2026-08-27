@@ -49,7 +49,7 @@ import {
 import { mergeDhlLabelPresets, type DhlLabelPreset } from '../utils/dhlLabelPresets';
 import { syncNewEbayOrdersOnAppVisit } from '../services/ebayApiOrderSync';
 import { backfillEbayOrders, type BackfillProgress } from '../services/ebayOrderBackfill';
-import { getSuggestedBackfillRange, loadEbayOrderIndex } from '../services/ebayOrderIndex';
+import { findEbayOrderById, getSuggestedBackfillRange, loadEbayOrderIndex } from '../services/ebayOrderIndex';
 import EbayToolSearchInput from './EbayToolSearchInput';
 import EbayAbrechnungMatchPicker from './EbayAbrechnungMatchPicker';
 import {
@@ -752,7 +752,17 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
       if (!hasImportedCsv) return null;
       return { ...report, rows: [], summary: report.summary };
     }
-    return { ...report, rows: csvRows, summary: summarizeEbayTxRows(csvRows) };
+    // The official eBay Transaktionsbericht CSV has no item-title column, so CSV-imported
+    // 'order' rows land here with title=''. The eBay API sync (services/ebayApiOrderSync.ts)
+    // already fetches every order's line-item titles via the Fulfillment API and caches them
+    // in the local order index — reuse that instead of scraping anything.
+    const titledRows = csvRows.map((row) => {
+      if (row.kind !== 'order' || row.title?.trim() || !row.orderId) return row;
+      const order = findEbayOrderById(row.orderId);
+      const title = (order?.lineItems || []).map((li) => li.title).filter(Boolean).join(' + ');
+      return title ? { ...row, title } : row;
+    });
+    return { ...report, rows: titledRows, summary: summarizeEbayTxRows(titledRows) };
   }, [report, hasImportedCsv]);
 
   const inventoryOnlyRowCount = useMemo(() => {
