@@ -66,7 +66,7 @@ import { pullPurchaseIndexFromCloud } from './services/ebayPurchaseIndex';
 import { ensureEbayListings, pullListingIndexFromCloud } from './services/ebayListingIndex';
 import { hydrateHubArchiveIndex } from './services/ebayHubArchiveIndex';
 import { syncHubArchiveWithCloud } from './services/ebayHubArchiveSync';
-import { syncEbayTxReportsWithCloud } from './services/ebayTransactionReportSync';
+import { runEbayTxCloudSyncOnce } from './services/ebayTransactionReportSync';
 import { runEbayTxDailyCsvExport } from './services/ebayTxDailyExport';
 import { ensureKaListings } from './services/kleinanzeigenListingIndex';
 import { DEFAULT_CATEGORIES } from './services/constants';
@@ -1583,7 +1583,7 @@ const App: React.FC = () => {
     if (!authUser || !isCloudEnabled() || ebayTxReportsPulledRef.current) return;
     ebayTxReportsPulledRef.current = true;
     scheduleBackgroundWork(() => {
-      void syncEbayTxReportsWithCloud().catch((e) => console.warn('eBay Abrechnung cloud sync failed:', e));
+      void runEbayTxCloudSyncOnce();
     });
   }, [authUser]);
 

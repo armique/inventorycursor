@@ -253,12 +253,19 @@ export async function syncEbayTxReportsWithCloud(): Promise<void> {
       return;
     }
     clearEbayTxClearedMarker();
-    await applyEbayTxCloudState(remote, false);
+    // keepLocalRows=true here isn't about preserving anything local (there's nothing to keep —
+    // !localHas guarantees local.reports is empty) — it's what actually gates the shard-row
+    // fetch inside applyEbayTxCloudState. Passing false skipped that fetch entirely and saved
+    // summary-only report shells with empty rows, which made a brand-new device's own coverage
+    // check see zero covered orders and treat the whole order history as "new" — this is very
+    // likely what actually caused a first-time phone login to duplicate orders, independent of
+    // the runEbayTxCloudSyncOnce timing fix above.
+    await applyEbayTxCloudState(remote, true);
     return;
   }
 
   if (!localHas) {
-    await applyEbayTxCloudState(remote, false);
+    await applyEbayTxCloudState(remote, true);
     return;
   }
   const localTs = localStats?.updatedAt || '';
@@ -273,6 +280,26 @@ export async function syncEbayTxReportsWithCloud(): Promise<void> {
   if (localTs > remoteTs || localLib.reports.length > (remote.reports?.length || 0)) {
     await pushEbayTxReportsToCloud();
   }
+}
+
+let inFlightCloudSync: Promise<void> | null = null;
+
+/**
+ * Memoized wrapper around syncEbayTxReportsWithCloud() — the first caller (normally App.tsx,
+ * on auth) kicks off the real Firestore pull; anyone else (the Abrechnung page's own auto-sync)
+ * just awaits the same in-flight promise instead of racing it. That race was the actual cause
+ * of orders doubling on a fresh device/browser: the page's own `loading` flag only reflects an
+ * (empty, near-instant) local IndexedDB read, while this pull is deliberately deferred via
+ * requestIdleCallback and can take seconds — plenty of time for the API auto-sync to run first,
+ * see zero CSV-covered orders, and dump the entire order history in as "new".
+ */
+export function runEbayTxCloudSyncOnce(): Promise<void> {
+  if (!inFlightCloudSync) {
+    inFlightCloudSync = syncEbayTxReportsWithCloud().catch((e) => {
+      console.warn('eBay Abrechnung cloud sync failed:', e);
+    });
+  }
+  return inFlightCloudSync;
 }
 
 export type { EbayTxCloudStats, EbayTxLibrary };

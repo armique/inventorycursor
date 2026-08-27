@@ -55,6 +55,7 @@ import EbayAbrechnungMatchPicker from './EbayAbrechnungMatchPicker';
 import {
   EBAY_TX_REPORT_UPDATED_EVENT,
   readEbayTxClearedAt,
+  runEbayTxCloudSyncOnce,
 } from '../services/ebayTransactionReportSync';
 import {
   backfillEbayTxLinkedSellDates,
@@ -661,7 +662,10 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
    *  happens here, where a new order can actually be reviewed and linked. */
   const runEbaySync = useCallback((force?: boolean) => {
     setEbaySyncBusy(true);
-    void syncNewEbayOrdersOnAppVisit({ force })
+    // Wait for App.tsx's own Firestore pull to land real CSV rows locally first — see the
+    // comment on runEbayTxCloudSyncOnce for why `loading` alone isn't a wide-enough guard.
+    void runEbayTxCloudSyncOnce()
+      .then(() => syncNewEbayOrdersOnAppVisit({ force }))
       .then((outcome) => {
         if (outcome.status === 'ok') {
           setEbaySyncNote(
@@ -682,10 +686,16 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
   // local storage was just cleared/still populating, the API sync could read the CSV report
   // list before it finished loading, see nothing covered yet, and dump the ENTIRE order
   // history in as "new" api-sync rows — duplicating every order already in the CSVs (this is
-  // what inflated a real €64.8k report into a fake €131.2k one). Waiting for `loading` to
-  // actually turn false — the same signal the manual button's disabled state already uses —
-  // means it only ever runs once CSV data is confirmed loaded, so it can correctly tell "new"
-  // orders from ones already covered.
+  // what inflated a real €64.8k report into a fake €131.2k one).
+  //
+  // `loading` alone isn't actually enough, though: it only reflects this page's own (empty, on
+  // a fresh device) local IndexedDB read, which resolves almost instantly — it says nothing
+  // about App.tsx's separate Firestore pull (services/ebayTransactionReportSync.ts), which is
+  // deliberately deferred via requestIdleCallback and further delayed while the user is
+  // actively tapping around, easily taking seconds on a phone. That gap reproduced the exact
+  // same doubling bug on a first-time phone login even after the `loading` fix above. Awaiting
+  // runEbayTxCloudSyncOnce() (a memoized wrapper so this never races or duplicates App.tsx's own
+  // call) guarantees real cloud CSV data has landed locally before "new" orders are computed.
   const autoSyncRanRef = useRef(false);
   useEffect(() => {
     if (loading || autoSyncRanRef.current) return;
