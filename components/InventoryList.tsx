@@ -1,4 +1,4 @@
-﻿import React, { useState, useMemo, useCallback, useEffect, useLayoutEffect, useRef, useDeferredValue, startTransition } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useLayoutEffect, useRef, useDeferredValue, startTransition } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { pickEssentialSpecOptions, mergeAiSpecsIntoEssential, resolveEssentialSpecKeys } from '../services/essentialSpecFields';
 import { formatEUR, parseLocaleMoney, parseLocaleNumber } from '../utils/formatMoney';
@@ -135,8 +135,6 @@ import { findMatchingOrdersForItem, type EbayOrderMatch } from '../utils/ebayOrd
 import { linkInventoryItemToEbayOrder } from '../utils/linkInventoryItemToEbayOrder';
 import { buildEbayOrderUrl, buildEbayItemUrl, resolveItemSourceLinks } from '../utils/sourceLinks';
 import { getEbayPublishReadiness } from '../utils/ebayListingReadiness';
-import { syncListingPresence } from '../utils/syncListingPresence';
-import { markItemListedOnEbay, dismissEbayBorderlineMatch, type EbayPresenceBorderlineMatch } from '../utils/listingPresence';
 import ContainerMembershipBadge from './ContainerMembershipBadge';
 import { buildContainerTitle, withRebuiltContainerTitle } from '../utils/buildTitle';
 import { countEqualSplitSoldGroupCandidates } from '../utils/suggestEqualSplitSoldGroups';
@@ -1419,8 +1417,7 @@ const InventoryList: React.FC<Props> = ({
   }, [listDensity, persistenceKey]);
   const [smartPreset, setSmartPreset] = useState<SmartPreset>(null);
   const [showAISpecsModal, setShowAISpecsModal] = useState(false);
-  const [ebayCheckBusy, setEbayCheckBusy] = useState(false);
-  const [ebayBorderlineQueue, setEbayBorderlineQueue] = useState<EbayPresenceBorderlineMatch[]>([]);
+
   const [showBulkAddPhotosModal, setShowBulkAddPhotosModal] = useState(false);
   const [addPhotosTargetIds, setAddPhotosTargetIds] = useState<string[]>([]);
   const [addPhotosAutoEbay, setAddPhotosAutoEbay] = useState(false);
@@ -5320,45 +5317,6 @@ const InventoryList: React.FC<Props> = ({
     setAddPhotosTargetIds([]);
     setAddPhotosAutoEbay(false);
   }, []);
-
-  // Pull active eBay listings, auto-link the confident matches, and queue up any
-  // weak-but-not-nothing guesses for a manual yes/no instead of dropping them.
-  const handleCheckEbayListings = useCallback(async () => {
-    setEbayCheckBusy(true);
-    try {
-      const result = await syncListingPresence(items, { skipKa: true, forceEbay: true });
-      const changed = result.items.filter((next, idx) => next !== items[idx]);
-      if (changed.length) onUpdate(changed);
-      if (result.ebayBorderline.length) setEbayBorderlineQueue(result.ebayBorderline);
-      setToast(
-        result.ebayError
-          ? `eBay: ${result.ebayError}`
-          : `Checked ${result.ebayTitleCount} active listing${result.ebayTitleCount === 1 ? '' : 's'} · ${result.ebayMatched} linked` +
-            (result.ebayBorderline.length ? ` · ${result.ebayBorderline.length} to confirm` : '')
-      );
-      setTimeout(() => setToast(null), 3200);
-    } catch (e) {
-      setToast((e as Error)?.message || 'eBay listing check failed');
-      setTimeout(() => setToast(null), 3200);
-    } finally {
-      setEbayCheckBusy(false);
-    }
-  }, [items, onUpdate]);
-
-  const handleConfirmBorderlineMatch = useCallback(
-    (match: EbayPresenceBorderlineMatch) => {
-      const item = itemsById.get(match.itemId);
-      if (item) onUpdate([markItemListedOnEbay(item, match.hit)]);
-      setEbayBorderlineQueue((prev) => prev.filter((m) => m !== match));
-    },
-    [itemsById, onUpdate]
-  );
-
-  const handleDismissBorderlineMatch = useCallback((match: EbayPresenceBorderlineMatch) => {
-    dismissEbayBorderlineMatch(match.itemId, match.hit.listingId);
-    setEbayBorderlineQueue((prev) => prev.filter((m) => m !== match));
-  }, []);
-
   const selectedHasSoldOrTraded = useMemo(
     () =>
       deferredSelectedIds.some((id) => {
@@ -6594,23 +6552,6 @@ const InventoryList: React.FC<Props> = ({
                >
                  <FileSpreadsheet size={14} /> <span className="text-[10px] font-bold uppercase">Excel</span>
                </button>
-               <button
-                 type="button"
-                 disabled={ebayCheckBusy}
-                 onClick={() => void handleCheckEbayListings()}
-                 className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 flex items-center gap-1 disabled:opacity-50"
-                 title="Pull your active eBay listings and link them to matching inventory items"
-               >
-                 <RefreshCw size={14} className={ebayCheckBusy ? 'animate-spin' : ''} />{' '}
-                 <span className="text-[10px] font-bold uppercase">
-                   {ebayCheckBusy ? 'Checking eBay…' : 'Check eBay listings'}
-                 </span>
-                 {ebayBorderlineQueue.length > 0 && (
-                   <span className="ml-0.5 inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-white text-[9px] font-black">
-                     {ebayBorderlineQueue.length}
-                   </span>
-                 )}
-               </button>
                {onDownloadBackup && (
                  <button
                    type="button"
@@ -7310,76 +7251,6 @@ const InventoryList: React.FC<Props> = ({
       </div>
 
       {/* MODALS */}
-      {ebayBorderlineQueue.length > 0 && (
-        <div
-          className="fixed inset-0 z-[130] flex items-center justify-center bg-slate-950/50 p-4"
-          onClick={() => setEbayBorderlineQueue([])}
-          role="presentation"
-        >
-          <div
-            className="w-full max-w-md max-h-[80vh] overflow-hidden rounded-2xl bg-white shadow-2xl border border-slate-200 flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-label="Confirm eBay listing matches"
-          >
-            <div className="shrink-0 px-4 py-3 border-b border-slate-100 bg-amber-50/80">
-              <h3 className="text-sm font-black text-amber-950">Is this the right eBay listing?</h3>
-              <p className="text-xs text-slate-600 mt-0.5">
-                These didn't match confidently enough to link automatically. Confirm the ones that
-                are right, dismiss the rest.
-              </p>
-            </div>
-            <div className="flex-1 overflow-y-auto px-4 py-2 space-y-2">
-              {ebayBorderlineQueue.map((m) => (
-                <div key={`${m.itemId}:${m.hit.listingId || ''}`} className="rounded-xl border border-slate-200 p-2.5 space-y-1.5">
-                  <p className="text-xs font-bold text-slate-800">{m.itemName}</p>
-                  <p className="text-xs text-slate-500">
-                    vs. eBay: <span className="font-semibold text-slate-700">{m.hit.title}</span>
-                    {m.hit.price != null ? ` · €${m.hit.price.toFixed(2)}` : ''}
-                  </p>
-                  <div className="flex items-center gap-1.5">
-                    {m.hit.url ? (
-                      <a
-                        href={m.hit.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-[11px] font-bold text-sky-700 hover:underline"
-                      >
-                        <ExternalLink size={11} /> View listing
-                      </a>
-                    ) : null}
-                    <div className="ml-auto flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => handleDismissBorderlineMatch(m)}
-                        className="px-2.5 py-1 rounded-lg border border-slate-200 text-[11px] font-bold text-slate-500 hover:bg-slate-50"
-                      >
-                        No
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleConfirmBorderlineMatch(m)}
-                        className="px-2.5 py-1 rounded-lg border border-emerald-400 bg-emerald-600 text-[11px] font-bold text-white hover:bg-emerald-700"
-                      >
-                        Yes, link it
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="shrink-0 px-4 py-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setEbayBorderlineQueue([])}
-                className="w-full py-1.5 rounded-lg border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50"
-              >
-                Close — decide later
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       {itemToEdit && (
          <EditItemModal
             item={itemToEdit}
