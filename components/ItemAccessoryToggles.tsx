@@ -58,14 +58,14 @@ const FLUSH_MS = 280;
  */
 const ItemAccessoryToggles: React.FC<Props> = ({ item, children, onPatch, dense, mini, labeled }) => {
   const ids = accessoryTogglesForItem(item, children);
-  const iconSize = mini ? 10 : dense ? 11 : 12;
+  const iconSize = mini ? 12 : dense ? 11 : 12;
   const chip =
     labeled
       ? dense
         ? 'h-5 px-1.5 rounded-md gap-0.5'
         : 'h-6 px-1.5 rounded-lg gap-0.5'
       : mini
-        ? 'h-5 w-5 rounded-md'
+        ? 'h-7 w-7 rounded-md'
         : dense
           ? 'h-5 min-w-[1.25rem] px-1 rounded-md'
           : 'h-6 min-w-[1.5rem] px-1.5 rounded-lg';

@@ -166,12 +166,16 @@ export const MobileStockCard: React.FC<{
             <button
               type="button"
               onClick={onToggleSelect}
-              className={`h-5 w-5 rounded border shrink-0 flex items-center justify-center text-[10px] font-black ${
-                selected ? 'bg-slate-900 border-slate-900 text-white' : 'border-slate-300 bg-white text-transparent'
-              }`}
+              className="h-11 w-11 -m-3 shrink-0 flex items-center justify-center"
               aria-label={selected ? 'Deselect' : 'Select'}
             >
-              ✓
+              <span
+                className={`h-5 w-5 rounded border flex items-center justify-center text-[10px] font-black ${
+                  selected ? 'bg-slate-900 border-slate-900 text-white' : 'border-slate-300 bg-white text-transparent'
+                }`}
+              >
+                ✓
+              </span>
             </button>
           )}
 
@@ -363,7 +367,7 @@ export const MobileStockCard: React.FC<{
               })()}
             </div>
             {(actions.onPatchAccessory || actions.onTogglePresence) && !purchaseActions && (
-              <div className="mt-1 flex items-center gap-1 flex-wrap" onClick={(e) => e.stopPropagation()}>
+              <div className="mt-1 flex items-center gap-1.5 flex-wrap" onClick={(e) => e.stopPropagation()}>
                 {actions.onTogglePresence && (() => {
                   const cycleState = getItemPresenceCycleState(item);
                   return (
@@ -379,7 +383,7 @@ export const MobileStockCard: React.FC<{
                               : 'Presence not set — tap to mark'
                       }
                       onClick={() => actions.onTogglePresence?.(item)}
-                      className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-black uppercase border ${
+                      className={`inline-flex items-center gap-0.5 px-2 py-1.5 rounded text-[10px] font-black uppercase border ${
                         cycleState === 'present'
                           ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
                           : cycleState === 'lost'
@@ -418,7 +422,7 @@ export const MobileStockCard: React.FC<{
                   type="button"
                   title={item.photosReady ? 'Photos ready' : 'Mark photos ready'}
                   onClick={() => actions.onPatchAccessory?.(item, { photosReady: !item.photosReady })}
-                  className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-black uppercase border ${
+                  className={`inline-flex items-center gap-0.5 px-2 py-1.5 rounded text-[10px] font-black uppercase border ${
                     item.photosReady
                       ? 'bg-violet-50 text-violet-800 border-violet-200'
                       : 'bg-slate-50 text-slate-400 border-slate-200'
@@ -432,7 +436,7 @@ export const MobileStockCard: React.FC<{
                   type="button"
                   title={item.reserved ? 'Reserved' : 'Hold'}
                   onClick={() => actions.onPatchAccessory?.(item, { reserved: !item.reserved })}
-                  className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-black uppercase border ${
+                  className={`inline-flex items-center gap-0.5 px-2 py-1.5 rounded text-[10px] font-black uppercase border ${
                     item.reserved
                       ? 'bg-amber-50 text-amber-900 border-amber-300'
                       : 'bg-slate-50 text-slate-400 border-slate-200'
@@ -445,7 +449,7 @@ export const MobileStockCard: React.FC<{
             )}
           </div>
 
-          <div className="flex items-center gap-0.5 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0">
             {purchaseActions ? (
               purchaseActions.ignored ? (
                 <button
@@ -497,20 +501,20 @@ export const MobileStockCard: React.FC<{
                     type="button"
                     onClick={() => purchaseActions.onIgnore?.()}
                     disabled={purchaseActions.parsing || purchaseActions.confirming}
-                    className="h-9 w-9 rounded-lg border border-slate-200 text-slate-500 inline-flex items-center justify-center disabled:opacity-50"
+                    className="h-11 w-11 rounded-lg border border-slate-200 text-slate-500 inline-flex items-center justify-center disabled:opacity-50"
                     title="Ignore — not for this business"
                     aria-label="Ignore purchase"
                   >
-                    <EyeOff size={14} />
+                    <EyeOff size={16} />
                   </button>
                   <button
                     type="button"
                     onClick={() => actions.onEdit(item)}
-                    className="h-9 w-9 rounded-lg bg-slate-900 text-white inline-flex items-center justify-center"
+                    className="h-11 w-11 rounded-lg bg-slate-900 text-white inline-flex items-center justify-center"
                     title="Edit draft"
                     aria-label="Edit draft"
                   >
-                    <Edit2 size={14} />
+                    <Edit2 size={16} />
                   </button>
                 </>
               )
@@ -520,40 +524,40 @@ export const MobileStockCard: React.FC<{
               <button
                 type="button"
                 onClick={() => actions.onQuickBundle?.(item)}
-                className="h-9 w-9 rounded-lg border border-violet-200 bg-violet-50 text-violet-700 inline-flex items-center justify-center"
+                className="h-11 w-11 rounded-lg border border-violet-200 bg-violet-50 text-violet-700 inline-flex items-center justify-center"
                 title={quickBundleLabel}
                 aria-label={quickBundleLabel}
               >
-                <Plus size={16} strokeWidth={2.5} />
+                <Plus size={18} strokeWidth={2.5} />
               </button>
             ) : null}
             <button
               type="button"
               onClick={() => actions.onEdit(item)}
-              className="h-9 w-9 rounded-lg bg-slate-900 text-white inline-flex items-center justify-center"
+              className="h-11 w-11 rounded-lg bg-slate-900 text-white inline-flex items-center justify-center"
               title="Edit"
               aria-label="Edit"
             >
-              <Edit2 size={14} />
+              <Edit2 size={16} />
             </button>
             <button
               type="button"
               disabled={!inStock}
               onClick={() => actions.onSell(item)}
-              className="h-9 w-9 rounded-lg bg-emerald-600 text-white inline-flex items-center justify-center disabled:opacity-35"
+              className="h-11 w-11 rounded-lg bg-emerald-600 text-white inline-flex items-center justify-center disabled:opacity-35"
               title="Sell"
               aria-label="Sell"
             >
-              <ShoppingBag size={14} />
+              <ShoppingBag size={16} />
             </button>
             <button
               type="button"
               onClick={() => setMoreOpen(true)}
-              className="h-9 w-9 rounded-lg border border-slate-200 text-slate-600 inline-flex items-center justify-center"
+              className="h-11 w-11 rounded-lg border border-slate-200 text-slate-600 inline-flex items-center justify-center"
               title="More"
               aria-label="More actions"
             >
-              <MoreHorizontal size={16} />
+              <MoreHorizontal size={18} />
             </button>
               </>
             )}
