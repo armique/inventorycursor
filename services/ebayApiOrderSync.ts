@@ -145,11 +145,24 @@ function orderRecordToTxRows(order: EbayOrderRecord): EbayTxRow[] {
     extraRows.push(row);
   });
 
+  // The eBay order APIs never expose buyer-paid shipping as its own field — but Sell
+  // Finances' "sale" event amount is the buyer's FULL payment (item + shipping combined),
+  // while the Fulfillment API's line items are item price only. The gap between the two
+  // is exactly what the buyer paid for shipping — no separate shipping API call needed.
+  // Only trust it when it's a real, sane amount (not a rounding artifact or a case where
+  // the item price alone already accounts for everything, e.g. free shipping).
+  const impliedShipping =
+    lineItemSubtotal != null && saleGross - lineItemSubtotal > 0.01
+      ? roundMoney(saleGross - lineItemSubtotal)
+      : lineItemSubtotal != null
+        ? 0
+        : null;
+
   const orderRow = baseTxRow(order, day);
   orderRow.title = title;
   orderRow.quantity = quantity;
   orderRow.itemSubtotalEur = lineItemSubtotal ?? saleGross;
-  orderRow.shippingEur = order.shippingCost ?? null;
+  orderRow.shippingEur = order.shippingCost ?? impliedShipping;
   orderRow.grossEur = roundMoney(saleGross);
   orderRow.variableFeeEur = fvfEur || null;
   orderRow.netEur = roundMoney(saleGross + fvfEur);
