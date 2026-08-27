@@ -433,6 +433,10 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
   const [search, setSearch] = useState('');
   const [kindFilter, setKindFilter] = useState<EbayTxKind | 'all' | 'refunded' | 'matcher'>('order');
   const [hideLinked, setHideLinked] = useState(false);
+  // Bumped only when a CSV/report import actually merges new or revised order rows —
+  // the one moment a CSV-sourced order's numbers can change. Drives the fee auto-heal
+  // below instead of a plain-mount scan; see that effect for why.
+  const [reportImportNonce, setReportImportNonce] = useState(0);
   const [componentPinIds, setComponentPinIds] = useState<string[]>(readComponentPinIds);
   const [activeComponentPin, setActiveComponentPin] = useState<string | null>(null);
   const [showComponentPinPicker, setShowComponentPinPicker] = useState(false);
@@ -792,6 +796,7 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
     const next = parseEbayTransactionReport(text, fileName);
     const library = await upsertEbayTransactionReport(next);
     setReports(library.reports);
+    setReportImportNonce((n) => n + 1);
     setSelectedId(library.reports.length > 1 ? 'all' : next.meta.id);
     setKindFilter('order');
     setSuggestions(null);
@@ -1082,20 +1087,24 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
     [resyncLinkedItemFees]
   );
 
-  // Auto-heal drift without waiting for a manual "Fix fees" click or a label edit: a
-  // silently-synced order (see the eBay API sync in App.tsx) can link to inventory before
-  // its DHL label is known, or a later CSV/report re-import can change fees/label on an
-  // order that was already linked. Whenever this page has stale linked items open, quietly
-  // resync them — same logic as the manual button, just triggered automatically. Guarded by
-  // the exact set of stale order ids so a fix that doesn't fully converge doesn't loop.
+  // Auto-heal drift, but only right after something that can actually change an order's
+  // numbers — never on a plain page open. A CSV-imported order has no server to poll: its
+  // FVF/ads/label figures only ever change when (a) you edit a label override (already
+  // handled instantly, per-order, by resyncLinkedItemFees above), or (b) you import a CSV
+  // whose rows revise an order already in the library (reportImportNonce, bumped in
+  // importText). Gating on that nonce — instead of re-scanning every linked order on every
+  // mount — is what keeps this cheap as the order history grows into the thousands: the
+  // full scan only runs right after an explicit import, not on every launch. Historical
+  // drift from before this mechanism existed is a one-time backfill — that's what the
+  // manual "Fix fees" button is for, not something to auto-run repeatedly.
   const feeAutoFixSigRef = useRef<string>('');
   useEffect(() => {
-    if (loading || busy || !staleFeeOrderIds.length) return;
-    const sig = staleFeeOrderIds.slice().sort().join(',');
+    if (!reportImportNonce || loading || busy || !staleFeeOrderIds.length) return;
+    const sig = `${reportImportNonce}:${staleFeeOrderIds.slice().sort().join(',')}`;
     if (feeAutoFixSigRef.current === sig) return;
     feeAutoFixSigRef.current = sig;
     onFixLinkedFees({ silent: true, flushCloud: false });
-  }, [staleFeeOrderIds, loading, busy, onFixLinkedFees]);
+  }, [reportImportNonce, staleFeeOrderIds, loading, busy, onFixLinkedFees]);
 
   // Refunded/cancelled orders whose fee has been manually absorbed into some item's buy
   // price (utils/refundFeeAbsorption.ts) — the item stays a "candidate" awaiting relink to
