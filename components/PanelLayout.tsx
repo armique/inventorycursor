@@ -3,8 +3,8 @@ import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
   Package, Settings, RefreshCw, Trash2, CloudUpload, LayoutDashboard,
   Loader2, Cloud, CheckCircle2, X, Receipt, History, Globe, Layers,
-  Printer, LayoutTemplate, PackageSearch, ChevronDown, ChevronLeft, ChevronRight, Plus, Images,
-  CircuitBoard, Radar, Coins, ShoppingBag, ShoppingCart, FileSpreadsheet, MoreHorizontal,
+  Printer, LayoutTemplate, ChevronDown, ChevronLeft, ChevronRight, Plus, Images,
+  CircuitBoard, Radar, Coins, ShoppingBag, FileSpreadsheet, MoreHorizontal,
 } from 'lucide-react';
 import PanelBreadcrumbs from './PanelBreadcrumbs';
 import { usePanelLocale } from '../context/PanelLocaleContext';
@@ -28,10 +28,6 @@ import { defaultGamificationState, type GamificationState } from '../utils/gamif
 import { useGamificationEvents } from '../hooks/useGamificationEvents';
 import GamificationEventLayer from './gamification/GamificationEventLayer';
 import { useStaleDealCount } from '../hooks/useInboxAlerts';
-import { useHubArchiveCacheTick } from '../hooks/useHubArchiveCacheTick';
-import { loadOrdersForSalesSync } from '../services/ebaySalesSync';
-import { countOpenEbayOrderLines } from '../utils/ebayOpenOrders';
-import { scheduleBackgroundWork } from '../services/backgroundPersistence';
 
 interface SyncState {
   status: 'idle' | 'pending' | 'syncing' | 'success' | 'error';
@@ -85,35 +81,6 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   }, [sidebarCollapsed]);
   /** Deals unresolved for 3+ days — flagged on Inventory, since the Inbox lives there. */
   const staleDealCount = useStaleDealCount();
-  const orderCacheTick = useHubArchiveCacheTick();
-  const [openEbayOrderCount, setOpenEbayOrderCount] = React.useState(0);
-  const ebayClaimFpRef = React.useRef({ fp: '', count: 0, tick: -1 });
-  React.useEffect(() => {
-    let cancelled = false;
-    const run = () => {
-      if (cancelled) return;
-      let fp = String(items.length);
-      for (const item of items) {
-        if (item.ebayOrderId) fp += `|${item.id}:${item.ebayOrderId}`;
-      }
-      const prev = ebayClaimFpRef.current;
-      if (prev.fp === fp && prev.tick === orderCacheTick) {
-        return;
-      }
-      let count = 0;
-      try {
-        count = countOpenEbayOrderLines(items, loadOrdersForSalesSync());
-      } catch {
-        count = 0;
-      }
-      ebayClaimFpRef.current = { fp, count, tick: orderCacheTick };
-      if (!cancelled) setOpenEbayOrderCount(count);
-    };
-    scheduleBackgroundWork(run);
-    return () => {
-      cancelled = true;
-    };
-  }, [items, orderCacheTick]);
   const mobileRedirectSignIn = prefersRedirectSignIn();
 
   // Lock document scroll while the panel shell owns nested scroll regions (esp. inventory on mobile).
@@ -157,9 +124,9 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
     allowProactiveEvents: !mobileRedirectSignIn,
   });
 
-  /** Inventory/trash use internal scroll + docked bulk bar; eBay tools / EST / bulk entry use full-width workspace layout. */
+  /** Inventory/trash use internal scroll + docked bulk bar; EST / bulk entry use full-width workspace layout. */
   const isDockedPanelPage =
-    /^\/panel\/(inventory|trash|ebay-store-pull|ebay-orders|ebay-abrechnung|est|dealwatch|add-bulk|3d-print)(\/|$)/.test(location.pathname);
+    /^\/panel\/(inventory|trash|ebay-abrechnung|est|dealwatch|add-bulk|3d-print)(\/|$)/.test(location.pathname);
   /** Stock list: no breadcrumb / locale / settings strip — ACTIVE|SOLD|INBOX is the first row. */
   const hidePanelChrome = location.pathname.startsWith('/panel/inventory');
 
@@ -295,14 +262,12 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
       warnCount: staleDealCount,
     },
     { to: '/panel/sell-today', icon: <ShoppingBag size={18} />, label: 'Sell today' },
-    { to: '/panel/ebay-orders', icon: <ShoppingCart size={18} />, label: 'eBay Orders', count: openEbayOrderCount, countTitle: 'Open eBay orders to bind' },
     { to: '/panel/ebay-abrechnung', icon: <FileSpreadsheet size={18} />, label: 'eBay Abrechnung' },
     { to: '/panel/3d-print', icon: <Printer size={18} />, label: '3D Print' },
     { to: '/panel/dealwatch', icon: <Radar size={18} />, label: 'Dealwatch' },
     { to: '/panel/reinvest', icon: <Coins size={18} />, label: 'Reinvest' },
     { to: '/panel/combo-lab', icon: <CircuitBoard size={18} />, label: 'Combo Lab' },
     { to: '/panel/bulk-imports', icon: <History size={18} />, label: 'Bulk imports' },
-    { to: '/panel/ebay-store-pull', icon: <PackageSearch size={18} />, label: 'eBay Tools' },
     { to: '/panel/card-gallery', icon: <Images size={18} />, label: 'Card gallery' },
     { action: 'settings', icon: <Settings size={18} />, label: 'Settings', alert: !isCloudEnabled },
   ];
@@ -514,7 +479,6 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
           !location.pathname.startsWith('/panel/edit') &&
           !location.pathname.startsWith('/panel/dealwatch') &&
           !location.pathname.startsWith('/panel/3d-print') &&
-          !location.pathname.startsWith('/panel/ebay-store-pull') &&
           !location.pathname.startsWith('/panel/ebay-abrechnung') && (
           <div className="md:hidden mb-4">
             <GlobalSearch items={items} expenses={expenses} businessSettings={businessSettings} />

@@ -26,7 +26,6 @@ import {
   mergeFinancialEvents,
   sumFinancialEventNet,
 } from '../utils/ebayOrderFinancial';
-import { findHubArchiveOrderById } from './ebayHubArchiveIndex';
 
 const STORAGE_KEY = 'ebay_order_index_v1';
 
@@ -426,8 +425,6 @@ export async function clearEbayOrderIndexEverywhere(): Promise<void> {
 export function findEbayOrderById(orderId: string): EbayOrderRecord | null {
   const key = orderId.trim().toLowerCase();
   if (!key) return null;
-  const hub = findHubArchiveOrderById(orderId);
-  if (hub) return hub;
   const { orders } = loadRaw();
   return orders.find((o) => o.orderId.trim().toLowerCase() === key) ?? null;
 }

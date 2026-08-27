@@ -23,12 +23,10 @@ const StorefrontConfiguratorPage = lazy(() => import('./components/StorefrontCon
 const LegalPage = lazy(() => import('./components/LegalPage'));
 const InvoiceManager = lazy(() => import('./components/InvoiceManager'));
 const ActionHistoryPage = lazy(() => import('./components/ActionHistoryPage'));
-const EbayStorePullPage = lazy(() => import('./components/EbayStorePullPage'));
 const ThreeDPrintPage = lazy(() => import('./components/ThreeDPrintPage'));
 const ProductCardGalleryPage = lazy(() => import('./components/ProductCardGalleryPage'));
 const BulkImportHistoryPage = lazy(() => import('./components/BulkImportHistoryPage'));
 const SellTodayPage = lazy(() => import('./components/SellTodayPage'));
-const EbayOrdersPage = lazy(() => import('./components/EbayOrdersPage'));
 const EbayAbrechnungPage = lazy(() => import('./components/EbayAbrechnungPage'));
 const EditItemRoute = lazy(() => import('./components/EditItemRoute'));
 const AddHubPage = lazy(() => import('./components/AddHubPage'));
@@ -65,8 +63,6 @@ import { runDailyBackupIfDue } from './services/backupService';
 import { pullOrderIndexFromCloud } from './services/ebayOrderIndex';
 import { pullPurchaseIndexFromCloud } from './services/ebayPurchaseIndex';
 import { ensureEbayListings, pullListingIndexFromCloud } from './services/ebayListingIndex';
-import { hydrateHubArchiveIndex } from './services/ebayHubArchiveIndex';
-import { syncHubArchiveWithCloud } from './services/ebayHubArchiveSync';
 import { runEbayTxCloudSyncOnce } from './services/ebayTransactionReportSync';
 import { runEbayTxDailyCsvExport } from './services/ebayTxDailyExport';
 import { ensureKaListings } from './services/kleinanzeigenListingIndex';
@@ -713,9 +709,6 @@ const App: React.FC = () => {
   /** Set when another tab/window has saved newer inventory data than this tab has — this
    *  tab has stopped autosaving to avoid overwriting it. Reload to pick up the latest. */
   const [tabDataStale, setTabDataStale] = useState(false);
-  const [hubArchiveVersion, setHubArchiveVersion] = useState(0);
-  const hubAutoHealVersionRef = useRef(0);
-  const hubAutoHealArmedRef = useRef(false);
   const abrechnungHealDoneRef = useRef(false);
   /** One-shot historical item heals — must not rescan inventory on every edit (freezes scroll/UI). */
   const inventoryBootHealsDoneRef = useRef(false);
@@ -1565,23 +1558,7 @@ const App: React.FC = () => {
   // First Firestore snapshot (from subscribeToData) hydrates or seeds cloud.
   // A second getDocs pull used to download the same ~1.5MiB pack and freeze the tab.
 
-  // Restore the Seller Hub ledger from IndexedDB even when signed out / localhost.
-  // Hydrate must not trigger auto-heal — that rewrite used to freeze the UI after refresh.
-  useEffect(() => {
-    const onUpdated = () => {
-      if (!hubAutoHealArmedRef.current) return;
-      setHubArchiveVersion((v) => v + 1);
-    };
-    window.addEventListener('ebay-hub-archive-updated', onUpdated);
-    void hydrateHubArchiveIndex()
-      .then(() => {
-        hubAutoHealArmedRef.current = true;
-      })
-      .catch((e) => console.warn('Hub archive hydrate failed:', e));
-    return () => window.removeEventListener('ebay-hub-archive-updated', onUpdated);
-  }, []);
-
-  // Re-hydrate eBay caches after the UI is quiet so Hub JSON parse does not freeze scrolling.
+  // Re-hydrate eBay caches after the UI is quiet so this never freezes scrolling.
   useEffect(() => {
     if (!authUser || !isCloudEnabled() || ebayOrderIndexPulledRef.current) return;
     ebayOrderIndexPulledRef.current = true;
@@ -1589,9 +1566,6 @@ const App: React.FC = () => {
       void pullOrderIndexFromCloud().catch((e) => console.warn('eBay order index cloud pull failed:', e));
       void pullPurchaseIndexFromCloud().catch((e) => console.warn('eBay purchase index cloud pull failed:', e));
       void pullListingIndexFromCloud().catch((e) => console.warn('eBay listing index cloud pull failed:', e));
-      void hydrateHubArchiveIndex()
-        .then(() => syncHubArchiveWithCloud())
-        .catch((e) => console.warn('Hub archive cloud sync failed:', e));
     });
   }, [authUser]);
 
@@ -2484,14 +2458,6 @@ const App: React.FC = () => {
     });
   }, [appState, authUser, cloudHydrated, handleUpdate, items]);
 
-  /** Hub breakdown auto-apply disabled — boot batches were stamping import dates as sellDate and clearing order meta. Manual apply stays in Inventory / Hub archive UI. */
-  useEffect(() => {
-    if (appState !== 'READY' || !items.length) return;
-    if (!hubAutoHealArmedRef.current) return;
-    if (hubAutoHealVersionRef.current === hubArchiveVersion) return;
-    hubAutoHealVersionRef.current = hubArchiveVersion;
-  }, [appState, items.length, hubArchiveVersion]);
-
   const handleRestoreItems = useCallback((updatedItems: InventoryItem[]) => {
     setItems(updatedItems);
     hasUnsavedChanges.current = true;
@@ -3126,16 +3092,6 @@ const App: React.FC = () => {
           <Route path="3d-print" element={<ThreeDPrintPage items={items} onSave={handleUpdate} onRemoveItems={(ids) => handleUpdate([], ids)} categories={categories} onAddExpense={handleAddExpense} isAdmin={isAdminUser} />} />
           <Route path="sell-today" element={<SellTodayPage items={items} onUpdate={handleUpdate} />} />
           <Route
-            path="ebay-orders"
-            element={
-              <EbayOrdersPage
-                items={items}
-                taxMode={businessSettings.taxMode}
-                onUpdate={handleUpdate}
-              />
-            }
-          />
-          <Route
             path="ebay-abrechnung"
             element={
               <EbayAbrechnungPage
@@ -3145,7 +3101,6 @@ const App: React.FC = () => {
               />
             }
           />
-          <Route path="ebay-store-pull" element={<EbayStorePullPage items={items} categories={categories} categoryFields={categoryFields} taxMode={businessSettings.taxMode} onUpdate={handleUpdate} onPublishCatalog={publishStoreCatalogNow} onAddExpense={handleAddExpense} />} />
           <Route
             path="card-gallery"
             element={<ProductCardGalleryPage items={items} onUpdate={handleUpdate} />}

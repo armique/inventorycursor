@@ -4,9 +4,8 @@
  */
 import type { InventoryItem, TaxMode } from '../types';
 import type { EbayOrderRecord } from '../services/ebayOrderIndex';
-import { findHubArchiveOrderById } from '../services/ebayHubArchiveIndex';
 import { getSoldContainerDisplayTotals, roundMoney } from '../services/financialAggregation';
-import { hubOrderIdFromItem, hubSaleColumnSplitForItem } from './hubOrderProceeds';
+import { hubSaleColumnSplitForItem } from './hubOrderProceeds';
 import {
   isTrustedEbayProceeds,
   saleColumnSplit,
@@ -89,8 +88,7 @@ export function resolveSellColumnSplit(
     }
   }
 
-  const orderId = hubOrderIdFromItem(item);
-  const hubOrder = extras?.hubOrder ?? (orderId ? findHubArchiveOrderById(orderId) : null);
+  const hubOrder = extras?.hubOrder ?? null;
   if (hubOrder && isTrustedEbayProceeds(item.saleProceeds) && splitCollapsed(split)) {
     const hubSplit = hubSaleColumnSplitForItem(hubOrder, item, allItems);
     if (hubSplit.netEur != null && hubSplit.totalEur - hubSplit.netEur >= 0.01) {

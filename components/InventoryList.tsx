@@ -7,7 +7,7 @@ import { getTimeGaugeRow, resolveContainerChildItems, stressToRgb, timeGaugeSort
 import { createPortal } from 'react-dom';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { 
-  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Camera, Gift, User, Images, Scissors, GripVertical, RefreshCw, Calculator, Inbox, MessageSquare, ExternalLink, Bookmark, ShoppingCart, Link2, CheckCircle2
+  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Camera, Gift, User, Images, Scissors, GripVertical, RefreshCw, Calculator, Inbox, MessageSquare, ExternalLink, Bookmark, Link2, CheckCircle2
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo, BulkImportRecord } from '../types';
 import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
@@ -26,18 +26,6 @@ import {
 } from './SalePlatformIcon';
 import { saleProceedsFromItemFields, saleProceedsFeeTotal, netPayoutAfterRefund, applyManualSellerShipping, canEditManualSellerShipping, shouldShowSellCellMarketplaceFees, isTrustedEbayProceeds, type SaleColumnSplit } from '../utils/saleProceeds';
 import { resolveSellColumnSplit } from '../utils/sellColumnDisplay';
-import { sumOrderRefundEur } from '../utils/ebayOrderFinancial';
-import { hydrateHubArchiveIndex, findHubArchiveOrderById } from '../services/ebayHubArchiveIndex';
-import { useHubArchiveCacheTick } from '../hooks/useHubArchiveCacheTick';
-import { appendHubBreakdownApplyLog } from '../services/ebayHubBreakdownApplyLog';
-import { invalidateEbaySalesSyncPeekCache } from '../services/ebaySalesSync';
-import EbayOrderBreakdownModal from './EbayOrderBreakdownModal';
-import {
-  hubBreakdownActionDetails,
-  hubBreakdownItemsToSave,
-  hubOrderIdFromItem,
-  type HubBreakdownReplaceRow,
-} from '../utils/replaceItemSaleProceedsFromHub';
 import { isMissingExplicitSalePlatform, MISSING_PLATFORM_FILTER, SALE_PLATFORM_OPTIONS, formatSalePlatformLabel, hasEbaySaleSignals, resolveSalePlatform } from '../utils/salePlatform';
 import { expandUpdatesWithContainerSaleMeta } from '../utils/containerSaleCascade';
 import {
@@ -119,7 +107,6 @@ const ebaySoldSearchUrl = (query: string) =>
   `https://www.ebay.de/sch/i.html?_nkw=${encodeURIComponent(query)}&LH_Sold=1&LH_Complete=1`;
 import SaleModal from './SaleModal';
 import InventoryOrderLinkPicker from './InventoryOrderLinkPicker';
-import EbayOrdersBindModal from './EbayOrdersBindModal';
 import ReturnModal from './ReturnModal';
 import SaleCycleHistory from './SaleCycleHistory';
 import BuyPriceHistory, { BuyPriceBumpBadge } from './BuyPriceHistory';
@@ -144,9 +131,6 @@ import BulkSelectionBar, { type BulkAction } from './BulkSelectionBar';
 import { generateItemSpecs } from '../services/specsAI';
 import { getStorefrontHiddenReason, isPublishedOnStorefront } from '../utils/storefrontCatalog';
 import { loadEbayOrderIndex } from '../services/ebayOrderIndex';
-import { loadOrdersForSalesSync } from '../services/ebaySalesSync';
-import { countOpenEbayOrderLines } from '../utils/ebayOpenOrders';
-import EbayOrdersPage from './EbayOrdersPage';
 import { findMatchingOrdersForItem, type EbayOrderMatch } from '../utils/ebayOrderMatch';
 import { linkInventoryItemToEbayOrder } from '../utils/linkInventoryItemToEbayOrder';
 import { buildEbayOrderUrl, buildEbayItemUrl, resolveItemSourceLinks } from '../utils/sourceLinks';
@@ -273,10 +257,10 @@ function isMarkReadyEligible(item: InventoryItem): boolean {
   );
 }
 
-type StatusFilter = 'ACTIVE' | 'SOLD' | 'DRAFTS' | 'ALL' | 'PURCHASES' | 'HUB_ORDERS';
+type StatusFilter = 'ACTIVE' | 'SOLD' | 'DRAFTS' | 'ALL' | 'PURCHASES';
 
 function isSpecialListTab(tab: StatusFilter): boolean {
-  return tab === 'PURCHASES' || tab === 'HUB_ORDERS';
+  return tab === 'PURCHASES';
 }
 
 type QuickCategoryPin = {
@@ -564,37 +548,6 @@ function resolveSellColumnBuyerTotalForItem(
   return sell > 0.01 ? roundMoney(sell) : null;
 }
 
-function hubRefundFallbackEur(item: InventoryItem): number {
-  const orderId = hubOrderIdFromItem(item);
-  if (!orderId) return 0;
-  const order = findHubArchiveOrderById(orderId);
-  if (!order) return 0;
-  return sumOrderRefundEur(order);
-}
-
-function itemWithHubRefundOverlay(item: InventoryItem): InventoryItem {
-  const refund = hubRefundFallbackEur(item);
-  if (refund < 0.01) return item;
-  if (Math.abs(Number(item.saleProceeds?.refundEur) || 0) >= 0.01) return item;
-  const current = saleProceedsFromItemFields(item);
-  const net = netPayoutAfterRefund(
-    current.buyerTotalEur ?? item.sellPrice,
-    saleProceedsFeeTotal(current),
-    current.netPayoutEur,
-    refund
-  );
-  return {
-    ...item,
-    saleProceeds: {
-      ...current,
-      source: current.source === 'inferred' ? 'ebay_seller_hub' : current.source,
-      feesEstimated: false,
-      refundEur: refund,
-      netPayoutEur: net,
-    },
-  };
-}
-
 const MOBILE_ACTIVE_SORT_OPTIONS = [
   { key: 'buyDate', label: 'Acquired' },
   { key: 'name', label: 'Name' },
@@ -849,7 +802,6 @@ function computeAutoColumnWidths(
     if (item.sellPrice) {
       const sellSplit = resolveSellColumnSplit(item, allItems, POCKET_PROFIT_TAX_MODE, {
         shippingFallbackEur: getItemDisplayShippingAmount(item, allItems),
-        refundFallbackEur: hubRefundFallbackEur(item),
       });
       if (sellSplit) {
         sellPriceW = Math.max(sellPriceW, measureMoneyLedgerColumnWidth(ctx, sellSplit));
@@ -1239,13 +1191,9 @@ const InventoryList: React.FC<Props> = ({
     searchParams.get('bulkImport')
   );
   const [timeFilter, setTimeFilter] = useState<TimeFilter>(() => loadState<TimeFilter>('time', 'ALL'));
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get('hubOrders') === '1') return 'HUB_ORDERS';
-    }
-    return loadState<StatusFilter>('status_filter', 'ACTIVE');
-  });
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(() =>
+    loadState<StatusFilter>('status_filter', 'ACTIVE')
+  );
   // Split view (side-by-side Active + Sold) was removed — always off now, regardless
   // of what a previous session may have persisted to localStorage under this key.
   const [splitView, setSplitView] = useState<boolean>(false);
@@ -1317,12 +1265,6 @@ const InventoryList: React.FC<Props> = ({
   /** When on, the sell cell drops every deduction line (shipping, refund, eBay/ad/other fees) —
    *  just the sell price and the net pocket value, regardless of showPriceBreakdown. */
   const [hideSellDeductions, setHideSellDeductions] = useState<boolean>(() => loadState<boolean>('hide_sell_deductions', false));
-  const hubArchiveCacheTick = useHubArchiveCacheTick();
-  const bumpHubArchiveVersion = useCallback(() => {
-    void hydrateHubArchiveIndex();
-  }, []);
-  const [ebayOrderBreakdownItem, setEbayOrderBreakdownItem] = useState<InventoryItem | null>(null);
-
   // One-shot heal: Hub-applied rows sometimes kept a stale `profit` while sell-cell net was right.
   const hubProfitHealDoneRef = useRef(false);
   useEffect(() => {
@@ -1348,37 +1290,6 @@ const InventoryList: React.FC<Props> = ({
       cancelled = true;
     };
   }, [items, onUpdate]);
-
-  const applyHubSplitPlan = useCallback((plan: HubBreakdownReplaceRow[]) => {
-    if (!plan.length) return;
-    const detailsByItemId: Record<string, string> = {};
-    for (const row of plan) detailsByItemId[row.itemId] = hubBreakdownActionDetails(row);
-    const plannedIds = new Set(plan.map((row) => row.itemId));
-    // Parent rows get pocket margin (net − EK). Nested parts keep the synced sold/net split.
-    const toSave = hubBreakdownItemsToSave(plan, items).map((item) => ({
-      ...item,
-      profit: plannedIds.has(item.id) ? computeSoldTabMargin(item) : item.profit,
-    }));
-    onUpdate(toSave, undefined, {
-      skipFieldPreserve: true,
-      skipMembershipSync: true,
-      skipContainerSync: true,
-      flushCloud: true,
-      actionNote: { action: 'Hub fee split approved', detailsByItemId },
-    });
-    appendHubBreakdownApplyLog(
-      plan.map((row) => ({
-        at: new Date().toISOString(),
-        itemId: row.itemId,
-        itemName: row.itemName,
-        orderId: row.orderId,
-        sellDate: row.nextItem.sellDate,
-        total: row.after.total,
-        net: row.after.net,
-      }))
-    );
-    invalidateEbaySalesSyncPeekCache();
-  }, [onUpdate, items]);
 
   /** Collapsed bundle/PC rows — open by default; user closes only if they want. */
   const [collapsedBundles, setCollapsedBundles] = useState<Set<string>>(() => new Set());
@@ -1508,7 +1419,6 @@ const InventoryList: React.FC<Props> = ({
   }, [listDensity, persistenceKey]);
   const [smartPreset, setSmartPreset] = useState<SmartPreset>(null);
   const [showAISpecsModal, setShowAISpecsModal] = useState(false);
-  const [showEbayOrdersModal, setShowEbayOrdersModal] = useState(false);
   const [ebayCheckBusy, setEbayCheckBusy] = useState(false);
   const [ebayBorderlineQueue, setEbayBorderlineQueue] = useState<EbayPresenceBorderlineMatch[]>([]);
   const [showBulkAddPhotosModal, setShowBulkAddPhotosModal] = useState(false);
@@ -1521,27 +1431,6 @@ const InventoryList: React.FC<Props> = ({
     countLocalProductCardsByItemId()
   );
   const [aiCardRegenConfirmId, setAiCardRegenConfirmId] = useState<string | null>(null);
-
-  const [openEbayOrderCount, setOpenEbayOrderCount] = useState(0);
-  useEffect(() => {
-    let cancelled = false;
-    const run = () => {
-      if (cancelled) return;
-      let count = 0;
-      try {
-        count = countOpenEbayOrderLines(items, loadOrdersForSalesSync());
-      } catch {
-        count = 0;
-      }
-      startTransition(() => {
-        if (!cancelled) setOpenEbayOrderCount(count);
-      });
-    };
-    scheduleBackgroundWork(run);
-    return () => {
-      cancelled = true;
-    };
-  }, [items, hubArchiveCacheTick]);
 
   const refreshAiCardCounts = useCallback(() => {
     setItemAiCardCounts(countLocalProductCardsByItemId());
@@ -1603,13 +1492,6 @@ const InventoryList: React.FC<Props> = ({
       setSplitView(false);
     } else {
       setBulkImportFilterId(null);
-    }
-  }, [searchParams]);
-
-  useEffect(() => {
-    if (searchParams.get('hubOrders') === '1') {
-      setStatusFilter('HUB_ORDERS');
-      setSplitView(false);
     }
   }, [searchParams]);
 
@@ -2898,9 +2780,9 @@ const InventoryList: React.FC<Props> = ({
     (item: InventoryItem): number | null => {
       if (item.isPC || item.isBundle) return null;
       if (item.sellPrice == null) return item.profit ?? null;
-      return computeSoldTabMargin(itemWithHubRefundOverlay(item));
+      return computeSoldTabMargin(item);
     },
-    [hubArchiveCacheTick]
+    []
   );
 
   // -- HANDLERS --
@@ -4997,10 +4879,7 @@ const InventoryList: React.FC<Props> = ({
         const displaySellPrice = buyerTotalEur ?? item.sellPrice;
         const split = resolveSellColumnSplit(item, items, POCKET_PROFIT_TAX_MODE, {
           shippingFallbackEur: getItemDisplayShippingAmount(item, items),
-          refundFallbackEur: hubRefundFallbackEur(item),
         });
-        const hubOrderId = (item.ebayOrderId || '').trim();
-        const openArchiveCompare = Boolean(hubOrderId && shouldShowEbayOrderRowActions(item));
         const sellLines = split ? (
           <SellSplitLines
             split={split}
@@ -5020,8 +4899,6 @@ const InventoryList: React.FC<Props> = ({
             title={
               soldContainerTotals != null
                 ? 'Bundle total sell price (sum of components)'
-                : openArchiveCompare
-                  ? `Compare with eBay archive ${hubOrderId} · double-click to edit`
                 : canEditManualSellerShipping(item)
                   ? 'Click to add shipping you paid · double-click to edit sell price'
                   : 'Click for fees & shipping split · double-click to edit'
@@ -5040,18 +4917,6 @@ const InventoryList: React.FC<Props> = ({
                  onKeyDown={e => { if(e.key === 'Enter') saveEdit(); if(e.key === 'Escape') setEditingCell(null); }}
                  onClick={e => e.stopPropagation()}
                />
-            ) : displaySellPrice && openArchiveCompare ? (
-              <button
-                type="button"
-                className="flex flex-col items-center leading-snug gap-0.5 w-fit mx-auto bg-transparent p-0 border-0 cursor-pointer appearance-none"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setEbayOrderBreakdownItem(item);
-                }}
-                onDoubleClick={(e) => { e.stopPropagation(); startEditing(item, 'sellPrice', item.sellPrice || 0); }}
-              >
-                {sellLines}
-              </button>
             ) : displaySellPrice ? (
               <SaleProceedsTrigger
                 item={item}
@@ -5685,19 +5550,8 @@ const InventoryList: React.FC<Props> = ({
   const listCountLabel =
     statusFilter === 'PURCHASES'
       ? `${purchasesView.rowCount} deal${purchasesView.rowCount === 1 ? '' : 's'}`
-      : statusFilter === 'HUB_ORDERS'
-        ? `${openEbayOrderCount} open order${openEbayOrderCount === 1 ? '' : 's'}`
-        : `${sortedItems.length} items`;
+      : `${sortedItems.length} items`;
 
-  const hubOrdersPanel = (
-    <EbayOrdersPage
-      items={items}
-      taxMode={POCKET_PROFIT_TAX_MODE}
-      onUpdate={onUpdate}
-      embedded
-      onBound={bumpHubArchiveVersion}
-    />
-  );
   const mobileSortOptions =
     statusFilter === 'ACTIVE'
       ? MOBILE_ACTIVE_SORT_OPTIONS
@@ -5944,21 +5798,6 @@ const InventoryList: React.FC<Props> = ({
                    </span>
                  )}
                </button>
-               <button
-                 type="button"
-                 onClick={() => { setStatusFilter('HUB_ORDERS'); setSplitView(false); }}
-                 className={`flex-1 inline-flex items-center justify-center gap-1 px-1 py-2 rounded-md text-[11px] font-black uppercase ${
-                   statusFilter === 'HUB_ORDERS' ? 'bg-slate-900 text-white' : 'text-slate-600'
-                 }`}
-                 title="New eBay Hub orders — match to stock and mark sold"
-               >
-                 <ShoppingCart size={13} /> Orders
-                 {openEbayOrderCount > 0 && (
-                   <span className="ml-0.5 min-w-[16px] px-1 rounded-full bg-violet-500 text-white text-[9px] tabular-nums">
-                     {openEbayOrderCount > 99 ? '99+' : openEbayOrderCount}
-                   </span>
-                 )}
-               </button>
                <select
                  value={statusFilter === 'DRAFTS' || statusFilter === 'ALL' ? statusFilter : ''}
                  onChange={(e) => {
@@ -6003,8 +5842,6 @@ const InventoryList: React.FC<Props> = ({
              </button>
            </div>
            <div className="relative">
-             {statusFilter !== 'HUB_ORDERS' && (
-             <>
              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={15} />
              <input
                type="search"
@@ -6042,8 +5879,6 @@ const InventoryList: React.FC<Props> = ({
                    </button>
                  ))}
                </div>
-             )}
-             </>
              )}
            </div>
            <div className="flex items-center justify-between gap-2 px-0.5">
@@ -6193,22 +6028,6 @@ const InventoryList: React.FC<Props> = ({
                       </span>
                     )}
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => { setStatusFilter('HUB_ORDERS'); setSplitView(false); }}
-                    className={`inline-flex items-center justify-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black uppercase transition-all ${
-                      !splitView && statusFilter === 'HUB_ORDERS' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50'
-                    }`}
-                    title="New eBay Hub orders — match to stock and mark sold"
-                  >
-                    <ShoppingCart size={12} className="shrink-0" />
-                    Orders
-                    {openEbayOrderCount > 0 && (
-                      <span className="ml-0.5 min-w-[16px] px-1 rounded-full bg-violet-500 text-white text-[9px] tabular-nums">
-                        {openEbayOrderCount > 99 ? '99+' : openEbayOrderCount}
-                      </span>
-                    )}
-                  </button>
                 </div>
                 {!splitView && (
                   <select
@@ -6228,13 +6047,12 @@ const InventoryList: React.FC<Props> = ({
               </>
             )}
             <span className="text-slate-500 text-xs font-medium">
-              {statusFilter === 'PURCHASES' || statusFilter === 'HUB_ORDERS'
+              {statusFilter === 'PURCHASES'
                 ? listCountLabel
                 : splitView
                 ? `${sortedActiveItems.length} active · ${sortedSoldItems.length} sold${timeFilter !== 'ALL' ? ' · period' : ''}`
                 : `${sortedItems.length} items${timeFilter !== 'ALL' ? ' · period' : ''}`}
             </span>
-            {statusFilter !== 'HUB_ORDERS' && (
             <div className="flex-1 min-w-0 max-w-[200px] sm:max-w-[220px] relative" ref={searchSuggestionsRef}>
                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                <input
@@ -6276,7 +6094,6 @@ const InventoryList: React.FC<Props> = ({
                  </div>
                )}
             </div>
-            )}
             <div className="relative" ref={recentDropdownRef}>
                <button
                  type="button"
@@ -7172,17 +6989,11 @@ const InventoryList: React.FC<Props> = ({
 
       {/* Shared list shells — only the inner items swap between Active / Sold / Purchases / Hub orders */}
       <div
-        className={`lg:hidden flex-1 min-h-0 px-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] ${
-          statusFilter === 'HUB_ORDERS'
-            ? 'flex flex-col overflow-hidden'
-            : 'overflow-y-auto overscroll-y-contain touch-pan-y custom-scrollbar space-y-1.5'
-        }`}
+        className="lg:hidden flex-1 min-h-0 px-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] overflow-y-auto overscroll-y-contain touch-pan-y custom-scrollbar space-y-1.5"
         style={{ WebkitOverflowScrolling: 'touch' }}
       >
           {statusFilter === 'PURCHASES' ? (
             purchasesView.mobileList
-          ) : statusFilter === 'HUB_ORDERS' ? (
-            <div className="flex-1 min-h-0 flex flex-col -mx-1.5">{hubOrdersPanel}</div>
           ) : sortedItems.length === 0 ? (
             <div className="py-16 text-center opacity-40">
               <Package size={40} className="mx-auto mb-3 text-slate-300" />
@@ -7208,7 +7019,6 @@ const InventoryList: React.FC<Props> = ({
                 suggestedKleinList={suggestedEbayById.get(item.id)?.kleinList}
                 suggestedFeePct={suggestedEbayById.get(item.id)?.feePct}
                 showPriceBreakdown={showPriceBreakdown}
-                refundFallbackEur={hubRefundFallbackEur(item)}
                 onSaveShipping={
                   canEditManualSellerShipping(item)
                     ? (amount) => saveSellerShipping(item, amount)
@@ -7442,8 +7252,6 @@ const InventoryList: React.FC<Props> = ({
         <div className="hidden lg:flex flex-1 min-h-0 min-w-0 flex-col relative">
         {statusFilter === 'PURCHASES' ? (
           purchasesView.desktopList
-        ) : statusFilter === 'HUB_ORDERS' ? (
-          <div className="flex flex-1 min-h-0 min-w-0 flex-col">{hubOrdersPanel}</div>
         ) : (
         <InventoryListTablePane
           key="single-pane"
@@ -7867,15 +7675,15 @@ const InventoryList: React.FC<Props> = ({
                         <AlertCircle size={28} className="mx-auto text-slate-300"/>
                         <p className="text-sm font-bold text-slate-600">No cached orders match this item.</p>
                         <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                           Fetch new Seller Hub orders in <span className="font-bold text-slate-600">eBay Tools</span>, then try again.
+                           Sync new orders in <span className="font-bold text-slate-600">eBay Abrechnung</span>, then try again.
                         </p>
                         <div className="flex flex-col sm:flex-row items-center justify-center gap-2">
                            <button
                               type="button"
-                              onClick={() => { closeOrderLookupModal(); navigate('/panel/ebay-store-pull?tab=orders'); }}
+                              onClick={() => { closeOrderLookupModal(); navigate('/panel/ebay-abrechnung'); }}
                               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700"
                            >
-                              Open order history tool
+                              Open eBay Abrechnung
                            </button>
                            <button
                               type="button"
@@ -7947,34 +7755,6 @@ const InventoryList: React.FC<Props> = ({
          document.body
       )}
 
-      {showEbayOrdersModal && (
-        <EbayOrdersBindModal
-          items={items}
-          taxMode={POCKET_PROFIT_TAX_MODE}
-          onUpdate={onUpdate}
-          onClose={() => setShowEbayOrdersModal(false)}
-          onBound={(_updated, remainingOpen) => {
-            if (remainingOpen > 0) return;
-            setShowEbayOrdersModal(false);
-            setSplitView(false);
-            setStatusFilter('SOLD');
-          }}
-        />
-      )}
-
-      {ebayOrderBreakdownItem && (
-        <EbayOrderBreakdownModal
-          item={ebayOrderBreakdownItem}
-          items={items}
-          taxMode={POCKET_PROFIT_TAX_MODE}
-          onClose={() => setEbayOrderBreakdownItem(null)}
-          onApply={(rows) => {
-            applyHubSplitPlan(rows);
-            setEbayOrderBreakdownItem(null);
-          }}
-          onArchiveUpdated={bumpHubArchiveVersion}
-        />
-      )}
       {itemToSell && (
          <SaleModal 
             item={itemToSell}

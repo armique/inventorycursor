@@ -18,14 +18,6 @@ import { SALE_PLATFORM_OPTIONS } from '../utils/salePlatform';
 import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
 import { saleProceedsFromOrder, saleProceedsFromScreenshot, resolveSaleProceeds, saleProceedsHasDetail } from '../utils/saleProceeds';
 import { computeItemProfitBeforeOverhead, roundMoney } from '../services/financialAggregation';
-import {
-  EBAY_SELLER_HUB_ORDERS_URL,
-  parseEbaySellerHubPayoutText,
-  payoutLooksComplete,
-  saleFieldsFromHubPayout,
-} from '../utils/ebaySellerHubSaleFields';
-import type { EbaySellerHubPayout } from '../lib/ebaySellerHubPayout';
-import { fetchEbaySellerHubPayout, type SellerHubFetchCandidate } from '../services/ebaySellerHubFetch';
 import { buildEbayOrderUrl } from '../utils/sourceLinks';
 import { SaleProceedsDialog } from './SaleProceedsPopover';
 
@@ -38,22 +30,6 @@ interface Props {
   mode?: 'sell' | 'editBuyer';
   onSave: (updatedItem: InventoryItem, splitOffItem?: InventoryItem) => void | Promise<void>;
   onClose: () => void;
-}
-
-async function readClipboardImageFile(): Promise<File | null> {
-  if (!navigator.clipboard || !('read' in navigator.clipboard)) return null;
-  try {
-    const items = await navigator.clipboard.read();
-    for (const item of items) {
-      const type = item.types.find((t) => t.startsWith('image/'));
-      if (!type) continue;
-      const blob = await item.getType(type);
-      return new File([blob], 'seller-hub.png', { type });
-    }
-  } catch {
-    /* permission or empty clipboard */
-  }
-  return null;
 }
 
 const PAYMENT_METHODS: PaymentType[] = [
@@ -132,11 +108,6 @@ const SaleModal: React.FC<Props> = ({
   const [orderFilter, setOrderFilter] = useState('');
   const [orderRefreshLoading, setOrderRefreshLoading] = useState(false);
   const [hubFetching, setHubFetching] = useState(false);
-  const [hubPaste, setHubPaste] = useState('');
-  const [hubMessage, setHubMessage] = useState<string | null>(null);
-  const [hubCandidates, setHubCandidates] = useState<SellerHubFetchCandidate[]>([]);
-  const [hubWaitingForPaste, setHubWaitingForPaste] = useState(false);
-  const [hubClipboardReading, setHubClipboardReading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [ebayPanelTab, setEbayPanelTab] = useState<'details' | 'match'>('details');
@@ -231,16 +202,13 @@ const SaleModal: React.FC<Props> = ({
       setSaving(true);
       setHubFetching(true);
       setSaveError(null);
-      setHubMessage('Reading Seller Hub — price breakdown, username, order, shipping address…');
-      setOrderIdLookupMessage('Reading Seller Hub…');
+      setOrderIdLookupMessage('Binding order…');
       try {
         const result = await bindEbayOrderExact(item, match, taxMode);
         // tsconfig has no strictNullChecks, under which `!result.ok` on a boolean-literal
         // discriminant doesn't narrow the union — `=== false` does. Same runtime check either way.
         if (result.ok === false) {
-          setHubMessage(result.hint);
           setSaveError(result.hint);
-          setHubCandidates(result.candidates || []);
           setEbayOrderId(match.order.orderId);
           setOrderIdLookupMessage(result.hint);
           return;
@@ -579,10 +547,6 @@ const SaleModal: React.FC<Props> = ({
       });
       setSaleProceedsDraft(proceeds);
       if (data.saleDate) setSaleDate(data.saleDate);
-      setHubWaitingForPaste(false);
-      setHubMessage(
-        `Filled from screenshot: buyer €${formatEUR(proceeds.buyerTotalEur ?? sellEur ?? 0)} − eBay €${formatEUR(money.ebayFeeEur ?? 0)} − ads €${formatEUR(money.adFeeEur ?? 0)} − label €${formatEUR(money.shippingLabelEur ?? 0)} = net €${formatEUR(proceeds.netPayoutEur ?? 0)}`
-      );
       return true;
     } catch (err: unknown) {
       setOrderScreenshotError(err instanceof Error ? err.message : 'Parse failed');
@@ -596,141 +560,6 @@ const SaleModal: React.FC<Props> = ({
     await applyScreenshotParse(orderScreenshotSource);
   };
 
-  const applyHubPayout = useCallback((payout: EbaySellerHubPayout, sourceLabel: string) => {
-    const fields = saleFieldsFromHubPayout(payout);
-    if (fields.sellPrice != null) {
-      const fmt = formatEUR(fields.sellPrice);
-      setSalePrice(fmt);
-      setUnitPrice(fmt);
-    }
-    setHasFee(fields.hasFee);
-    setFeeAmount(fields.feeAmount);
-    if (fields.sellerPaidShipping) {
-      setSellerPaidShipping(true);
-      setSellerShippingAmount(formatEUR(fields.sellerShippingAmount));
-    }
-    setEbayFeeNote({
-      ebayFeeEur: payout.transactionFeeEur,
-      adFeeEur: payout.adFeeEur,
-      amountReceivedNetEur: payout.netPayoutEur,
-      buyerShippingEur: payout.buyerShippingEur,
-    });
-    setSaleProceedsDraft(fields.saleProceeds);
-    if (fields.ebayOrderId) setEbayOrderId(fields.ebayOrderId);
-    if (payout.username) setEbayUsername(payout.username);
-    if (payout.fullName || payout.address) {
-      setCustomer((prev) => ({
-        ...prev,
-        name: payout.fullName || prev.name,
-        address: payout.address || prev.address,
-      }));
-    }
-    setPlatformSold('ebay.de');
-    setPaymentType('ebay.de');
-    const net = payout.netPayoutEur != null ? formatEUR(payout.netPayoutEur) : '—';
-    const gross = fields.sellPrice != null ? formatEUR(fields.sellPrice) : '—';
-    const who = payout.username ? ` · @${payout.username}` : '';
-    setHubMessage(
-      `Filled ${sourceLabel}${who}: buyer €${gross} − eBay €${formatEUR(payout.transactionFeeEur ?? 0)} − ads €${formatEUR(payout.adFeeEur ?? 0)} − label €${formatEUR(payout.shippingLabelEur ?? 0)} = net €${net}`
-    );
-    setHubCandidates([]);
-    setHubWaitingForPaste(false);
-  }, []);
-
-  const tryFillFromHubText = useCallback(
-    (raw: string): boolean => {
-      const text = raw.trim();
-      if (!text) return false;
-      const payout = parseEbaySellerHubPayoutText(text);
-      if (!payoutLooksComplete(payout)) return false;
-      applyHubPayout(payout, 'from pasted payout');
-      setHubPaste(text);
-      return true;
-    },
-    [applyHubPayout]
-  );
-
-  const handleFillFromClipboard = useCallback(async (opts?: { silent?: boolean }) => {
-    const silent = Boolean(opts?.silent);
-    if (!silent) {
-      setHubClipboardReading(true);
-      setHubMessage(null);
-    }
-    try {
-      const image = await readClipboardImageFile();
-      if (image) {
-        if (!silent) setHubMessage('Screenshot on clipboard — parsing with AI…');
-        const src = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(String(reader.result || ''));
-          reader.onerror = () => reject(new Error('Could not read screenshot'));
-          reader.readAsDataURL(image);
-        });
-        setOrderScreenshotSource(src);
-        const ok = await applyScreenshotParse(src);
-        if (ok) return;
-      }
-      let text = '';
-      try {
-        text = (await navigator.clipboard.readText()).trim();
-      } catch {
-        text = '';
-      }
-      if (tryFillFromHubText(text || hubPaste)) return;
-      if (silent) return;
-      if (text) {
-        setHubPaste(text);
-        setHubMessage(
-          'Clipboard text is not a full payout yet. Copy from “Vom Käufer bezahlt” through “Bestelleinnahmen”, then paste again.'
-        );
-        return;
-      }
-      setHubMessage(
-        'Clipboard is empty. In Seller Hub copy the payout, or screenshot it, then click this button again (or press Ctrl+V here).'
-      );
-    } catch (err: unknown) {
-      if (!silent) {
-        setHubMessage(err instanceof Error ? err.message : 'Could not read clipboard.');
-      }
-    } finally {
-      if (!silent) setHubClipboardReading(false);
-    }
-  }, [applyScreenshotParse, hubPaste, tryFillFromHubText]);
-
-  const handleFetchSellerHub = async (orderIdOverride?: string) => {
-    setHubFetching(true);
-    setHubMessage(null);
-    try {
-      const result = await fetchEbaySellerHubPayout({
-        orderId: (orderIdOverride || ebayOrderId).trim(),
-        title: item.name,
-        sku: (ebaySku || item.ebaySku || '').trim(),
-        listingId: (ebayListingId || item.ebayListingId || '').trim(),
-        query: item.name,
-      });
-      if (result.ok) {
-        applyHubPayout(result.payout, result.source === 'paste' ? 'from paste' : 'from Seller Hub');
-        return;
-      }
-      // tsconfig has no strictNullChecks, under which narrowing doesn't carry across an early
-      // return in the sibling branch — re-checking `=== false` explicitly here does narrow.
-      if (result.ok === false) {
-        setHubCandidates(result.candidates || []);
-        setHubMessage(
-          result.code === 'local_only' || result.code === 'cdp_unavailable'
-            ? 'Start once with npm run dev:ebay, log into eBay.de in that Chrome, then click Bind again.'
-            : result.hint || result.error || `Seller Hub: ${result.code}`
-        );
-      }
-    } catch {
-      setHubMessage(
-        'Could not read Seller Hub. Keep the eBay Chrome window logged in and click Bind again.'
-      );
-    } finally {
-      setHubFetching(false);
-    }
-  };
-
   useEffect(() => {
     if (platformSold !== 'ebay.de') return;
 
@@ -742,7 +571,6 @@ const SaleModal: React.FC<Props> = ({
         const file = image.getAsFile();
         if (file) {
           event.preventDefault();
-          setHubMessage('Screenshot pasted — parsing with AI…');
           const reader = new FileReader();
           reader.onloadend = () => {
             const src = String(reader.result || '');
@@ -751,26 +579,14 @@ const SaleModal: React.FC<Props> = ({
           };
           reader.readAsDataURL(file);
         }
-        return;
       }
-      const text = event.clipboardData?.getData('text/plain') || '';
-      if (tryFillFromHubText(text)) {
-        event.preventDefault();
-      }
-    };
-
-    const onFocus = () => {
-      if (!hubWaitingForPaste) return;
-      void handleFillFromClipboard({ silent: true });
     };
 
     window.addEventListener('paste', onPaste);
-    window.addEventListener('focus', onFocus);
     return () => {
       window.removeEventListener('paste', onPaste);
-      window.removeEventListener('focus', onFocus);
     };
-  }, [applyScreenshotParse, handleFillFromClipboard, hubWaitingForPaste, platformSold, tryFillFromHubText]);
+  }, [applyScreenshotParse, platformSold]);
 
   const handleParseKleinanzeigenChat = async () => {
     const src = kleinanzeigenChatImage.trim();
@@ -1334,7 +1150,7 @@ const SaleModal: React.FC<Props> = ({
                   {hubFetching && !orderRefreshLoading && (
                     <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-700 ml-auto">
                       <Loader2 size={10} className="animate-spin" />
-                      Hub: payout · user · address
+                      Binding order…
                     </span>
                   )}
                 </div>
@@ -1448,7 +1264,7 @@ const SaleModal: React.FC<Props> = ({
                                     <CheckCircle2 size={11} />
                                   )}
                                   {saving || hubFetching
-                                    ? 'Binding — reading Hub…'
+                                    ? 'Binding…'
                                     : isEditBuyer
                                       ? 'Bind order'
                                       : 'Bind · sold'}
@@ -1470,67 +1286,6 @@ const SaleModal: React.FC<Props> = ({
 
               {(!isEditBuyer || ebayPanelTab === 'details') && (
               <>
-              <div className="rounded-xl border border-amber-100 bg-amber-50/50 p-2.5 space-y-2">
-                <div className="flex items-center gap-1.5">
-                  <ExternalLink size={12} className="text-amber-700 shrink-0" />
-                  <p className="text-[9px] font-black uppercase tracking-wider text-amber-900">
-                    Seller Hub payout
-                  </p>
-                </div>
-                <p className="text-[10px] text-amber-950/80 leading-snug">
-                  <span className="font-bold">Bind · sold</span> is one click: it reads payout, username,
-                  order id, and shipping address from Seller Hub (plus the eBay order API). Start once with{' '}
-                  <span className="font-bold">npm run dev:ebay</span> and stay logged into eBay.de in that
-                  Chrome window.
-                </p>
-                <div className="grid grid-cols-[1.4fr_1fr] gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => void handleFetchSellerHub()}
-                    disabled={hubFetching}
-                    className="py-2.5 min-h-[44px] rounded-xl bg-amber-700 text-white text-[9px] font-extrabold uppercase hover:bg-amber-800 disabled:opacity-50 flex items-center justify-center gap-1.5"
-                  >
-                    {hubFetching ? <Loader2 size={14} className="animate-spin" /> : null}
-                    {hubFetching ? 'Reading Hub…' : 'Read Hub now'}
-                  </button>
-                  <a
-                    href={
-                      (ebayOrderId.trim() && buildEbayOrderUrl(ebayOrderId.trim())) ||
-                      EBAY_SELLER_HUB_ORDERS_URL
-                    }
-                    target="_blank"
-                    rel="noreferrer"
-                    className="py-2.5 min-h-[44px] rounded-xl border border-amber-200 bg-white text-amber-800 text-[9px] font-extrabold uppercase hover:bg-amber-50 flex items-center justify-center"
-                  >
-                    Open Hub
-                  </a>
-                </div>
-                {hubCandidates.length > 0 && (
-                  <div className="space-y-1">
-                    {hubCandidates.map((c) => (
-                      <button
-                        key={c.orderId}
-                        type="button"
-                        onClick={() => void handleFetchSellerHub(c.orderId)}
-                        className="w-full text-left rounded-lg border border-amber-100 bg-white px-2 py-1.5 hover:border-amber-300"
-                      >
-                        <p className="text-[10px] font-bold text-slate-800">{c.orderId}</p>
-                        <p className="text-[9px] text-slate-500 line-clamp-2">{c.snippet}</p>
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {hubMessage && (
-                  <p
-                    className={`text-[9px] font-bold ${
-                      hubMessage.startsWith('Filled') ? 'text-emerald-700' : 'text-amber-900'
-                    }`}
-                  >
-                    {hubMessage}
-                  </p>
-                )}
-              </div>
-
               <div className="grid grid-cols-[1.4fr_1fr] gap-2">
                 <div
                   className={`p-2 rounded-xl border-2 border-dashed min-h-[52px] flex flex-col justify-center ${

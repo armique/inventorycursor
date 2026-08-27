@@ -71,18 +71,6 @@ async function loadHandler(pathname: string): Promise<{ handler: (req: ApiReques
     const mod = await import('./api/ai-text.js');
     return { handler: mod.default };
   }
-  if (pathname === '/api/ebay-seller-hub-fetch') {
-    const mod = await import('./api/ebay-seller-hub-fetch.js');
-    return { handler: mod.default };
-  }
-  if (pathname === '/api/ebay-hub-archive-sync') {
-    const mod = await import('./api/ebay-seller-hub-fetch.js');
-    return { handler: mod.default, route: 'archive-sync' };
-  }
-  if (pathname === '/api/ebay-hub-browser-ingest') {
-    const mod = await import('./api/ebay-seller-hub-fetch.js');
-    return { handler: mod.default, route: 'browser-ingest' };
-  }
   if (pathname === '/api/ebay-abrechnung-backup') {
     const mod = await import('./api/ebay-abrechnung-backup.js');
     return { handler: mod.default };

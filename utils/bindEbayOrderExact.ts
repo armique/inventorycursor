@@ -1,22 +1,14 @@
 import type { InventoryItem, TaxMode } from '../types';
 import { fetchEbayOrder } from '../services/ebayService';
-import { fetchEbaySellerHubPayout, type SellerHubFetchCandidate } from '../services/ebaySellerHubFetch';
 import type { EbayOrderRecord } from '../services/ebayOrderIndex';
 import { linkInventoryItemToEbayOrder } from './linkInventoryItemToEbayOrder';
 import { getLinePayout } from './ebayOrderPayout';
-import { persistHubPayoutOnCachedOrder } from './ebaySellerHubOrderCache';
 import type { EbayOrderMatch } from './ebayOrderMatch';
 import { saleProceedsFeeTotal, saleProceedsFromOrder } from './saleProceeds';
 
 export type BindEbayOrderExactResult =
-  | { ok: true; item: InventoryItem; source: 'cache' | 'seller_hub' }
-  | {
-      ok: false;
-      code: string;
-      hint: string;
-      openUrl?: string;
-      candidates?: SellerHubFetchCandidate[];
-    };
+  | { ok: true; item: InventoryItem; source: 'cache' }
+  | { ok: false; code: string; hint: string };
 
 function alreadyHasExactPayout(match: EbayOrderMatch): boolean {
   const payout = getLinePayout(match.order, match.lineItem);
@@ -49,43 +41,10 @@ async function enrichBuyerFromApi(order: EbayOrderRecord): Promise<EbayOrderReco
   }
 }
 
-function setupHint(code: string, fallback: string): string {
-  if (code === 'local_only' || code === 'cdp_unavailable') {
-    return 'Start once with npm run dev:ebay (or Start-eBay-dev.cmd), log into eBay.de in that Chrome window, then click Bind again.';
-  }
-  if (code === 'not_logged_in') {
-    return 'Sign into eBay.de in the debug Chrome window, then click Bind again.';
-  }
-  return fallback;
-}
-
-function fetchHub(match: EbayOrderMatch, item: InventoryItem) {
-  return fetchEbaySellerHubPayout({
-    orderId: match.order.orderId,
-    title: match.lineItem.title || item.name,
-    sku: match.lineItem.sku || item.ebaySku || undefined,
-    listingId: match.lineItem.listingId || item.ebayListingId || undefined,
-    query: match.lineItem.title || item.name,
-  });
-}
-
-/** Retries once unless the failure is a local-setup issue a retry can't fix. Kept as its own
- *  const-returning function (no reassigned `let`) so the ok:false narrowing below is clean. */
-async function fetchHubWithRetry(match: EbayOrderMatch, item: InventoryItem) {
-  const first = await fetchHub(match, item);
-  if (first.ok) return first;
-  // tsconfig has no strictNullChecks, under which the sibling `if (first.ok) return` doesn't
-  // narrow this fallthrough — re-checking `=== false` explicitly here does narrow it.
-  if (first.ok === false) {
-    const skipRetry =
-      first.code === 'cdp_unavailable' || first.code === 'local_only' || first.code === 'not_logged_in';
-    return skipRetry ? first : fetchHub(match, item);
-  }
-  return first;
-}
-
 /**
- * One-click bind: Hub payout + API username/address. Never asks the user to copy/paste.
+ * One-click bind using whatever fee/buyer data the eBay API sync already cached for this
+ * order. If the cache doesn't have an exact fee breakdown yet, this returns ok:false so the
+ * caller can fall back to entering sale details manually.
  */
 export async function bindEbayOrderExact(
   item: InventoryItem,
@@ -96,10 +55,8 @@ export async function bindEbayOrderExact(
     return { ok: true, item: linkInventoryItemToEbayOrder(item, match, taxMode), source: 'cache' };
   }
 
-  const buyerPromise = enrichBuyerFromApi(match.order);
-
   if (alreadyHasExactPayout(match)) {
-    const order = await buyerPromise;
+    const order = await enrichBuyerFromApi(match.order);
     return {
       ok: true,
       item: linkInventoryItemToEbayOrder(item, { ...match, order }, taxMode),
@@ -107,27 +64,9 @@ export async function bindEbayOrderExact(
     };
   }
 
-  const [hub, orderWithBuyer] = await Promise.all([fetchHubWithRetry(match, item), buyerPromise]);
-
-  if (hub.ok === false) {
-    return {
-      ok: false,
-      code: hub.code,
-      hint: setupHint(
-        hub.code,
-        hub.hint ||
-          hub.error ||
-          'Could not read Seller Hub. Keep the eBay Chrome window logged in and click Bind again.'
-      ),
-      openUrl: hub.openUrl,
-      candidates: hub.candidates,
-    };
-  }
-
-  const order = persistHubPayoutOnCachedOrder(orderWithBuyer, hub.payout);
   return {
-    ok: true,
-    item: linkInventoryItemToEbayOrder(item, { ...match, order }, taxMode),
-    source: 'seller_hub',
+    ok: false,
+    code: 'no_fee_breakdown',
+    hint: 'No fee breakdown synced for this order yet — enter sale details manually, or run Sync eBay orders first.',
   };
 }

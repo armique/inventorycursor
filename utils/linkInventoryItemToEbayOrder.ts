@@ -1,5 +1,4 @@
 import type { InventoryItem, TaxMode } from '../types';
-import { findHubArchiveOrderById } from '../services/ebayHubArchiveIndex';
 import { orderHasFeeBreakdown } from '../services/ebayOrderIndex';
 import { applyEbayOrderMatchToItem } from './applyEbayOrderMatch';
 import type { EbayOrderMatch } from './ebayOrderMatch';
@@ -10,9 +9,9 @@ import { applyHubPayoutBreakdownToSoldItem } from './replaceItemSaleProceedsFrom
  * Link an inventory row to an eBay order.
  *
  * 1. Mark sold (when in stock) and bind order id, buyer, platform.
- * 2. When Hub ledger / order cache has a fee breakdown, stamp the full Seller Hub
- *    split onto the item (Gesamtbetrag, label, ads, eBay fees, Bestelleinnahmen)
- *    so the Sell cell matches the eBay order page.
+ * 2. When the order cache has a fee breakdown, stamp the full split onto the item
+ *    (Gesamtbetrag, label, ads, eBay fees, Bestelleinnahmen) so the Sell cell matches
+ *    the real eBay order.
  */
 export function linkInventoryItemToEbayOrder(
   item: InventoryItem,
@@ -21,8 +20,7 @@ export function linkInventoryItemToEbayOrder(
   allItems?: InventoryItem[]
 ): InventoryItem {
   const linked = applyEbayOrderMatchToItem(item, match, taxMode);
-  const hubOrder = findHubArchiveOrderById(match.order.orderId);
-  const order = hubOrder ?? (orderHasFeeBreakdown(match.order) ? match.order : null);
+  const order = orderHasFeeBreakdown(match.order) ? match.order : null;
   if (!order || !orderHasFeeBreakdown(order)) return linked;
 
   const lines = allItems?.length

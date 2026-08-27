@@ -7,16 +7,6 @@ import { spawn, execSync } from 'node:child_process';
 import { existsSync, openSync, appendFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-  CDP_PORT,
-  cdpReady,
-  ensureChromeCdp,
-  findBrowserExecutable,
-  resolveChromeProfileDir,
-  waitFor,
-} from './chrome-cdp.mjs';
-import { openCdpTab, runHubPreflight } from './hub-scrape-browser.mjs';
-import { EBAY_SELLER_HUB_ORDERS_URL } from '../lib/ebaySellerHubPayout.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -183,52 +173,19 @@ async function ensureAppServerPort() {
   throw new Error('App server did not start with valid CSS. See inventory-pro-launcher.log in AppData\\Local.');
 }
 
-function spawnChromeWithUrl(url) {
-  const browser = findBrowserExecutable();
-  if (!browser) return false;
-  const profileDir = resolveChromeProfileDir(process.argv, log);
-  log(`Launching Chrome: ${url}`);
-  spawn(
-    browser,
-    [
-      `--remote-debugging-port=${CDP_PORT}`,
-      `--user-data-dir=${profileDir}`,
-      '--profile-directory=Default',
-      '--no-first-run',
-      '--no-default-browser-check',
-      url,
-    ],
-    { detached: true, stdio: 'ignore', windowsHide: false }
-  ).unref();
-  return true;
-}
-
-async function ensureChromeForHub(panelUrl) {
-  if (await cdpReady()) {
-    log(`CDP port ${CDP_PORT} already active — opening tabs via CDP (no second Chrome process).`);
-    const preflight = await runHubPreflight();
-    await openCdpTab(panelUrl, { background: Boolean(preflight.loginInProgress) });
-    await openCdpTab(EBAY_SELLER_HUB_ORDERS_URL, { background: true });
-    return true;
+function openInDefaultBrowser(url) {
+  log(`Opening default browser: ${url}`);
+  try {
+    if (process.platform === 'win32') {
+      spawn('cmd', ['/c', 'start', '""', url], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+    } else if (process.platform === 'darwin') {
+      spawn('open', [url], { detached: true, stdio: 'ignore' }).unref();
+    } else {
+      spawn('xdg-open', [url], { detached: true, stdio: 'ignore' }).unref();
+    }
+  } catch (e) {
+    log(`Could not open browser automatically: ${e instanceof Error ? e.message : String(e)}`);
   }
-
-  log('Launching Chrome with Inventory Pro panel (private profile copy — your normal Chrome stays untouched)…');
-  if (!spawnChromeWithUrl(panelUrl)) return false;
-
-  const ok = await waitFor(cdpReady, `Chrome debug :${CDP_PORT}`, 30000);
-  if (!ok) {
-    log('Chrome opened but the debug port did not come up.');
-    return false;
-  }
-
-  await sleep(800);
-  const hubTab = await openCdpTab(EBAY_SELLER_HUB_ORDERS_URL, { background: true });
-  if (hubTab.ok) {
-    log('Opened Seller Hub in a background tab — sign into eBay.de there when prompted.');
-  } else {
-    log(`Could not open background Seller Hub tab: ${hubTab.reason || 'unknown'}`);
-  }
-  return true;
 }
 
 function showError(message) {
@@ -274,12 +231,7 @@ async function main() {
   const panelUrl = `http://${HOST}:${port}/panel`;
   log(`Panel URL: ${panelUrl}`);
 
-  const chromeOk = await ensureChromeForHub(panelUrl);
-  if (!chromeOk) {
-    throw new Error(
-      'Chrome could not start with Hub sync.\nIf a previous debug Chrome window is stuck, close it and double-click Inventory Pro again.'
-    );
-  }
+  openInDefaultBrowser(panelUrl);
 
   log('Launch complete.');
 }

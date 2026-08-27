@@ -10,8 +10,6 @@ const LABELS: Record<string, string> = {
   'add-bulk': 'Bulk add',
   'bulk-imports': 'Bulk imports',
   builder: 'Builder',
-  'ebay-store-pull': 'eBay Store Pull',
-  'ebay-orders': 'eBay Orders',
   'ebay-abrechnung': 'eBay Abrechnung',
   dealwatch: 'Dealwatch',
   reinvest: 'Reinvest',

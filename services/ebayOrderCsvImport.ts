@@ -11,7 +11,6 @@ import {
   classifyTransactionType,
   financialEventId,
 } from '../utils/ebayOrderFinancial';
-import { isHubArchiveJson, parseHubArchiveJson } from '../utils/ebayHubArchiveFile';
 
 export interface EbayOrderCsvParseResult {
   orders: EbayOrderRecord[];
@@ -444,8 +443,7 @@ export function parseEbayOrderCsv(text: string): EbayOrderCsvParseResult {
   };
 }
 
-/** CSV (Seller Hub / Payments) or JSON from `npm run ebay:hub-archive`. */
+/** eBay order CSV export (Seller Hub Payments report). */
 export function parseEbayOrderImportText(text: string): EbayOrderCsvParseResult {
-  if (isHubArchiveJson(text)) return parseHubArchiveJson(text);
   return parseEbayOrderCsv(text);
 }

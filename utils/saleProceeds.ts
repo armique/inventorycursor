@@ -12,7 +12,6 @@ import {
   sumOrderSaleProceeds,
 } from './ebayOrderFinancial';
 import type { EbayScreenshotSaleFields } from './ebayScreenshotSaleFields';
-import type { EbaySellerHubPayout } from '../lib/ebaySellerHubPayout';
 
 const LABEL_RE = /versandetikett|shipping\s*label|shippinglabel|versandlabel/i;
 const ADS_RE = /anzeige|promot|ads|werbung|insertion|ad_fee/i;
@@ -223,44 +222,6 @@ export function saleProceedsFromScreenshot(
   };
 }
 
-export function saleProceedsFromHubPayout(payout: EbaySellerHubPayout): SaleProceedsBreakdown {
-  const itemGrossEur = n(payout.itemGrossEur);
-  const buyerShippingEur = n(payout.buyerShippingEur);
-  const transactionFeeEur = n(payout.transactionFeeEur);
-  const adFeeEur = n(payout.adFeeEur);
-  const label = n(payout.shippingLabelEur);
-  const otherFeeEur = n(payout.otherFeeEur);
-  const refundEur = n(payout.refundEur);
-  const buyerTotalEur =
-    n(payout.buyerTotalEur) ??
-    (itemGrossEur != null || buyerShippingEur != null
-      ? roundMoney((itemGrossEur ?? 0) + (buyerShippingEur ?? 0) - (refundEur ?? 0))
-      : null);
-  const netPayoutEur =
-    n(payout.netPayoutEur) ??
-    (buyerTotalEur != null
-      ? roundMoney(
-          buyerTotalEur -
-            (transactionFeeEur ?? 0) -
-            (adFeeEur ?? 0) -
-            (label ?? 0) -
-            (otherFeeEur ?? 0)
-        )
-      : null);
-  return {
-    capturedAt: new Date().toISOString(),
-    source: 'ebay_seller_hub',
-    itemGrossEur,
-    buyerShippingEur,
-    buyerTotalEur,
-    transactionFeeEur,
-    adFeeEur,
-    shippingLabelEur: label,
-    otherFeeEur,
-    refundEur,
-    netPayoutEur,
-  };
-}
 
 function feeBucket(transactionType?: string, description?: string): 'label' | 'ads' | 'tx' | 'other' {
   const t = `${transactionType || ''} ${description || ''}`;

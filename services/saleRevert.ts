@@ -2,7 +2,6 @@ import type { ActionHistoryEntry, InventoryItem, ItemSaleCycleReason } from '../
 import { ItemStatus } from '../types';
 import type { EbayOrderRecord } from './ebayOrderIndex';
 import { loadEbayOrderIndex } from './ebayOrderIndex';
-import { mergeHubOverApiOrders } from './ebayHubArchiveIndex';
 import { getChildren, getParentContainer } from './financialAggregation';
 import { syncContainerBuyTotalsFromComponents } from './containerAggregates';
 import { isRealizedDisposal } from '../utils/itemDisposition';
@@ -47,10 +46,10 @@ export function isRestockableSale(item: Pick<InventoryItem, 'status'> | undefine
   return item?.status === ItemStatus.SOLD || item?.status === ItemStatus.GIFTED;
 }
 
-/** Hub ledger first, then Fulfillment/API cache — used when restocking after Erstattet. */
+/** Fulfillment/API order cache — used when restocking after a refund. */
 export function loadRefundOrdersForRestock(): EbayOrderRecord[] {
   try {
-    return mergeHubOverApiOrders(loadEbayOrderIndex().orders);
+    return loadEbayOrderIndex().orders;
   } catch {
     return [];
   }
