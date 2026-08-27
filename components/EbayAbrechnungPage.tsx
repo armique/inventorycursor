@@ -712,13 +712,23 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
   // same doubling bug on a first-time phone login even after the `loading` fix above. Awaiting
   // runEbayTxCloudSyncOnce() (a memoized wrapper so this never races or duplicates App.tsx's own
   // call) guarantees real cloud CSV data has landed locally before "new" orders are computed.
+  // Additional guard, found live: right after a Clear (or on a genuinely brand-new account),
+  // the report library is legitimately empty — not "not loaded yet" but truly zero CSVs ever
+  // imported. In that state there's no CSV coverage to compare against, so the auto-sync can't
+  // tell "new" from "already known" and will pull the entire API order history in as a single
+  // giant report (real orders, but not what "new since last visit" is supposed to mean — this
+  // is what produced 943 orders / €131k right after a clean Clear, no duplication bug involved
+  // this time, just nothing to safely diff against yet). Auto-sync now waits for at least one
+  // real CSV report to exist; the manual "Sync eBay orders" button still works if you want to
+  // force it before importing a CSV.
   const autoSyncRanRef = useRef(false);
   useEffect(() => {
     if (loading || autoSyncRanRef.current) return;
+    if (!reports.length) return;
     autoSyncRanRef.current = true;
     runEbaySync();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading]);
+  }, [loading, reports.length]);
 
   const hasImportedCsv = useMemo(
     () => reports.some((r) => (r.rows?.length ?? 0) > 0),
