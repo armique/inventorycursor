@@ -47,6 +47,8 @@ import {
 import { withDealwatchplaceCredentials } from '../utils/marketplaceCredentialsSync';
 import { saveKaProfileUrl } from '../utils/listingPresence';
 import { buildFullBackupPayload, downloadFullBackupJson, type BackupData } from '../utils/fullBackupExport';
+import { loadEbayOrderIndex } from '../services/ebayOrderIndex';
+import { loadEbayTransactionLibrary, loadEbayTxLabelOverrides } from '../services/ebayTransactionReportStore';
 import {
   disconnectEbayOAuth,
   fetchEbayAuthorizeUrl,
@@ -549,7 +551,11 @@ const SettingsPage: React.FC<Props> = ({
     }
   };
 
-  const handleExportBackup = () => {
+  const handleExportBackup = async () => {
+    const [txLibrary, txLabelOverrides] = await Promise.all([
+      loadEbayTransactionLibrary(),
+      loadEbayTxLabelOverrides(),
+    ]);
     downloadFullBackupJson(
       buildFullBackupPayload({
         items,
@@ -562,6 +568,9 @@ const SettingsPage: React.FC<Props> = ({
         dashboardPreferences,
         actionHistory,
         bulkImports,
+        ebayOrders: loadEbayOrderIndex().orders,
+        ebayTxReports: txLibrary.reports,
+        ebayTxLabelOverrides: txLabelOverrides,
       })
     );
     showToast('Backup downloaded', 'success');
@@ -778,8 +787,12 @@ const SettingsPage: React.FC<Props> = ({
   };
 
   const buildBackupPayload = useCallback(
-    () =>
-      buildFullBackupPayload({
+    async () => {
+      const [txLibrary, txLabelOverrides] = await Promise.all([
+        loadEbayTransactionLibrary(),
+        loadEbayTxLabelOverrides(),
+      ]);
+      return buildFullBackupPayload({
         items,
         trash,
         expenses,
@@ -790,7 +803,11 @@ const SettingsPage: React.FC<Props> = ({
         dashboardPreferences,
         actionHistory,
         bulkImports,
-      }),
+        ebayOrders: loadEbayOrderIndex().orders,
+        ebayTxReports: txLibrary.reports,
+        ebayTxLabelOverrides: txLabelOverrides,
+      });
+    },
     [items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields, dashboardPreferences, actionHistory, bulkImports]
   );
 
@@ -822,7 +839,7 @@ const SettingsPage: React.FC<Props> = ({
     }
     setGitHubSyncLoading(true);
     try {
-      const payload = buildBackupPayload();
+      const payload = await buildBackupPayload();
       let toPush: object = payload;
       if (backupEncrypt && backupPassphrase.trim()) {
         const enc = await encryptBackupJson(JSON.stringify(payload), backupPassphrase.trim());
