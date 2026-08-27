@@ -2535,7 +2535,7 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
                   type="button"
                   disabled={page <= 0}
                   onClick={() => setPage((p) => Math.max(0, p - 1))}
-                  className="px-2 py-1 rounded border border-slate-200 disabled:opacity-40"
+                  className="px-3 py-2.5 min-h-11 rounded border border-slate-200 disabled:opacity-40"
                 >
                   Prev
                 </button>
@@ -2546,7 +2546,7 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
                   type="button"
                   disabled={page + 1 >= pageCount}
                   onClick={() => setPage((p) => p + 1)}
-                  className="px-2 py-1 rounded border border-slate-200 disabled:opacity-40"
+                  className="px-3 py-2.5 min-h-11 rounded border border-slate-200 disabled:opacity-40"
                 >
                   Next
                 </button>
@@ -3083,11 +3083,11 @@ function TxCard({
             href={orderUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-sky-300 bg-sky-50 text-sky-700"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-sky-300 bg-sky-50 text-sky-700"
             title={`Open eBay order ${row.orderId} ↗`}
             aria-label={`Open eBay order ${row.orderId}`}
           >
-            <ExternalLink size={12} strokeWidth={2.25} />
+            <ExternalLink size={14} strokeWidth={2.25} />
           </a>
         ) : null}
       </div>
@@ -3123,7 +3123,7 @@ function TxCard({
           <button
             type="button"
             onClick={onMatch}
-            className={`inline-flex flex-1 min-w-0 items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg border text-xs font-bold ${
+            className={`inline-flex flex-1 min-w-0 min-h-11 items-center justify-center gap-1.5 px-2 py-2.5 rounded-lg border text-xs font-bold ${
               linked
                 ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
                 : isFullRefund && feeAbsorbedItem
@@ -3148,11 +3148,11 @@ function TxCard({
             <button
               type="button"
               onClick={() => onUnlinkItem(linked, row.orderId)}
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-purple-200 bg-purple-50 text-purple-700"
+              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-purple-200 bg-purple-50 text-purple-700"
               title={`Unlink ${linked.name}`}
               aria-label={`Unlink ${linked.name} from order ${row.orderId}`}
             >
-              <Unlink size={13} strokeWidth={2.25} />
+              <Unlink size={15} strokeWidth={2.25} />
             </button>
           ) : null}
         </div>
