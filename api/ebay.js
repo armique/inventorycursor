@@ -982,7 +982,11 @@ async function handleEbayOrders(req, res) {
   if (!token) return res.status(400).json({ error: 'Missing token.' });
 
   const now = new Date();
-  const to = toDate ? new Date(toDate) : now;
+  // A date-only toDate (e.g. "2026-08-27") must mean END of that day, not start of it —
+  // `new Date(toDate)` parses to 00:00:00 UTC, which silently excluded every order created
+  // later that same day from every routine sync until the next day's run finally covered it.
+  // Clamp to `now` too: eBay's Fulfillment API rejects a window that ends in the future.
+  const to = toDate ? new Date(Math.min(new Date(`${toDate}T23:59:59.999Z`).getTime(), now.getTime())) : now;
   const from = fromDate ? new Date(fromDate) : new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const filter = `creationdate:[${from.toISOString()}..${to.toISOString()}]`;
   const allOrders = [];
