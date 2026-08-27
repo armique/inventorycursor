@@ -475,6 +475,7 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
   const [suggestBusy, setSuggestBusy] = useState(false);
   const [matcherProgress, setMatcherProgress] = useState<{ done: number; total: number } | null>(null);
   const [matcherConfFilter, setMatcherConfFilter] = useState<'all' | EbayTxBulkMatchSuggestion['confidence']>('all');
+  const [matcherHideLinked, setMatcherHideLinked] = useState(false);
   const [matcherPage, setMatcherPage] = useState(0);
   const matcherAutoBuiltRef = useRef(false);
   const matcherBuildAbortRef = useRef<AbortController | null>(null);
@@ -1122,9 +1123,10 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
 
   const filteredSuggestions = useMemo(() => {
     if (!suggestions?.length) return [];
-    if (matcherConfFilter === 'all') return suggestions;
-    return suggestions.filter((s) => s.confidence === matcherConfFilter);
-  }, [suggestions, matcherConfFilter]);
+    let out = matcherConfFilter === 'all' ? suggestions : suggestions.filter((s) => s.confidence === matcherConfFilter);
+    if (matcherHideLinked) out = out.filter((s) => !s.alreadyLinkedItemId);
+    return out;
+  }, [suggestions, matcherConfFilter, matcherHideLinked]);
 
   const matcherPageCount = Math.max(1, Math.ceil(filteredSuggestions.length / PAGE_SIZE));
   const matcherPageRows = filteredSuggestions.slice(
@@ -2091,6 +2093,20 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
                       ) : null}
                     </button>
                   ))}
+                  <button
+                    type="button"
+                    onClick={() => setMatcherHideLinked((v) => !v)}
+                    aria-pressed={matcherHideLinked}
+                    title="Hide orders already linked to an inventory item, regardless of confidence bucket"
+                    className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold border ${
+                      matcherHideLinked
+                        ? 'bg-violet-100 text-violet-900 border-violet-300'
+                        : 'bg-white text-violet-900 border-violet-200'
+                    }`}
+                  >
+                    <Check size={10} strokeWidth={3} className={matcherHideLinked ? '' : 'opacity-0'} />
+                    Hide linked
+                  </button>
                 </div>
               ) : (
                 <EbayToolSearchInput

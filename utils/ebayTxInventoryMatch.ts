@@ -2,6 +2,7 @@ import type { InventoryItem } from '../types';
 import { ItemStatus } from '../types';
 import { shouldSkipForAggregatedSaleLine } from '../services/financialAggregation';
 import { scoreListingTitleMatch } from './ebayListingMatch';
+import { orderItemLinkCompatible } from './orderMatcherCompatibility';
 import type { EbayTxOrderLedger, EbayTxRow } from './ebayTransactionReport';
 import { isRealizedDisposal } from './itemDisposition';
 import { ebayTxBuyerTotalEur } from './linkInventoryItemToEbayTx';
@@ -81,6 +82,16 @@ export function scoreItemAgainstEbayTx(
   }
   if (item.ebaySku && row.sku && item.ebaySku.trim().toLowerCase() === row.sku.trim().toLowerCase()) {
     return { score: 900, kind: 'sku', dateScore: 0, priceScore: 0, titleScore: 0 };
+  }
+
+  // A named brand (Corsair vs Kingston) or component type (RAM vs CPU) that clearly conflicts
+  // with the order title is never a real candidate, however close the price/date land — same-
+  // category commodity parts (RAM kits, SSDs, GPUs) routinely sell for near-identical prices on
+  // near-identical days, which used to be enough alone to surface a wrong-brand suggestion.
+  // Only fires when BOTH sides have a detectable brand/category and they actually differ.
+  const orderTitle = row.title || row.description || '';
+  if (orderTitle && !orderItemLinkCompatible(orderTitle, item)) {
+    return { score: 0, kind: 'title', dateScore: 0, priceScore: 0, titleScore: 0 };
   }
 
   let titleScore = 0;

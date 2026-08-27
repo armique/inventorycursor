@@ -64,6 +64,7 @@ import { pullOrderIndexFromCloud } from './services/ebayOrderIndex';
 import { pullPurchaseIndexFromCloud } from './services/ebayPurchaseIndex';
 import { ensureEbayListings, pullListingIndexFromCloud } from './services/ebayListingIndex';
 import { runEbayTxCloudSyncOnce } from './services/ebayTransactionReportSync';
+import { syncNewEbayOrdersOnAppVisit } from './services/ebayApiOrderSync';
 import { runEbayTxDailyCsvExport } from './services/ebayTxDailyExport';
 import { ensureKaListings } from './services/kleinanzeigenListingIndex';
 import { DEFAULT_CATEGORIES } from './services/constants';
@@ -754,6 +755,7 @@ const App: React.FC = () => {
   }, []);
   const ebayOrderIndexPulledRef = useRef(false);
   const ebayTxReportsPulledRef = useRef(false);
+  const ebayApiOrderSyncTriedRef = useRef(false);
   const ebayListingDailyRefreshTriedRef = useRef(false);
   const kaListingDailyRefreshTriedRef = useRef(false);
   const storeCatalogPublishDoneRef = useRef(false);
@@ -1588,6 +1590,29 @@ const App: React.FC = () => {
       void runEbayTxCloudSyncOnce();
     });
   }, [authUser]);
+
+  // Pull new eBay orders via the API on every visit, not just when the Abrechnung page
+  // happens to be open — used to require actually going there first. Runs once per
+  // session, fully silently (no banner — that was tried before and was distracting on
+  // every panel page); Abrechnung's own "Sync eBay orders" button still force-refreshes
+  // on demand. Safe to call runEbayTxCloudSyncOnce() again here even though the effect
+  // above already does — it's memoized and everyone just awaits the same in-flight pull.
+  useEffect(() => {
+    if (appState !== 'READY' || ebayApiOrderSyncTriedRef.current) return;
+    ebayApiOrderSyncTriedRef.current = true;
+    scheduleBackgroundWork(async () => {
+      try {
+        await runEbayTxCloudSyncOnce();
+        const outcome = await syncNewEbayOrdersOnAppVisit();
+        if (outcome.status === 'ok' && outcome.added > 0) {
+          console.info(`[ebay-order-sync] ${outcome.added} new order(s) pulled in the background.`);
+        }
+      } catch (e) {
+        // Never surface as a blocking error — Abrechnung's own Sync button retries on demand.
+        console.warn('[ebay-order-sync] Background sync failed:', e);
+      }
+    });
+  }, [appState]);
 
   // Keep eBay active-listing cache fresh for photo import:
   // once per local calendar day on app boot, run one forced refresh.

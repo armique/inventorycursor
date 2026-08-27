@@ -210,6 +210,8 @@ type MatchPickerRowProps = {
   nestOnly?: boolean;
   orderDayKey: string;
   sellTotal: number;
+  /** Order's item-only subtotal (excludes buyer-paid shipping) — see invSell below. */
+  orderItemOnlyEur: number;
   busyId: string | null;
   checked: boolean;
   onToggleSelected: (itemId: string) => void;
@@ -228,6 +230,7 @@ function MatchPickerRow({
   nestOnly = false,
   orderDayKey,
   sellTotal,
+  orderItemOnlyEur,
   busyId,
   checked,
   onToggleSelected,
@@ -238,7 +241,15 @@ function MatchPickerRow({
 }: MatchPickerRowProps) {
   const soldDay = inventorySoldDay(item);
   const itemDayKey = dayKey(item.sellDate || item.containerSoldDate);
-  const invSell = Number(item.saleProceeds?.buyerTotalEur ?? item.sellPrice) || 0;
+  // A sold item's buyerTotalEur already includes shipping, comparable to the order's full
+  // buyer total — but item.sellPrice on an unsold candidate is the item price alone (shipping,
+  // if any, is charged separately and isn't known yet), so it belongs against the order's
+  // item-only subtotal instead. Comparing it to the full buyer total made the price chip miss
+  // real matches whenever that order happened to have paid shipping, and only "work" on the
+  // free-shipping ones — not actually flaky, just silently wrong half the time.
+  const alreadySold = item.saleProceeds?.buyerTotalEur != null;
+  const invSell = Number(alreadySold ? item.saleProceeds!.buyerTotalEur : item.sellPrice) || 0;
+  const invSellCompareTo = alreadySold ? sellTotal : orderItemOnlyEur;
   // Parts of PC / bundle / mix never get Link — only the parent shell does.
   const isContainerPart = nestOnly || Boolean(parent) || Boolean(item.parentContainerId);
   const detectedSplit = !isContainerPart ? detectWorkingDefektSplit(item.name) : null;
@@ -307,7 +318,7 @@ function MatchPickerRow({
             </Chip>
           ) : null}
           {invSell >= 0.01 && !isContainerPart ? (
-            <Chip tone={priceTone(sellTotal, invSell)} title="Inventory sell price">
+            <Chip tone={priceTone(invSellCompareTo, invSell)} title="Inventory sell price">
               {formatSignedEUR(invSell)}
             </Chip>
           ) : null}
@@ -846,6 +857,7 @@ const EbayAbrechnungMatchPicker: React.FC<Props> = ({
                       hit={hit}
                       orderDayKey={orderDayKey}
                       sellTotal={sellTotal}
+                      orderItemOnlyEur={itemEur ?? 0}
                       busyId={busyId}
                       checked={selectedIds.has(hit.item.id)}
                       onToggleSelected={toggleSelected}
@@ -878,6 +890,7 @@ const EbayAbrechnungMatchPicker: React.FC<Props> = ({
                         parent={container}
                         orderDayKey={orderDayKey}
                         sellTotal={sellTotal}
+                        orderItemOnlyEur={itemEur ?? 0}
                         busyId={busyId}
                         checked={false}
                         onToggleSelected={toggleSelected}
