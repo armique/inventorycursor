@@ -45,6 +45,7 @@ import BuySourcePlatformPicker, {
   BuyPaymentTypePicker,
 } from './BuySourcePlatformPicker';
 import ItemFormAssetToolbar, { getBuyCondition } from './ItemFormAssetToolbar';
+import PhotoCleanupReview from './PhotoCleanupReview';
 import EbayBuyOrderParse from './EbayBuyOrderParse';
 import ReorderablePhotoThumbs from './ReorderablePhotoThumbs';
 import { searchProductPhotos, getImageSearchProviders, ImageSearchResult, ImageSearchProvider } from '../services/imageSearchService';
@@ -765,18 +766,23 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     }));
   };
 
-  const handleMultiImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (!files.length) return;
+  const [pendingCleanupFiles, setPendingCleanupFiles] = useState<File[] | null>(null);
+
+  const persistPickedPhotos = async (files: File[]) => {
     try {
       const urls = await filesToDataUrls(files, { itemId: getPhotoItemId() });
       await addImageUrls(urls);
     } catch (err) {
       const { localImageReadErrorMessage } = await import('../utils/localImageFile');
       alert(localImageReadErrorMessage(err, 'Could not process one or more images.'));
-    } finally {
-      e.target.value = '';
     }
+  };
+
+  const handleMultiImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (!files.length) return;
+    setPendingCleanupFiles(files);
   };
 
   /** True once the item has a real photo (not just the category SVG placeholder). */
@@ -2491,6 +2497,17 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
         onClose={closeEbayPriceModal}
         onApply={applyEbayListingPriceFromModal}
       />
+
+      {pendingCleanupFiles ? (
+        <PhotoCleanupReview
+          files={pendingCleanupFiles}
+          onCancel={() => setPendingCleanupFiles(null)}
+          onConfirm={(finalFiles) => {
+            setPendingCleanupFiles(null);
+            void persistPickedPhotos(finalFiles);
+          }}
+        />
+      ) : null}
     </div>
   );
 };

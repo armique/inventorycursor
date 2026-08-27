@@ -2136,7 +2136,7 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
               Click Label on a Bestellung to add a missing DHL price (6,19 / 7,69 / 10,49…). Manual labels persist until the next official CSV has that row.
             </p>
             ) : null}
-            <div className="flex-1 min-h-0 overflow-auto">
+            <div className="hidden md:block flex-1 min-h-0 overflow-auto">
               <table className="w-full table-fixed text-left text-[11px]">
                 <colgroup>
                   <col style={{ width: '5.5rem' }} />
@@ -2195,6 +2195,28 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
                 </tbody>
               </table>
             </div>
+            <div className="md:hidden flex-1 min-h-0 overflow-auto px-2 py-2 space-y-2">
+              {pageRows.map((row) => (
+                <TxCard
+                  key={row.id}
+                  row={row}
+                  ledger={row.orderId ? ledgers.get(row.orderId) || null : null}
+                  linked={
+                    row.orderId ? linkedByOrder.get(row.orderId.trim().toLowerCase()) || null : null
+                  }
+                  feeAbsorbedItem={
+                    row.orderId ? feeAbsorbedByOrder.get(row.orderId.trim().toLowerCase()) || null : null
+                  }
+                  refundState={refundStateByRowId.get(row.id) || 'none'}
+                  presets={labelChoices.presets}
+                  extras={labelChoices.extras}
+                  onSetLabel={setOrderLabel}
+                  onClearLabel={clearOrderLabel}
+                  onMatch={() => setMatchRow((cur) => (cur?.id === row.id ? null : row))}
+                  onUnlinkItem={onUnlinkItem}
+                />
+              ))}
+            </div>
             <div className="shrink-0 flex items-center justify-between px-3 py-2 border-t border-slate-100 text-[11px] text-slate-500">
               <span>
                 {visibleRows.length} rows
@@ -2231,7 +2253,7 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
             )}
           </div>
           </div>
-          <div className="shrink-0 w-[29.9rem] min-h-0 flex flex-col">
+          <div className="hidden md:flex shrink-0 w-[29.9rem] min-h-0 flex-col">
             {matchRow ? (
               <EbayAbrechnungMatchPicker
                 variant="panel"
@@ -2249,6 +2271,24 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
               />
             ) : null}
           </div>
+          {matchRow ? (
+            <div className="md:hidden">
+              <EbayAbrechnungMatchPicker
+                variant="modal"
+                row={matchRow}
+                ledger={matchRow.orderId ? ledgers.get(matchRow.orderId) || null : null}
+                refundState={refundStateByRowId.get(matchRow.id) || 'none'}
+                items={items}
+                taxMode={taxMode}
+                onClose={() => setMatchRow(null)}
+                onLink={onLinkItem}
+                onLinkBundle={onLinkBundle}
+                onSplitApply={onSplitApply}
+                onRecoverPriorSale={onRecoverPriorSale}
+                onSearchResale={onSearchResale}
+              />
+            </div>
+          ) : null}
           </div>
         </div>
       )}
@@ -2332,6 +2372,7 @@ function LabelCell({
   extras,
   onSetLabel,
   onClearLabel,
+  as = 'td',
 }: {
   isOrder: boolean;
   orderId: string;
@@ -2341,7 +2382,10 @@ function LabelCell({
   extras: number[];
   onSetLabel: (orderId: string, amountEur: number, name?: string) => void;
   onClearLabel: (orderId: string) => void;
+  /** Table row (default) or a plain block for the mobile card layout, which isn't a <table>. */
+  as?: 'td' | 'div';
 }) {
+  const Wrapper = as;
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -2370,14 +2414,14 @@ function LabelCell({
 
   if (!isOrder || !orderId) {
     return (
-      <td className={`px-2 py-1.5 text-right font-semibold ${deductionClass(label)}`}>
+      <Wrapper className={`${as === 'td' ? 'px-2 py-1.5' : ''} text-right font-semibold ${deductionClass(label)}`}>
         <SignedEURCell n={label} />
-      </td>
+      </Wrapper>
     );
   }
 
   return (
-    <td className="px-2 py-1.5 text-right">
+    <Wrapper className={`${as === 'td' ? 'px-2 py-1.5' : ''} text-right`}>
       <button
         ref={btnRef}
         type="button"
@@ -2467,8 +2511,29 @@ function LabelCell({
             document.body
           )
         : null}
-    </td>
+    </Wrapper>
   );
+}
+
+/** Derived display values shared by the desktop table row and the mobile card — kept in one
+ *  place so the two layouts can never quietly disagree on what a row's numbers mean. */
+function deriveTxRowDisplay(
+  row: EbayTxRow,
+  ledger: EbayTxOrderLedger | null,
+  refundState: EbayTxOrderRefundState
+) {
+  const detail = row.title || row.description || row.reference || '—';
+  const isOrder = row.kind === 'order';
+  const isFullRefund = refundState === 'full';
+  const isPartialRefund = refundState === 'partial';
+  const ads = isOrder ? ledger?.adsEur ?? null : isEbayTxAdFee(row) ? row.netEur : null;
+  const label = isOrder ? ledger?.labelEur ?? null : row.kind === 'label' ? row.netEur : null;
+  const fvf = isOrder ? ledger?.fvfEur ?? null : null;
+  const rolledIntoOrder = !isOrder && !!row.orderId && (row.kind === 'label' || isEbayTxAdFee(row));
+  const pocket = isOrder ? ledger?.pocketEur ?? row.netEur : rolledIntoOrder ? null : row.netEur;
+  const realOrderId = isRealEbayOrderId(row.orderId);
+  const orderUrl = realOrderId ? buildEbayOrderUrl(row.orderId) : undefined;
+  return { detail, isOrder, isFullRefund, isPartialRefund, ads, label, fvf, rolledIntoOrder, pocket, realOrderId, orderUrl };
 }
 
 function TxRow({
@@ -2499,17 +2564,8 @@ function TxRow({
   onMatch: () => void;
   onUnlinkItem?: (item: InventoryItem, orderId: string) => void;
 }) {
-  const detail = row.title || row.description || row.reference || '—';
-  const isOrder = row.kind === 'order';
-  const isFullRefund = refundState === 'full';
-  const isPartialRefund = refundState === 'partial';
-  const ads = isOrder ? ledger?.adsEur ?? null : isEbayTxAdFee(row) ? row.netEur : null;
-  const label = isOrder ? ledger?.labelEur ?? null : row.kind === 'label' ? row.netEur : null;
-  const fvf = isOrder ? ledger?.fvfEur ?? null : null;
-  const rolledIntoOrder = !isOrder && !!row.orderId && (row.kind === 'label' || isEbayTxAdFee(row));
-  const pocket = isOrder ? ledger?.pocketEur ?? row.netEur : rolledIntoOrder ? null : row.netEur;
-  const realOrderId = isRealEbayOrderId(row.orderId);
-  const orderUrl = realOrderId ? buildEbayOrderUrl(row.orderId) : undefined;
+  const { detail, isOrder, isFullRefund, isPartialRefund, ads, label, fvf, pocket, realOrderId, orderUrl } =
+    deriveTxRowDisplay(row, ledger, refundState);
   const rowClass = matchActive
     ? 'border-t border-indigo-200 bg-indigo-50/80 hover:bg-indigo-50 ring-1 ring-inset ring-indigo-300/80'
     : isFullRefund
@@ -2654,6 +2710,151 @@ function TxRow({
         {formatSigned(pocket)}
       </td>
     </tr>
+  );
+}
+
+function Stat({ label, value, cls }: { label: string; value: number | null | undefined; cls: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">{label}</p>
+      <p className={`tabular-nums font-semibold truncate ${cls}`}>{formatSigned(value)}</p>
+    </div>
+  );
+}
+
+/** Phone-width alternative to TxRow — same data, same handlers, laid out as a card instead of
+ *  a 13-column table row. Shares deriveTxRowDisplay with TxRow so the two can't disagree on
+ *  what a row's numbers mean. */
+function TxCard({
+  row,
+  ledger,
+  linked,
+  feeAbsorbedItem,
+  refundState,
+  presets,
+  extras,
+  onSetLabel,
+  onClearLabel,
+  onMatch,
+  onUnlinkItem,
+}: {
+  row: EbayTxRow;
+  ledger: EbayTxOrderLedger | null;
+  linked: InventoryItem | null;
+  feeAbsorbedItem?: InventoryItem | null;
+  refundState: EbayTxOrderRefundState;
+  presets: DhlLabelPreset[];
+  extras: number[];
+  onSetLabel: (orderId: string, amountEur: number, name?: string) => void;
+  onClearLabel: (orderId: string) => void;
+  onMatch: () => void;
+  onUnlinkItem?: (item: InventoryItem, orderId: string) => void;
+}) {
+  const { detail, isOrder, isFullRefund, isPartialRefund, ads, label, fvf, pocket, realOrderId, orderUrl } =
+    deriveTxRowDisplay(row, ledger, refundState);
+  const cardTone = isFullRefund
+    ? 'border-red-200 bg-red-50/70'
+    : isPartialRefund
+      ? 'border-amber-200 bg-amber-50/50'
+      : row.source === 'inventory'
+        ? 'border-sky-100 bg-sky-50/40'
+        : 'border-slate-200 bg-white';
+
+  return (
+    <div className={`rounded-xl border px-3 py-2.5 ${cardTone}`}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[10px] font-bold text-slate-500 tabular-nums">{row.createdAt || '—'}</span>
+            <span className={`inline-flex px-1.5 py-0.5 rounded border text-[10px] font-bold ${KIND_TONE[row.kind]}`}>
+              {row.typeRaw || classifyEbayTxType(row.typeRaw)}
+            </span>
+            {isFullRefund ? <span className="text-[10px] font-bold text-red-600">Refunded</span> : null}
+            {isPartialRefund ? <span className="text-[10px] font-bold text-amber-600">Partial refund</span> : null}
+          </div>
+          <p className="mt-1 text-sm font-semibold text-slate-800 truncate">{detail}</p>
+          <p className="text-[11px] text-slate-500 truncate">{row.buyerUsername || row.buyerName || '—'}</p>
+        </div>
+        {orderUrl ? (
+          <a
+            href={orderUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-sky-300 bg-sky-50 text-sky-700"
+            title={`Open eBay order ${row.orderId} ↗`}
+            aria-label={`Open eBay order ${row.orderId}`}
+          >
+            <ExternalLink size={12} strokeWidth={2.25} />
+          </a>
+        ) : null}
+      </div>
+
+      <div className="mt-2 grid grid-cols-4 gap-x-2 gap-y-1.5 text-[11px]">
+        <Stat label="Item" value={row.itemSubtotalEur} cls={amountClass(row.itemSubtotalEur)} />
+        <Stat label="Ship" value={row.shippingEur} cls={amountClass(row.shippingEur)} />
+        <Stat label="FVF" value={fvf} cls={deductionClass(fvf)} />
+        <Stat label="Ads" value={ads} cls={deductionClass(ads)} />
+        <div className="min-w-0">
+          <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Label</p>
+          <LabelCell
+            as="div"
+            isOrder={isOrder}
+            orderId={row.orderId}
+            label={label}
+            manual={!!ledger?.labelManual}
+            presets={presets}
+            extras={extras}
+            onSetLabel={onSetLabel}
+            onClearLabel={onClearLabel}
+          />
+        </div>
+        <Stat label="Gross" value={row.grossEur} cls={amountClass(row.grossEur)} />
+        <div className="col-span-2 min-w-0" title={isOrder ? 'Item + buyer ship − FVF − ads − label' : undefined}>
+          <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Pocket</p>
+          <p className={`tabular-nums font-black ${pocketClass(pocket)}`}>{formatSigned(pocket)}</p>
+        </div>
+      </div>
+
+      {isOrder && realOrderId ? (
+        <div className="mt-2.5 flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={onMatch}
+            className={`inline-flex flex-1 min-w-0 items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg border text-xs font-bold ${
+              linked
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                : isFullRefund && feeAbsorbedItem
+                  ? 'border-violet-300 bg-violet-100 text-violet-900'
+                  : isFullRefund
+                    ? 'border-red-200 bg-red-50 text-red-700'
+                    : 'border-slate-200 bg-white text-slate-600'
+            }`}
+          >
+            {linked || feeAbsorbedItem ? <CheckCircle2 size={13} className="shrink-0" /> : <Link2 size={13} className="shrink-0" />}
+            <span className="truncate">
+              {linked
+                ? linked.name
+                : isFullRefund && feeAbsorbedItem
+                  ? `Absorbed → ${feeAbsorbedItem.name}`
+                  : isFullRefund
+                    ? 'Refunded — find match'
+                    : 'Match item'}
+            </span>
+          </button>
+          {linked && onUnlinkItem && row.orderId ? (
+            <button
+              type="button"
+              onClick={() => onUnlinkItem(linked, row.orderId)}
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-purple-200 bg-purple-50 text-purple-700"
+              title={`Unlink ${linked.name}`}
+              aria-label={`Unlink ${linked.name} from order ${row.orderId}`}
+            >
+              <Unlink size={13} strokeWidth={2.25} />
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

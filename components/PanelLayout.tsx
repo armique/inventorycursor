@@ -4,7 +4,7 @@ import {
   Package, Settings, RefreshCw, Trash2, CloudUpload, LayoutDashboard,
   Loader2, Cloud, CheckCircle2, X, Receipt, History, Globe, Layers,
   Printer, LayoutTemplate, PackageSearch, ChevronDown, ChevronLeft, ChevronRight, Plus, Images,
-  CircuitBoard, Radar, Coins, ShoppingBag, ShoppingCart, FileSpreadsheet,
+  CircuitBoard, Radar, Coins, ShoppingBag, ShoppingCart, FileSpreadsheet, MoreHorizontal,
 } from 'lucide-react';
 import PanelBreadcrumbs from './PanelBreadcrumbs';
 import { usePanelLocale } from '../context/PanelLocaleContext';
@@ -68,6 +68,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   const [signInError, setSignInError] = React.useState<string | null>(null);
   const [emulatorEmail, setEmulatorEmail] = React.useState('abelyanarmen@gmail.com');
   const [moreNavOpen, setMoreNavOpen] = React.useState(false);
+  const [mobileMoreOpen, setMobileMoreOpen] = React.useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(() => {
     try {
       return localStorage.getItem('panel_sidebar_collapsed_v1') === '1';
@@ -637,8 +638,8 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
           {[
             { to: '/panel/dashboard', icon: <LayoutDashboard size={18} />, label: 'Home' },
             { to: '/panel/inventory', icon: <Package size={18} />, label: 'Stock' },
-            { to: '/panel/3d-print', icon: <Printer size={18} />, label: '3D' },
             { to: '/panel/add', icon: <Plus size={18} />, label: 'Add' },
+            { action: 'more' as const, icon: <MoreHorizontal size={18} />, label: 'More' },
             { action: 'settings' as const, icon: <Settings size={18} />, label: 'Settings' },
           ].map((item) => {
               if ('action' in item && item.action === 'settings') {
@@ -647,6 +648,21 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
                     key="settings"
                     type="button"
                     onClick={() => openSettings()}
+                    className="flex flex-col items-center justify-center flex-1 px-1 py-1.5 text-[11px] font-semibold transition-colors text-slate-400"
+                  >
+                    <span className="mb-0.5 inline-flex items-center justify-center rounded-full p-1.5 bg-slate-100 text-slate-500">
+                      {item.icon}
+                    </span>
+                    <span className="truncate">{item.label}</span>
+                  </button>
+                );
+              }
+              if ('action' in item && item.action === 'more') {
+                return (
+                  <button
+                    key="more"
+                    type="button"
+                    onClick={() => setMobileMoreOpen(true)}
                     className="flex flex-col items-center justify-center flex-1 px-1 py-1.5 text-[11px] font-semibold transition-colors text-slate-400"
                   >
                     <span className="mb-0.5 inline-flex items-center justify-center rounded-full p-1.5 bg-slate-100 text-slate-500">
@@ -682,6 +698,67 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             })}
         </div>
       </nav>
+
+      {/* MOBILE "MORE" SHEET — everything not pinned to the bottom bar */}
+      {mobileMoreOpen && (
+        <div className="md:hidden fixed inset-0 z-[130] flex items-end" role="dialog" aria-modal="true">
+          <button
+            type="button"
+            aria-label="Close menu"
+            className="absolute inset-0 bg-slate-900/40"
+            onClick={() => setMobileMoreOpen(false)}
+          />
+          <div className="relative w-full max-h-[75vh] overflow-y-auto rounded-t-2xl bg-white pb-safe">
+            <div className="sticky top-0 bg-white flex items-center justify-between px-4 pt-3 pb-2 border-b border-slate-100">
+              <p className="text-xs font-black uppercase tracking-widest text-slate-500">More</p>
+              <button
+                type="button"
+                onClick={() => setMobileMoreOpen(false)}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                aria-label="Close menu"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="p-2">
+              {[...primaryNav.filter((item) => 'to' in item && item.to !== '/panel/dashboard' && item.to !== '/panel/inventory'), ...moreNav].map(
+                (item) => {
+                  if ('action' in item && item.action === 'settings') {
+                    return (
+                      <button
+                        key="settings"
+                        type="button"
+                        onClick={() => {
+                          setMobileMoreOpen(false);
+                          openSettings();
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50"
+                      >
+                        {item.icon} {item.label}
+                        {item.alert && <span className="ml-auto w-2 h-2 bg-red-500 rounded-full animate-pulse" />}
+                      </button>
+                    );
+                  }
+                  const { to, icon, label } = item as { to: string; icon: React.ReactNode; label: string };
+                  const isActive = location.pathname === to || location.pathname.startsWith(`${to}/`);
+                  return (
+                    <Link
+                      key={to}
+                      to={to}
+                      onClick={() => setMobileMoreOpen(false)}
+                      className={`flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-bold ${
+                        isActive ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      {icon} {label}
+                    </Link>
+                  );
+                }
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <GamificationEventLayer
         event={gamificationEvent}
