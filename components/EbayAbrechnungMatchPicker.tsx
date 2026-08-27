@@ -623,9 +623,14 @@ const EbayAbrechnungMatchPicker: React.FC<Props> = ({
     }
   };
 
+  // The modal variant only ever renders on mobile (md:hidden in EbayAbrechnungPage) — it must
+  // NOT carry the desktop ".ebay-abrechnung-ui" 120% zoom class. That class scales the box
+  // *after* max-h-[90vh] is computed against the real viewport (zoom, unlike transform, inflates
+  // layout, not just paint), so a 730px cap rendered at 877px — pushing Link/Rename/Split/Create
+  // below the screen with no way to scroll to them, since the fixed overlay itself doesn't scroll.
   const shellClass = isPanel
     ? 'h-full min-h-0 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col text-[11px] text-slate-700'
-    : 'ebay-abrechnung-ui bg-white w-full max-w-3xl max-h-[90vh] rounded-2xl border border-slate-200 shadow-2xl overflow-hidden flex flex-col text-[11px] text-slate-700';
+    : 'bg-white w-full max-w-3xl max-h-[90vh] rounded-2xl border border-slate-200 shadow-2xl overflow-hidden flex flex-col text-[11px] text-slate-700';
 
   const body = (
     <div className={shellClass} onClick={isPanel ? undefined : (e) => e.stopPropagation()} role="dialog" aria-modal={!isPanel} aria-label="Match inventory item">
