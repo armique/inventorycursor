@@ -259,6 +259,15 @@ export function findOwnOrderFullRefundReverts(
     if (!orderId) continue;
     const ledger = ledgers.get(orderId);
     if (!ledger) continue;
+    // A genuinely fully-refunded order still carries its own 'order'-kind row (itemEur/
+    // grossEur > 0) — the refund is deductions layered ON TOP of a real order line, never
+    // a replacement that erases it. A ledger with NO order-line data at all (itemEur and
+    // grossEur both ~0) but a negative pocket from fee/label/ad rows means those rows
+    // landed locally before the order's own row did — a multi-row order synced via the
+    // eBay API isn't written atomically, and reading mid-write briefly produces exactly
+    // this shape. Treating that as "fully refunded" and reverting a real sale to stock is
+    // exactly the false-positive this caused live on a same-day order.
+    if (ledger.itemEur < 0.01 && ledger.grossEur < 0.01) continue;
     const pocket = ledger.pocketEur;
     if (pocket == null || !Number.isFinite(pocket) || pocket > 0.01) continue;
     if (hasOwnOrderRefundRevert(item, orderId)) continue;
