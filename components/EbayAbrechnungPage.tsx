@@ -49,7 +49,7 @@ import {
 import { mergeDhlLabelPresets, type DhlLabelPreset } from '../utils/dhlLabelPresets';
 import { syncNewEbayOrdersOnAppVisit } from '../services/ebayApiOrderSync';
 import { backfillEbayOrders, type BackfillProgress } from '../services/ebayOrderBackfill';
-import { getSuggestedBackfillRange } from '../services/ebayOrderIndex';
+import { getSuggestedBackfillRange, loadEbayOrderIndex } from '../services/ebayOrderIndex';
 import EbayToolSearchInput from './EbayToolSearchInput';
 import EbayAbrechnungMatchPicker from './EbayAbrechnungMatchPicker';
 import {
@@ -607,16 +607,29 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
   /**
    * One-time (or resumable) full-history pull straight from the eBay API — every order the
    * account has ever had, not just the last ~30 days runEbaySync checks. Chunked in 45-day
-   * windows so a slow/failed range doesn't lose earlier progress; getSuggestedBackfillRange
-   * automatically resumes from wherever a previous run left off instead of re-fetching
-   * everything, so clicking this again later only pulls the gap.
+   * windows so a slow/failed range doesn't lose earlier progress.
+   *
+   * getSuggestedBackfillRange is meant for resuming an ALREADY-STARTED full backfill — it
+   * anchors on whatever's newest in the cache, which the small automatic 30-day sync
+   * (runEbaySync, runs on every page visit) already touches. Using it here made a first-ever
+   * click think almost all history was covered and only check a single day (0 orders, 0 new —
+   * exactly the bug this comment is replacing). So: the true start date only gets used once,
+   * tracked by whether a full backfill has ever actually completed from it; every run after
+   * that resumes properly via getSuggestedBackfillRange like it's supposed to.
    */
+  const FULL_HISTORY_START = '2020-01-01';
   const runFullBackfill = useCallback(() => {
     setBackfillBusy(true);
     setBackfillNote(null);
     backfillCancelRef.current = { cancelled: false };
     const today = new Date().toISOString().slice(0, 10);
-    const range = getSuggestedBackfillRange('2020-01-01', today);
+    const apiBackfillMeta = loadEbayOrderIndex().meta.apiBackfill;
+    const fullHistoryAlreadyBuilt = Boolean(
+      apiBackfillMeta?.isComplete && apiBackfillMeta.fromDate && apiBackfillMeta.fromDate <= FULL_HISTORY_START
+    );
+    const range = fullHistoryAlreadyBuilt
+      ? getSuggestedBackfillRange(FULL_HISTORY_START, today)
+      : { from: FULL_HISTORY_START, to: today };
     void backfillEbayOrders(
       range.from,
       range.to,
