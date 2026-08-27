@@ -63,7 +63,7 @@ import {
   countEbayTxLinkedSellDateFixes,
 } from '../utils/backfillEbayTxLinkedSellDates';
 import { findOwnOrderFullRefundReverts } from '../utils/refundFeeAbsorption';
-import { downloadEbayTxCsvBackup, saveEbayTxCsvBackupToProject } from '../utils/ebayTxReportCsvExport';
+import { downloadEbayTxJsonBackup } from '../utils/ebayTxReportJsonExport';
 import {
   linkInventoryItemToEbayTx,
   unlinkEbayTxOrderFromInventory,
@@ -1246,37 +1246,11 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
     setSuggestions(null);
   }, [suggestions, report, items, ledgers, taxMode, onUpdate]);
 
-  const onSaveBackupCsv = useCallback(async () => {
-    if (!displayReport?.rows?.length) return;
-    const coverageLine = coverage
-      ? `${coverage.from} → ${coverage.to}${coverage.reportCount > 1 ? ` (${coverage.reportCount} CSVs)` : ''}`
-      : displayReport.meta.fileName;
-    const meta = {
-      coverage: coverageLine,
-      inventoryRowCount: 0,
-      csvRowCount: displayReport.rows.length,
-      note: 'Merged official eBay Transaktionsberichte (inventory-pro backup)',
-    };
-    const saved = await saveEbayTxCsvBackupToProject(displayReport.rows, labelOverrides, meta);
-    const downloaded = downloadEbayTxCsvBackup(displayReport.rows, labelOverrides, meta);
-    if (saved.saved) {
-      setLinkNote(
-        `Backup saved · data/ebay-abrechnung - backup/${saved.fileName} · ${downloaded.rowCount} rows` +
-          (saved.renamed ? ' · original file was locked (Excel/OneDrive?), saved under a new name' : '')
-      );
-      return;
-    }
-    if (saved.saved === false && saved.reason === 'dev-only') {
-      setLinkNote(`Downloaded ${downloaded.fileName} · ${downloaded.rowCount} rows (project save is dev-only)`);
-      return;
-    }
-    if (saved.saved === false) {
-      setLinkNote(
-        `Downloaded ${downloaded.fileName} · ${downloaded.rowCount} rows` +
-          (saved.error ? ` · could not save to project (${saved.error})` : '')
-      );
-    }
-  }, [coverage, displayReport, labelOverrides]);
+  const onSaveBackupJson = useCallback(() => {
+    if (!reports.length) return;
+    const downloaded = downloadEbayTxJsonBackup(reports, labelOverrides);
+    setLinkNote(`Backup saved · ${downloaded.fileName} · ${downloaded.rowCount} rows`);
+  }, [reports, labelOverrides]);
 
   const [clearBusy, setClearBusy] = useState(false);
   const onClearEverywhere = useCallback(async () => {
@@ -1601,12 +1575,12 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
               {busy ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
               Add CSV
             </button>
-            {displayReport?.rows?.length ? (
+            {reports.length ? (
               <button
                 type="button"
-                onClick={() => void onSaveBackupCsv()}
+                onClick={onSaveBackupJson}
                 disabled={busy}
-                title="Save merged Abrechnung backup to data/ebay-abrechnung - backup/ebay-abrechnung-backup.csv (dev) and download a copy"
+                title="Download a JSON backup of every imported report and DHL label override — an extra local copy alongside the automatic cloud sync"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-900 text-xs font-bold hover:bg-emerald-100 disabled:opacity-50"
               >
                 <Download size={14} />
