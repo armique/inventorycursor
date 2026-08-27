@@ -76,6 +76,15 @@ import { todayLocalDateKey } from './utils/calendarDate';
 import { buildFullBackupPayload, downloadFullBackupJson } from './utils/fullBackupExport';
 import { loadEbayOrderIndex, upsertEbayOrders, type EbayOrderRecord } from './services/ebayOrderIndex';
 import {
+  loadEbayTransactionLibrary,
+  loadEbayTxLabelOverrides,
+  upsertEbayTransactionReport,
+  saveEbayTxLabelOverrides,
+  type EbayTxLabelOverride,
+} from './services/ebayTransactionReportStore';
+import { notifyEbayTxReportUpdated } from './services/ebayTransactionReportSync';
+import type { EbayTxReport } from './utils/ebayTransactionReport';
+import {
   loadInventoryItemsForBoot,
   writeInventoryItemsToDB,
   appendPendingItemPatches,
@@ -617,7 +626,11 @@ const App: React.FC = () => {
 
   const [dashboardPrefs, setDashboardPrefs] = useState<DashboardPreferences>(() => loadDashboardPreferencesFromLocalStorage());
 
-  const handleDownloadInventoryBackup = useCallback(() => {
+  const handleDownloadInventoryBackup = useCallback(async () => {
+    const [txLibrary, txLabelOverrides] = await Promise.all([
+      loadEbayTransactionLibrary(),
+      loadEbayTxLabelOverrides(),
+    ]);
     downloadFullBackupJson(
       buildFullBackupPayload({
         items,
@@ -631,6 +644,8 @@ const App: React.FC = () => {
         actionHistory,
         bulkImports,
         ebayOrders: loadEbayOrderIndex().orders,
+        ebayTxReports: txLibrary.reports,
+        ebayTxLabelOverrides: txLabelOverrides,
       })
     );
   }, [items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields, dashboardPrefs, actionHistory, bulkImports]);
@@ -1697,6 +1712,10 @@ const App: React.FC = () => {
       const snap = getSyncSnapshot();
       scheduleBackgroundWork(async () => {
         try {
+          const [txLibrary, txLabelOverrides] = await Promise.all([
+            loadEbayTransactionLibrary(),
+            loadEbayTxLabelOverrides(),
+          ]);
           const result = await runDailyGitHubBackupIfDue(
             {
               inventory: snap.items,
@@ -1710,6 +1729,9 @@ const App: React.FC = () => {
               dashboard: snap.dashboardPrefs,
               actionHistory: snap.actionHistory,
               bulkImports: snap.bulkImports,
+              ebayOrders: loadEbayOrderIndex().orders,
+              ebayTxReports: txLibrary.reports,
+              ebayTxLabelOverrides: txLabelOverrides,
             },
             todayLocalDateKey(),
           );
@@ -2681,6 +2703,8 @@ const App: React.FC = () => {
     actionHistory?: ActionHistoryEntry[];
     bulkImports?: BulkImportRecord[];
     ebayOrders?: EbayOrderRecord[];
+    ebayTxReports?: EbayTxReport[];
+    ebayTxLabelOverrides?: Record<string, EbayTxLabelOverride>;
   }) => {
     const inv = Array.isArray(data.inventory) ? data.inventory : (Array.isArray((data as any).Inventory) ? (data as any).Inventory : []);
     const tr = Array.isArray(data.trash) ? data.trash : [];
@@ -2715,6 +2739,21 @@ const App: React.FC = () => {
       // Upsert by orderId, not a blind replace — matches how the API/CSV sync already merges,
       // so restoring a backup only fills gaps rather than overwriting anything newer.
       upsertEbayOrders(data.ebayOrders);
+    }
+    if (Array.isArray(data.ebayTxReports) && data.ebayTxReports.length) {
+      // Same reasoning as ebayOrders above — upsert per report (by meta.id) rather than a
+      // blind replace, so a restore only fills in what's missing/older, same as a normal CSV
+      // re-import would. Fires the same cloud-push + UI-refresh path a real import does.
+      void (async () => {
+        for (const report of data.ebayTxReports!) {
+          await upsertEbayTransactionReport(report);
+        }
+        if (data.ebayTxLabelOverrides && Object.keys(data.ebayTxLabelOverrides).length) {
+          const current = await loadEbayTxLabelOverrides();
+          await saveEbayTxLabelOverrides({ ...data.ebayTxLabelOverrides, ...current });
+        }
+        notifyEbayTxReportUpdated();
+      })();
     }
     void saveToLocalStorage(inv, tr, exp, sets, goal, cats, fields, undefined, restoredDash, mergedAH, mergedBI);
     if (isCloudEnabled() && authUser) {

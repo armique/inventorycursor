@@ -7,6 +7,8 @@ import type {
   InventoryItem,
 } from '../types';
 import type { EbayOrderRecord } from '../services/ebayOrderIndex';
+import type { EbayTxReport } from './ebayTransactionReport';
+import type { EbayTxLabelOverride } from '../services/ebayTransactionReportStore';
 
 /** Full-fidelity snapshot of everything needed to restore the app — same shape used
  *  by the local JSON download/restore and the GitHub backup push. */
@@ -24,6 +26,11 @@ export interface BackupData {
   bulkImports?: BulkImportRecord[];
   /** Cached eBay order history (API + CSV merged) — so a JSON backup can restore it too. */
   ebayOrders?: EbayOrderRecord[];
+  /** eBay Abrechnung — imported CSV / API-sync reports with their real rows, plus any manual
+   *  DHL label overrides. Previously only backed up as a separate CSV; now travels with every
+   *  other backup so one JSON restores everything, including after an incident like today's. */
+  ebayTxReports?: EbayTxReport[];
+  ebayTxLabelOverrides?: Record<string, EbayTxLabelOverride>;
   exportedAt: string;
 }
 
@@ -39,6 +46,8 @@ export function buildFullBackupPayload(snapshot: {
   actionHistory?: ActionHistoryEntry[];
   bulkImports?: BulkImportRecord[];
   ebayOrders?: EbayOrderRecord[];
+  ebayTxReports?: EbayTxReport[];
+  ebayTxLabelOverrides?: Record<string, EbayTxLabelOverride>;
 }): BackupData {
   return {
     inventory: snapshot.items,
@@ -52,6 +61,10 @@ export function buildFullBackupPayload(snapshot: {
     ...(snapshot.actionHistory?.length ? { actionHistory: snapshot.actionHistory } : {}),
     ...(snapshot.bulkImports?.length ? { bulkImports: snapshot.bulkImports } : {}),
     ...(snapshot.ebayOrders?.length ? { ebayOrders: snapshot.ebayOrders } : {}),
+    ...(snapshot.ebayTxReports?.length ? { ebayTxReports: snapshot.ebayTxReports } : {}),
+    ...(snapshot.ebayTxLabelOverrides && Object.keys(snapshot.ebayTxLabelOverrides).length
+      ? { ebayTxLabelOverrides: snapshot.ebayTxLabelOverrides }
+      : {}),
     exportedAt: new Date().toISOString(),
   };
 }
