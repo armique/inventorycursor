@@ -2184,21 +2184,30 @@ export async function writeEbayTxReportRowsToCloud(
   return { rowChunks: chunks.length };
 }
 
-/** Reassemble the sharded row data written by writeEbayTxReportRowsToCloud. */
+/**
+ * Reassemble the sharded row data written by writeEbayTxReportRowsToCloud.
+ * The row chunks (rows-0, rows-1, …) live in the same collection as the other
+ * Abrechnung docs, so one getDocs() on that collection fetches all of them in a
+ * single round-trip — filtered down to the rows-N docs here. The previous version
+ * read each chunk with its own separate getDoc() awaited one at a time; on a real
+ * order history (dozens of chunks) that meant dozens of sequential network
+ * round-trips, which was exactly what turned a full-history pull into a ~30s
+ * freeze on a freshly-wiped device.
+ */
 export async function fetchEbayTxReportRowsFromCloud(
   rowChunks: number
 ): Promise<{ rid: string; row: unknown }[]> {
   const ctx = init();
   const user = ctx?.auth?.currentUser;
   if (!ctx?.db || !user || !rowChunks || rowChunks <= 0) return [];
+  const colRef = collection(ctx.db, "users", user.uid, EBAY_TX_REPORTS_COLLECTION);
+  const snap = await getDocs(colRef);
+  recordFirestoreReads(Math.max(1, snap.size));
   const out: { rid: string; row: unknown }[] = [];
-  for (let i = 0; i < rowChunks; i++) {
-    const snap = await getDoc(doc(ctx.db, "users", user.uid, EBAY_TX_REPORTS_COLLECTION, `rows-${i}`));
-    recordFirestoreReads(1);
-    if (snap.exists()) {
-      const items = (snap.data() as { items?: { rid: string; row: unknown }[] }).items || [];
-      out.push(...items);
-    }
+  for (const d of snap.docs) {
+    if (!/^rows-\d+$/.test(d.id)) continue;
+    const items = (d.data() as { items?: { rid: string; row: unknown }[] }).items || [];
+    out.push(...items);
   }
   return out;
 }
