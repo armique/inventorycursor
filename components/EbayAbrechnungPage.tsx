@@ -129,6 +129,17 @@ function formatSigned(n: number | null | undefined): string {
   return formatSignedEUR(n);
 }
 
+/** A broken network transport can leave a Firestore call hanging forever with no error (seen
+ *  live before — Firestore's streaming channel silently torn down, see SettingsPage's "Save
+ *  now" button for the same fix). Caps any promise so the caller always eventually gets a real
+ *  answer instead of a spinner stuck forever. */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error(`${label} timed out — check your network connection and try again.`)), ms)
+  );
+  return Promise.race([promise, timeout]);
+}
+
 /** Aligned − + € amount for table cells (minus stays on the value baseline). */
 function SignedEURCell({ n, fallback = '—' }: { n: number | null | undefined; fallback?: string }) {
   if (n == null || !Number.isFinite(n)) return <>{fallback}</>;
@@ -665,7 +676,10 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
     setEbaySyncBusy(true);
     // Wait for App.tsx's own Firestore pull to land real CSV rows locally first — see the
     // comment on runEbayTxCloudSyncOnce for why `loading` alone isn't a wide-enough guard.
-    void runEbayTxCloudSyncOnce()
+    // Capped: a broken network transport can leave this hanging forever with no error (same
+    // class of bug fixed for the Settings "Save now" button) — better to surface a clear
+    // timeout than spin forever.
+    void withTimeout(runEbayTxCloudSyncOnce(), 20000, 'Cloud sync')
       .then(() => syncNewEbayOrdersOnAppVisit({ force }))
       .then((outcome) => {
         if (outcome.status === 'ok') {
@@ -1263,7 +1277,7 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
     if (!sure) return;
     setClearBusy(true);
     try {
-      await clearEbayTransactionReportsEverywhere();
+      await withTimeout(clearEbayTransactionReportsEverywhere(), 20000, 'Clear');
       setLinkNote('Cleared everywhere. Re-import your Transaktionsbericht CSV(s) to rebuild.');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Clear failed.');
