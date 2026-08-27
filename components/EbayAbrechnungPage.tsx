@@ -621,11 +621,13 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
       .finally(() => setEbaySyncBusy(false));
   }, []);
 
-  useEffect(() => {
-    runEbaySync();
-    // Only on mount — the manual button below covers re-checking later.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Deliberately NOT auto-run on mount. It used to fire here immediately alongside the CSV
+  // library load — on a device whose local storage was just cleared/is still populating, the
+  // API sync could read the CSV report list before it finished loading, see nothing covered
+  // yet, and dump the ENTIRE order history in as "new" api-sync rows — duplicating every order
+  // already in the CSVs (this is what inflated a real €64.8k report into a fake €131.2k one).
+  // The manual "Sync eBay orders" button below is the only trigger now, so it only ever runs
+  // once you can see CSV data is already loaded.
 
   const hasImportedCsv = useMemo(
     () => reports.some((r) => (r.rows?.length ?? 0) > 0),
@@ -1449,8 +1451,12 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
             <button
               type="button"
               onClick={() => runEbaySync(true)}
-              disabled={ebaySyncBusy}
-              title="Pull recent orders from the eBay API and add any new ones as Bestellung rows"
+              disabled={ebaySyncBusy || loading}
+              title={
+                loading
+                  ? 'Waiting for your CSV/cloud data to finish loading first, so this can correctly skip orders already covered'
+                  : 'Pull recent orders from the eBay API and add any new ones as Bestellung rows'
+              }
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-violet-200 bg-violet-50 text-violet-900 text-xs font-bold hover:bg-violet-100 disabled:opacity-50"
             >
               {ebaySyncBusy ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
