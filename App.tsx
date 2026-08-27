@@ -52,6 +52,7 @@ import {
   type ThreeDPrintCloudState,
 } from './services/threeDPrintCloud';
 import { isCloudEnabled, onAuthChange, subscribeToData, writeToCloud, writeStoreCatalog, getSyncErrorMessage, CLOUD_OMITTED_PLACEHOLDER, fetchGamificationState, writeGamificationState, completeGoogleRedirectSignIn, consumeAuthReturnPath, consumeRedirectPending, getAuthErrorMessage } from './services/firebaseService';
+import { withTimeout } from './utils/withTimeout';
 import {
   defaultGamificationState,
   ensureFreshDay,
@@ -1910,7 +1911,12 @@ const App: React.FC = () => {
       threeDPrint: snap.threeDPrint,
     };
     try {
-      await writeToCloud(payload);
+      // A broken network transport (Firestore's streaming channel torn down, seen live
+      // repeatedly today) can leave this pending forever with no error at all — and since
+      // cloudSyncInFlightRef only clears in `finally`, a hang here blocks every subsequent
+      // auto-sync too, which is why every click looked like it "started a new sync" that
+      // never finished. Capped so this always eventually resolves one way or the other.
+      await withTimeout(writeToCloud(payload), 20000, 'Cloud sync');
       hasUnsavedChanges.current = false;
       lastLocalPushAtRef.current = Date.now();
       suppressRemoteApplyUntilRef.current = Date.now() + REMOTE_APPLY_SUPPRESS_MS;
@@ -2172,7 +2178,7 @@ const App: React.FC = () => {
     };
     try {
       cloudSyncInFlightRef.current = true;
-      await writeToCloud(payload, { allowEmptyOverwrite: true });
+      await withTimeout(writeToCloud(payload, { allowEmptyOverwrite: true }), 20000, 'Cloud sync');
       hasUnsavedChanges.current = false;
       lastLocalPushAtRef.current = Date.now();
       suppressRemoteApplyUntilRef.current = Date.now() + REMOTE_APPLY_SUPPRESS_MS;
