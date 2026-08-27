@@ -2028,9 +2028,9 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
           </div>
           </div>
 
-          <div className="flex-1 min-h-0 px-4 pb-3 flex gap-3 items-stretch min-w-0 overflow-hidden">
-          <div className="min-h-0 flex flex-col flex-1 min-w-0 overflow-hidden">
-          <div className="flex-1 min-h-0 bg-white border border-slate-200 rounded-xl overflow-hidden flex flex-col">
+          <div className="px-4 pb-3 flex flex-col md:flex-row gap-3 items-stretch min-w-0 md:flex-1 md:min-h-0 md:overflow-hidden">
+          <div className="flex flex-col min-w-0 md:min-h-0 md:flex-1 md:overflow-hidden">
+          <div className="bg-white border border-slate-200 rounded-xl flex flex-col md:flex-1 md:min-h-0 md:overflow-hidden">
             {kindFilter === 'matcher' ? (
               <>
                 <div className="shrink-0 flex flex-wrap items-center gap-2 px-3 py-2 border-b border-violet-100 bg-violet-50/60">
@@ -2094,7 +2094,7 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
                     </div>
                   </div>
                 ) : null}
-                <div className="flex-1 min-h-0 overflow-auto">
+                <div className="md:flex-1 md:min-h-0 overflow-x-auto md:overflow-y-auto">
                   {!suggestions?.length && !suggestBusy ? (
                     <div className="flex flex-col items-center justify-center gap-2 p-10 text-center text-slate-500">
                       <Link2 size={24} className="text-violet-400" />
@@ -2260,7 +2260,7 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
                 </tbody>
               </table>
             </div>
-            <div className="md:hidden flex-1 min-h-0 overflow-auto px-2 py-2 space-y-2">
+            <div className="md:hidden px-2 py-2 space-y-2">
               {pageRows.map((row) => (
                 <TxCard
                   key={row.id}
