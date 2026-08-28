@@ -1661,12 +1661,13 @@ export async function writeToCloud(
     throw wrapped;
   }
 
-  // P1 scaling migration (see docs/ai-audit/million-item-architecture-plan.md):
-  // best-effort per-item mirror, additive only. Never allowed to affect the
-  // caller or the sync it just completed successfully above.
-  void writeItemsMirror(ctx.db, user.uid, data.inventory || [], data.trash || []).catch((e) => {
-    console.warn("Item mirror write skipped (non-fatal):", e);
-  });
+  // P1 scaling migration disabled: writeItemsMirror was firing on every sync
+  // and consuming ~1 Firestore write per changed item on top of the shard pack
+  // writes, causing the per-device daily budget to exhaust during bulk
+  // Abrechnung linking sessions. The mirror collection is non-authoritative —
+  // nothing reads from it — so disabling it has no effect on data integrity.
+  // The sharded syncPack (above) remains the sole source of truth.
+  // void writeItemsMirror(ctx.db, user.uid, data.inventory || [], data.trash || []);
 }
 
 /** Expose for UI to show specific error reason. */
