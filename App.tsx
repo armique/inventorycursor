@@ -2020,7 +2020,17 @@ const App: React.FC = () => {
       // cloudSyncInFlightRef only clears in `finally`, a hang here blocks every subsequent
       // auto-sync too, which is why every click looked like it "started a new sync" that
       // never finished. Capped so this always eventually resolves one way or the other.
-      await withTimeout(writeToCloud(payload), 20000, 'Cloud sync');
+      //
+      // The cap itself needs to scale with inventory size: every sync rewrites the FULL
+      // sharded pack (every item, every chunk), not just what changed, and any action that
+      // requests an immediate flush (delete included — see FAST_CLOUD_FLUSH_MS) fires that
+      // full rewrite right away. On a large, real account (2000+ items) that rewrite can
+      // legitimately take longer than 20s even on a good connection — confirmed live: a
+      // single delete kept hitting "Cloud sync timed out" on a stable connection, purely
+      // because the account had grown past what 20s covers. A flat cap there doesn't mean
+      // the write failed, just that the UI gave up watching too early.
+      const cloudSyncTimeoutMs = Math.min(60000, Math.max(20000, snap.items.length * 20));
+      await withTimeout(writeToCloud(payload), cloudSyncTimeoutMs, 'Cloud sync');
       hasUnsavedChanges.current = false;
       lastLocalPushAtRef.current = Date.now();
       suppressRemoteApplyUntilRef.current = Date.now() + REMOTE_APPLY_SUPPRESS_MS;
@@ -2282,7 +2292,8 @@ const App: React.FC = () => {
     };
     try {
       cloudSyncInFlightRef.current = true;
-      await withTimeout(writeToCloud(payload, { allowEmptyOverwrite: true }), 20000, 'Cloud sync');
+      const forcePushTimeoutMs = Math.min(60000, Math.max(20000, snap.items.length * 20));
+      await withTimeout(writeToCloud(payload, { allowEmptyOverwrite: true }), forcePushTimeoutMs, 'Cloud sync');
       hasUnsavedChanges.current = false;
       lastLocalPushAtRef.current = Date.now();
       suppressRemoteApplyUntilRef.current = Date.now() + REMOTE_APPLY_SUPPRESS_MS;
