@@ -907,8 +907,20 @@ const App: React.FC = () => {
     }
   };
 
-  /** Merge remote inventory with local. Remote wins on conflicts, but local-only items (e.g. newly added via bulk) are preserved until synced. */
-  const mergeInventoryWithLocal = useCallback((remoteList: InventoryItem[], localList: InventoryItem[]): InventoryItem[] => {
+  /**
+   * Merge remote inventory with local. Remote wins on conflicts, but local-only items (e.g.
+   * newly added via bulk) are preserved until synced.
+   *
+   * `localTrashIds` (optional): item ids this device has already moved to trash. Without it,
+   * a remote snapshot that hasn't caught up to a just-deleted item yet resurrects it straight
+   * back into active inventory on the next merge pass — the delete equivalent of the restock
+   * bug above, caught the same way (a just-trashed item reappearing on reload).
+   */
+  const mergeInventoryWithLocal = useCallback((
+    remoteList: InventoryItem[],
+    localList: InventoryItem[],
+    localTrashIds?: Set<string>
+  ): InventoryItem[] => {
     const largeFields = ['imageUrl', 'receiptUrl', 'kleinanzeigenChatImage', 'kleinanzeigenBuyChatImage', 'marketDescription'] as const;
     const localById = new Map(localList.map((i) => [i.id, i]));
     const byId = new Map<string, InventoryItem>();
@@ -936,6 +948,7 @@ const App: React.FC = () => {
     // Overlay remote when ID matches — default remote wins, except stale cloud must not undo a local sale/trade
     remoteList.forEach((r) => {
       if (!r?.id) return;
+      if (localTrashIds?.has(r.id)) return;
       const local = localById.get(r.id);
       if (!local) {
         byId.set(r.id, r);
@@ -1171,7 +1184,8 @@ const App: React.FC = () => {
     }
 
     isRemoteUpdate.current = true;
-    const inv = mergeInventoryWithLocal(remoteInv, localItems);
+    const localTrashIds = new Set(localTrash.map((i) => i.id).filter(Boolean));
+    const inv = mergeInventoryWithLocal(remoteInv, localItems, localTrashIds);
     const tr = mergeInventoryWithLocal(remoteTrash, localTrash);
     if (
       inventoryLooksUnchanged(localItems, inv) &&
