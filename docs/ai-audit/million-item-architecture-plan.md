@@ -1,9 +1,27 @@
 # Scaling Architecture Plan — Built for 10,000, Extensible to 1,000,000
 
 **Date:** 2026-08-28 (updated)
-**Status:** Proposal only. No application code changed by this document.
+**Status:** P1 (per-item mirror) shipped. P2+P3 (full per-item-doc reads + UI pagination) is **paused by a deliberate course-correction — read "P2+P3 course-correction" below before resuming it.**
 **Trigger:** User asked for a Firestore architecture that stays smooth well past current scale (currently ~1,000 items, expected to reach 10,000 then possibly 100,000+ over the coming years), with no hosted backend server, building on the incremental-shard-sync work already shipped 2026-08-22 (see `persistence-sync-deep-audit.md` / `persistence-sync-results.md`).
 **Near-term design target: 10,000 items, on Firestore's free (Spark) tier if at all possible.** The architecture below is the same one that scales to 1,000,000 — nothing here needs to be re-architected later — but the migration is scoped and sequenced around 10,000 so it ships without a mid-migration cost or reliability regression.
+
+## P2+P3 course-correction (2026-08-28) — read this before resuming P2+P3
+
+P2+P3 was approved, then paused before any code was written, after deep research (three Explore agents across `App.tsx`, `InventoryList.tsx`, `Dashboard.tsx`, container/bundle logic, and search) showed it was far larger and riskier than the original scope implied, and not actually necessary for the 10,000-item near-term target. Full findings live in the plan-mode transcript from that date; the load-bearing points:
+
+- **Six subsystems assume the full array is resident in memory**, not a loaded page: undo/redo (whole-array snapshots, `utils/appendUndoHistory.ts`), container/bundle invariant healing (`utils/containerMembershipInvariants.ts`), dashboard dedup/allocation math (`services/financialAggregation.ts`), all three search paths (global search, inventory-list search, eBay title-fuzzy-match), "select all"/one export path in `InventoryList.tsx`, and Price Lab comps (`utils/itemSalesPool.ts`). Converting all of them was, per that research, "realistically the majority of the total work" and touches business-critical, currently-correct logic — undo/redo especially, since it's a safety net for real mistakes.
+- **Switching bulk reads to per-item docs would make read-quota usage *worse*, not better, at 10k items.** Firestore bills 1 read per document returned. Blob-shard reads cost ~15-30 reads to load the whole inventory (one per ~680KB shard); per-item-doc reads would cost up to 10,000 reads for that same load. Storage (10-20MB vs. 1 GiB cap) and write quota (already fixed by the Aug 22 incremental-shard-write sprint, plus the daily budget guard in `services/firestoreOpsCounter.ts`) aren't near-term constraints either.
+- **Conclusion:** the 1,000,000-item framing over-scoped what this business needs right now. Keep the blob-shard model as the authoritative bulk-load path indefinitely — it's the cheap path at this app's real scale — rather than converging toward per-item docs prematurely.
+
+**What shipped instead of P2+P3** (2026-08-28): a fixed bug in the P1 mirror where its change-detection cache reset on every reload (forcing a full re-mirror — up to 10k extra writes per reload at the 10k-item target), now persisted to `localStorage`; deduped the double-write of `action_history`/`bulk_imports` to localStorage (was written from both the main debounced persist effect and dedicated 1.2s effects — now only the dedicated effects); deduped the storefront catalog being published twice per edit cycle (was published from both a debounced items-effect and after every successful cloud sync — now only the debounced items-effect). `enforceContainerMembershipInvariants`'s clone-all-on-no-op (R4 from the Aug 22 audit) was checked and found already fixed in an earlier session — no change needed.
+
+**Trigger to revisit P2+P3 later** — not a date, a measured signal:
+- Item count approaches ~50,000-100,000 (where shard count/boot-parse time becomes the real bottleneck, not read quota).
+- The daily ops counter (`services/firestoreOpsCounter.ts`) regularly approaches budget from real edit activity, not migration overhead.
+- A specific new feature genuinely needs single-item access without the full array (barcode lookup, deep link) — the already-fixed P1 mirror alone can serve that, no UI rewrite needed.
+- Measured main-thread hitches persist after the fixes above.
+
+None of these were close as of this update.
 
 ---
 
