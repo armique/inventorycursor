@@ -957,21 +957,41 @@ const App: React.FC = () => {
         return;
       }
 
-      // Same-device restock: a lagging sold shard must not put the item back in Sold.
+      // A lagging sold shard must not put the item back in Sold — from ANY source, not just
+      // this same device/tab. Caught live: some other session kept re-pushing a stale "Sold"
+      // snapshot, and whenever it landed here without the exact [Returned …] tag or a
+      // pending-edit flag already set locally, this fell through to the generic "remote wins"
+      // path below and silently re-sold a just-restocked item — a real item, repeatedly,
+      // undoing the restock within minutes each time, no matter how many times it was redone.
+      //
+      // The old exact-tag check isn't reliable across devices/tabs, each with their own timing
+      // — so this compares which side's data is actually NEWER instead, using each side's most
+      // recent price-history entry (every sale and every restock appends one). That correctly
+      // protects a just-done restock from a lagging stale write, while still letting a
+      // genuinely later sale on another device come through — the old code, by contrast, could
+      // only protect the narrow "this exact tab's own edit" case.
       // Exception: an intentional sale restore (clears [Returned], stamps [Sale restored …])
-      // must win over a local Active restock copy.
+      // always wins over a local Active restock copy regardless of timestamps — it's a
+      // deliberate correction, not a race.
       if (!localDisposed && remoteDisposed) {
-        const localRestocked = /\[Returned /i.test(String(local.comment2 || ''));
         const remoteRestored = /\[Sale restored /i.test(String(r.comment2 || ''));
         if (remoteRestored) {
           byId.set(r.id, mergeItemAuditFields(applyLargeFieldPlaceholders(r, local), local));
           return;
         }
-        if (hasUnsavedChanges.current || localRestocked) {
+        const lastHistoryDate = (it: InventoryItem): string => {
+          const hist = it.priceHistory || [];
+          return hist.length ? String(hist[hist.length - 1]?.date || '') : '';
+        };
+        const localTs = lastHistoryDate(local);
+        const remoteTs = lastHistoryDate(r);
+        if (hasUnsavedChanges.current || !remoteTs || (localTs && localTs >= remoteTs)) {
           const kept = applyLargeFieldPlaceholders(local, r);
           byId.set(r.id, mergeItemAuditFields(kept, r));
           return;
         }
+        // Remote's own sale is genuinely newer than anything local knows about — let it
+        // through the normal remote-wins path below instead of returning here.
       }
 
       let changed = false;
