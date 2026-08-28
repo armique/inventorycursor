@@ -1406,6 +1406,109 @@ async function writeShardedSyncPack(
   recordFirestoreDeletes(estimatedDeletes);
 }
 
+// --- P1 SCALING MIGRATION: PER-ITEM MIRROR (additive, non-authoritative) ---
+// See docs/ai-audit/million-item-architecture-plan.md. Mirrors each item as its
+// own Firestore document under users/{uid}/items/{id} (and .../itemsTrash/{id}),
+// alongside the existing sharded sync pack, which stays the source of truth
+// read on boot until a later phase switches reads over. This path is
+// best-effort: it must never throw into the caller, and a bug here cannot lose
+// data because nothing reads from it yet.
+
+const ITEMS_MIRROR_COLLECTION = "items";
+const ITEMS_TRASH_MIRROR_COLLECTION = "itemsTrash";
+
+/**
+ * In-memory only (resets on reload): last-mirrored content hash per item, so a
+ * session's repeat syncs of unchanged items cost 0 extra writes/reads. This is
+ * intentionally not restart-safe like `planSyncPackWrites` — the mirror isn't
+ * read by anything yet, so a reload re-mirroring a handful of already-current
+ * items is harmless, and avoids paying a full-collection `getDocs` read (which
+ * *would* matter for quota) on every ordinary edit.
+ */
+const lastMirroredItemHash = new Map<string, string>();
+
+function fnv1aHash(str: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(36);
+}
+
+function itemsMirrorCollectionRef(db: Firestore, uid: string) {
+  return collection(db, "users", uid, ITEMS_MIRROR_COLLECTION);
+}
+function itemsTrashMirrorCollectionRef(db: Firestore, uid: string) {
+  return collection(db, "users", uid, ITEMS_TRASH_MIRROR_COLLECTION);
+}
+
+/**
+ * Best-effort mirror of `inventory`/`trash` into one Firestore doc per item.
+ * Never throws — callers should fire-and-forget with a `.catch` logger.
+ * Known limitation: an item that moves between inventory/trash *across* a
+ * page reload (cache reset) can leave a stale mirror doc in the old
+ * collection until the next edit touches it. Harmless while this collection
+ * has no readers; a later phase reconciles it during the real cutover.
+ */
+async function writeItemsMirror(db: Firestore, uid: string, inventory: unknown[], trash: unknown[]): Promise<void> {
+  const invCol = itemsMirrorCollectionRef(db, uid);
+  const trashCol = itemsTrashMirrorCollectionRef(db, uid);
+
+  type MirrorOp = { ref: ReturnType<typeof doc>; data?: Record<string, unknown>; kind: "set" | "delete" };
+  const ops: MirrorOp[] = [];
+  const currentIds = new Set<string>();
+
+  const stage = (raw: unknown, col: ReturnType<typeof collection>, cacheKind: "i" | "t") => {
+    if (!raw || typeof raw !== "object") return;
+    const rec = raw as Record<string, unknown>;
+    const id = typeof rec.id === "string" ? rec.id : "";
+    if (!id) return;
+    currentIds.add(`${cacheKind}:${id}`);
+    const prepared = trimItemForSize(sanitizeForFirestore(rec)) as Record<string, unknown>;
+    const hash = fnv1aHash(JSON.stringify(prepared));
+    const cacheKey = `${uid}|${cacheKind}|${id}`;
+    if (lastMirroredItemHash.get(cacheKey) === hash) return;
+    ops.push({ ref: doc(col, id), data: prepared, kind: "set" });
+    lastMirroredItemHash.set(cacheKey, hash);
+  };
+
+  for (const it of inventory) stage(it, invCol, "i");
+  for (const it of trash) stage(it, trashCol, "t");
+
+  for (const cacheKey of lastMirroredItemHash.keys()) {
+    const [ownerUid, kind, id] = cacheKey.split("|");
+    if (ownerUid !== uid) continue;
+    if (currentIds.has(`${kind}:${id}`)) continue;
+    ops.push({ ref: doc(kind === "i" ? invCol : trashCol, id), kind: "delete" });
+    lastMirroredItemHash.delete(cacheKey);
+  }
+
+  if (ops.length === 0) return;
+
+  const writes = ops.filter((o) => o.kind === "set").length;
+  const deletes = ops.filter((o) => o.kind === "delete").length;
+  assertFirestoreDailyBudget({ writes, deletes });
+
+  const BATCH_MAX = 400;
+  let batch = writeBatch(db);
+  let count = 0;
+  for (const op of ops) {
+    if (op.kind === "set") batch.set(op.ref, op.data!);
+    else batch.delete(op.ref);
+    count++;
+    if (count >= BATCH_MAX) {
+      await batch.commit();
+      batch = writeBatch(db);
+      count = 0;
+    }
+  }
+  if (count > 0) await batch.commit();
+
+  recordFirestoreWrites(writes);
+  recordFirestoreDeletes(deletes);
+}
+
 // --- REAL-TIME SUBSCRIBE ---
 
 /**
@@ -1522,6 +1625,13 @@ export async function writeToCloud(
     wrapped.cause = err;
     throw wrapped;
   }
+
+  // P1 scaling migration (see docs/ai-audit/million-item-architecture-plan.md):
+  // best-effort per-item mirror, additive only. Never allowed to affect the
+  // caller or the sync it just completed successfully above.
+  void writeItemsMirror(ctx.db, user.uid, data.inventory || [], data.trash || []).catch((e) => {
+    console.warn("Item mirror write skipped (non-fatal):", e);
+  });
 }
 
 /** Expose for UI to show specific error reason. */
