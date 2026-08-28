@@ -2035,10 +2035,9 @@ const App: React.FC = () => {
       lastLocalPushAtRef.current = Date.now();
       suppressRemoteApplyUntilRef.current = Date.now() + REMOTE_APPLY_SUPPRESS_MS;
       setSyncState({ status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED });
-      scheduleBackgroundWork(async () => {
-        const catalog = buildStoreCatalog(snap.items, snap.categoryFields);
-        await writeStoreCatalog(catalog).catch((e) => console.warn('Store catalog update failed', e));
-      });
+      // Storefront catalog is published by the debounced "soon after real local
+      // edits" effect (STORE_CATALOG_DEBOUNCE_MS) — publishing it again here on
+      // every successful sync duplicated that write on every ordinary edit.
     } catch (err) {
       setSyncState((prev) => ({ ...prev, status: 'error', message: getSyncErrorMessage(err) }));
     } finally {
@@ -2128,8 +2127,9 @@ const App: React.FC = () => {
           categoryFieldsJson: JSON.stringify(snap.categoryFields),
           recurringExpensesJson: JSON.stringify(snap.recurringExpenses),
           dashboardPrefs: snap.dashboardPrefs,
-          actionHistoryJson: JSON.stringify(snap.actionHistory.slice(-ACTION_HISTORY_LIMIT)),
-          bulkImportsJson: JSON.stringify(snap.bulkImports.slice(0, BULK_IMPORTS_LIMIT)),
+          // action_history / bulk_imports are NOT written here — the dedicated
+          // 1.2s-debounced effects below own those two keys, so an ordinary
+          // item edit doesn't re-stringify+write them twice on every save.
         });
         // Cloud users: the cloud-sync success path is what clears this flag, tracking
         // "still needs a cloud push" independently of the local save completing. Local-only

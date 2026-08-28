@@ -1418,14 +1418,36 @@ const ITEMS_MIRROR_COLLECTION = "items";
 const ITEMS_TRASH_MIRROR_COLLECTION = "itemsTrash";
 
 /**
- * In-memory only (resets on reload): last-mirrored content hash per item, so a
- * session's repeat syncs of unchanged items cost 0 extra writes/reads. This is
- * intentionally not restart-safe like `planSyncPackWrites` — the mirror isn't
- * read by anything yet, so a reload re-mirroring a handful of already-current
- * items is harmless, and avoids paying a full-collection `getDocs` read (which
- * *would* matter for quota) on every ordinary edit.
+ * Last-mirrored content hash per item (`"${uid}|${i|t}|${id}"` -> hash),
+ * persisted to localStorage so a page reload doesn't force a full re-mirror
+ * of every item. Without this, the first sync after every reload would treat
+ * every item as "changed" (empty cache) and re-write it — at 10k items that
+ * is ~10k writes per reload against a device budget of a few thousand/day.
  */
-const lastMirroredItemHash = new Map<string, string>();
+const ITEM_MIRROR_HASH_CACHE_KEY = "deinv_firestore_item_mirror_hashes_v1";
+
+function loadMirroredItemHashCache(): Map<string, string> {
+  if (typeof localStorage === "undefined") return new Map();
+  try {
+    const raw = localStorage.getItem(ITEM_MIRROR_HASH_CACHE_KEY);
+    if (!raw) return new Map();
+    const parsed = JSON.parse(raw) as Record<string, string>;
+    return new Map(Object.entries(parsed));
+  } catch {
+    return new Map();
+  }
+}
+
+function saveMirroredItemHashCache(cache: Map<string, string>): void {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(ITEM_MIRROR_HASH_CACHE_KEY, JSON.stringify(Object.fromEntries(cache)));
+  } catch {
+    /* ignore (quota / private mode) — worst case is a re-mirror next sync */
+  }
+}
+
+const lastMirroredItemHash = loadMirroredItemHashCache();
 
 function fnv1aHash(str: string): string {
   let h = 0x811c9dc5;
@@ -1455,7 +1477,13 @@ async function writeItemsMirror(db: Firestore, uid: string, inventory: unknown[]
   const invCol = itemsMirrorCollectionRef(db, uid);
   const trashCol = itemsTrashMirrorCollectionRef(db, uid);
 
-  type MirrorOp = { ref: ReturnType<typeof doc>; data?: Record<string, unknown>; kind: "set" | "delete" };
+  type MirrorOp = {
+    ref: ReturnType<typeof doc>;
+    data?: Record<string, unknown>;
+    kind: "set" | "delete";
+    cacheKey: string;
+    hash?: string;
+  };
   const ops: MirrorOp[] = [];
   const currentIds = new Set<string>();
 
@@ -1469,8 +1497,7 @@ async function writeItemsMirror(db: Firestore, uid: string, inventory: unknown[]
     const hash = fnv1aHash(JSON.stringify(prepared));
     const cacheKey = `${uid}|${cacheKind}|${id}`;
     if (lastMirroredItemHash.get(cacheKey) === hash) return;
-    ops.push({ ref: doc(col, id), data: prepared, kind: "set" });
-    lastMirroredItemHash.set(cacheKey, hash);
+    ops.push({ ref: doc(col, id), data: prepared, kind: "set", cacheKey, hash });
   };
 
   for (const it of inventory) stage(it, invCol, "i");
@@ -1480,8 +1507,7 @@ async function writeItemsMirror(db: Firestore, uid: string, inventory: unknown[]
     const [ownerUid, kind, id] = cacheKey.split("|");
     if (ownerUid !== uid) continue;
     if (currentIds.has(`${kind}:${id}`)) continue;
-    ops.push({ ref: doc(kind === "i" ? invCol : trashCol, id), kind: "delete" });
-    lastMirroredItemHash.delete(cacheKey);
+    ops.push({ ref: doc(kind === "i" ? invCol : trashCol, id), kind: "delete", cacheKey });
   }
 
   if (ops.length === 0) return;
@@ -1504,6 +1530,15 @@ async function writeItemsMirror(db: Firestore, uid: string, inventory: unknown[]
     }
   }
   if (count > 0) await batch.commit();
+
+  // Only reflect writes in the persisted cache once Firestore actually has
+  // them — if a batch above throws, the un-applied ops simply get re-checked
+  // (and re-sent) on the next sync, which is the safe direction to fail in.
+  for (const op of ops) {
+    if (op.kind === "set" && op.hash) lastMirroredItemHash.set(op.cacheKey, op.hash);
+    else lastMirroredItemHash.delete(op.cacheKey);
+  }
+  saveMirroredItemHashCache(lastMirroredItemHash);
 
   recordFirestoreWrites(writes);
   recordFirestoreDeletes(deletes);
