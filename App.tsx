@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense, startTransition } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense, startTransition } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useSearchParams, useNavigate } from 'react-router-dom';
 import { Cloud, CheckCircle2, Loader2, WifiOff, RefreshCw, X } from 'lucide-react';
 
@@ -50,6 +50,7 @@ import {
   type ThreeDPrintCloudState,
 } from './services/threeDPrintCloud';
 import { isCloudEnabled, onAuthChange, subscribeToData, writeToCloud, writeStoreCatalog, getSyncErrorMessage, CLOUD_OMITTED_PLACEHOLDER, fetchGamificationState, writeGamificationState, completeGoogleRedirectSignIn, consumeAuthReturnPath, consumeRedirectPending, getAuthErrorMessage } from './services/firebaseService';
+import { saveItemChangesToSupabase, isSupabaseConfigured } from './services/supabaseService';
 import { withTimeout } from './utils/withTimeout';
 import {
   defaultGamificationState,
@@ -2366,6 +2367,11 @@ const App: React.FC = () => {
     // committed the state update. This is what makes a refresh mid-edit safe: the debounced
     // IndexedDB write below can lag by a few seconds, but this can't.
     appendPendingItemPatches(updatedItems);
+    if (isSupabaseConfigured()) {
+      void saveItemChangesToSupabase(updatedItems, deleteIds).catch(err => {
+        console.warn('[supabase] Incremental item push failed (non-fatal, will retry):', err);
+      });
+    }
     const recordAction = !options?.skipActionLog;
     const recordUndo = !options?.skipUndo;
     const disposed = (s: ItemStatus | undefined) =>

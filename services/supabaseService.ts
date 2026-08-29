@@ -488,7 +488,43 @@ export async function fetchFullAppStateFromSupabase(): Promise<SupabaseSyncSnaps
 }
 
 // ------------------------------------------------------------------------------
-// 6. WRITE FULL STATE TO SUPABASE (Upsert with Batching)
+// 6. INCREMENTAL / SINGLE-ITEM UPDATE (Fine-grained PostgreSQL sync)
+// ------------------------------------------------------------------------------
+
+export async function saveItemChangesToSupabase(
+  updatedItems: InventoryItem[],
+  deleteIds?: string[]
+): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return;
+
+  if (updatedItems && updatedItems.length > 0) {
+    const rows = updatedItems.map(it => mapItemToRow(it, user.id, false));
+    const { error } = await sb.from('inventory_items').upsert(rows, { onConflict: 'id' });
+    if (error) {
+      console.error('[supabase] Single/Batch item update error:', error);
+      throw error;
+    }
+  }
+
+  if (deleteIds && deleteIds.length > 0) {
+    const { error } = await sb
+      .from('inventory_items')
+      .update({ is_trash: true, updated_at: new Date().toISOString() })
+      .in('id', deleteIds)
+      .eq('user_id', user.id);
+    if (error) {
+      console.error('[supabase] Item trash error:', error);
+      throw error;
+    }
+  }
+}
+
+// ------------------------------------------------------------------------------
+// 7. WRITE FULL STATE TO SUPABASE (Upsert with Batching)
 // ------------------------------------------------------------------------------
 
 export async function writeFullAppStateToSupabase(

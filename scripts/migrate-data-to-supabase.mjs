@@ -234,14 +234,22 @@ async function runMigration() {
     ...trash.map(it => mapItem(it, true)),
   ];
 
-  const BATCH_SIZE = 150;
-  for (let i = 0; i < allItemRows.length; i += BATCH_SIZE) {
-    const chunk = allItemRows.slice(i, i + BATCH_SIZE);
+  // Deduplicate rows by ID before batching (latest record wins)
+  const itemMap = new Map();
+  for (const row of allItemRows) {
+    itemMap.set(row.id, row);
+  }
+  const deduplicatedItemRows = Array.from(itemMap.values());
+  console.log(`   (Deduplicated ${allItemRows.length} -> ${deduplicatedItemRows.length} unique item rows)`);
+
+  const BATCH_SIZE = 100;
+  for (let i = 0; i < deduplicatedItemRows.length; i += BATCH_SIZE) {
+    const chunk = deduplicatedItemRows.slice(i, i + BATCH_SIZE);
     const { error } = await supabase.from('inventory_items').upsert(chunk, { onConflict: 'id' });
     if (error) throw new Error(`Inventory items batch ${i} error: ${error.message}`);
-    process.stdout.write(`   ↳ Uploaded ${Math.min(i + BATCH_SIZE, allItemRows.length)} / ${allItemRows.length} items...\r`);
+    process.stdout.write(`   ↳ Uploaded ${Math.min(i + BATCH_SIZE, deduplicatedItemRows.length)} / ${deduplicatedItemRows.length} items...\r`);
   }
-  console.log(`\n   ✅ ${allItemRows.length} inventory items successfully upserted.`);
+  console.log(`\n   ✅ ${deduplicatedItemRows.length} inventory items successfully upserted.`);
 
   // 3. Expenses
   if (expenses.length > 0) {
