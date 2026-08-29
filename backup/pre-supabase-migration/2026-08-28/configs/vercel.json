@@ -1,0 +1,32 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "rewrites": [
+    {
+      "source": "/__/auth/:path*",
+      "destination": "https://inventorycursor-e9000.firebaseapp.com/__/auth/:path*"
+    },
+    {
+      "source": "/__/firebase/:path*",
+      "destination": "https://inventorycursor-e9000.firebaseapp.com/__/firebase/:path*"
+    },
+    { "source": "/api/dealwatch/(.*)", "destination": "/api/dealwatch?__path=$1" },
+    { "source": "/api/deal-search", "destination": "/api/gemini?route=deal-search" },
+    { "source": "/api/parse-ebay-order-screenshot", "destination": "/api/gemini?route=ebay-screenshot" },
+    { "source": "/api/parse-kleinanzeigen-chat-screenshot", "destination": "/api/gemini?route=ka-screenshot" },
+    { "source": "/api/ebay-order", "destination": "/api/ebay?route=order" },
+    { "source": "/api/ebay-orders", "destination": "/api/ebay?route=orders" },
+    { "source": "/api/ebay-finances", "destination": "/api/ebay?route=finances" },
+    { "source": "/api/ebay-purchases", "destination": "/api/ebay?route=purchases" },
+    { "source": "/api/ebay-listings", "destination": "/api/ebay?route=listings" },
+    { "source": "/api/ebay-abrechnung-matcher-backup", "destination": "/api/ebay-abrechnung-backup?route=matcher" },
+    { "source": "/api/ebay-abrechnung-csvs", "destination": "/api/ebay-abrechnung-backup?route=csvs" },
+    { "source": "/sitemap.xml", "destination": "/api/sitemap.xml" },
+    { "source": "/(.*)", "has": [{ "type": "header", "key": "accept", "value": ".*text/html.*" }], "destination": "/index.html" }
+  ],
+  "redirects": [{ "source": "/panel", "destination": "/panel/dashboard", "permanent": false }],
+  "crons": [
+    { "path": "/api/github-oauth?route=daily-backup", "schedule": "0 3 * * *" }
+  ]
+}

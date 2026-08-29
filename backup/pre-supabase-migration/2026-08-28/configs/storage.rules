@@ -1,0 +1,35 @@
+rules_version = '2';
+// Firebase Storage (item images). Separate from Firestore rules.
+// Deploy: firebase deploy --only storage
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Signed-in owner: list + read/write under their tree (prefix list needs this match).
+    match /items/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    // Signed-in users can read/write their own storefront configurator assets (e.g. featured PC ad photos)
+    match /storefrontAssets/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    // AI-generated product cards (high-quality gallery history)
+    match /product-cards/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    // Expense / invoice attachments
+    match /expenses/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    // Automated daily inventory snapshots (see services/backupService.ts)
+    match /backups/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Temporary inbox for phone→PC photo bridge (/upload/:token)
+    match /photo-inbox/{token}/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.resource.size < 12 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+  }
+}

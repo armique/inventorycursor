@@ -1,0 +1,92 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Each signed-in user can only read/write their own document at users/{userId}/...
+    match /users/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Single-tenant app: only these UIDs may write the public storefront collections below.
+    // `request.auth != null` alone (any signed-in Google account) is not enough — add a second
+    // entry here if you ever sign in with another account (e.g. mirana322@gmail.com) and need it
+    // to manage the store too. Find a UID in Firebase Console -> Authentication -> Users.
+    function isOwner() {
+      return request.auth != null && request.auth.uid in ['4LFiPziIiTW3K0kdMC9dt7Qi2SZ2'];
+    }
+
+    // Public store catalog (document storeCatalog/public): anyone can read; only the owner can write
+    match /storeCatalog/{docId} {
+      allow read: if true;
+      allow write: if isOwner();
+    }
+    // Public storefront configurator settings (document storefrontConfig/public): anyone can read; only the owner can write
+    match /storefrontConfig/{docId} {
+      allow read: if true;
+      allow write: if isOwner();
+    }
+    // Store inquiries: anyone can create one validated inquiry doc; only the owner can read/update/delete
+    match /storeInquiries/{inquiryId} {
+      allow create: if request.resource.data.keys().hasAll(
+          ['itemId', 'itemName', 'message', 'createdAt', 'read', 'status']
+        )
+        && request.resource.data.itemId is string
+        && request.resource.data.itemId.size() > 0 && request.resource.data.itemId.size() < 300
+        && request.resource.data.itemName is string
+        && request.resource.data.itemName.size() > 0 && request.resource.data.itemName.size() < 300
+        && request.resource.data.message is string
+        && request.resource.data.message.size() > 0 && request.resource.data.message.size() < 5000
+        && (!('contactEmail' in request.resource.data) ||
+            (request.resource.data.contactEmail is string && request.resource.data.contactEmail.size() < 300))
+        && (!('contactPhone' in request.resource.data) ||
+            (request.resource.data.contactPhone is string && request.resource.data.contactPhone.size() < 100))
+        && (!('contactName' in request.resource.data) ||
+            (request.resource.data.contactName is string && request.resource.data.contactName.size() < 300))
+        && request.resource.data.read == false
+        && request.resource.data.status == 'new';
+      allow read, update, delete: if isOwner();
+    }
+    // Cached real product photos (by product name) reused across matching items: owner only —
+    // only ever read/written from the admin item form, never the public storefront.
+    match /productPhotoCache/{docId} {
+      allow read, write: if isOwner();
+    }
+
+    /**
+     * Short-lived phone→PC photo upload sessions.
+     * Owner creates/revokes; anyone signed in (incl. anonymous on phone) can read an active
+     * session and append to uploadedUrls only.
+     */
+    match /photoUploadSessions/{token} {
+      // Desktop owner creates a short-lived upload session for one item.
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasAll([
+          'token', 'ownerUid', 'itemId', 'status', 'maxPhotos', 'uploadedUrls'
+        ])
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.token == token
+        && request.resource.data.status == 'active'
+        && request.resource.data.itemId is string
+        && request.resource.data.itemId.size() > 0
+        && request.resource.data.uploadedUrls is list
+        && request.resource.data.uploadedUrls.size() == 0;
+
+      allow read: if request.auth != null;
+
+      allow update: if request.auth != null && (
+        (resource.data.ownerUid == request.auth.uid)
+        ||
+        (
+          resource.data.status == 'active'
+          && request.resource.data.ownerUid == resource.data.ownerUid
+          && request.resource.data.itemId == resource.data.itemId
+          && request.resource.data.token == resource.data.token
+          && request.resource.data.uploadedUrls is list
+          && request.resource.data.uploadedUrls.size() <= 12
+          && request.resource.data.uploadedUrls.size() >= resource.data.uploadedUrls.size()
+        )
+      );
+
+      allow delete: if request.auth != null && resource.data.ownerUid == request.auth.uid;
+    }
+  }
+}
