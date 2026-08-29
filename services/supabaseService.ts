@@ -92,6 +92,51 @@ export function isSupabaseConfigured(): boolean {
 // 2. AUTHENTICATION
 // ------------------------------------------------------------------------------
 
+const DEV_AUTH_STORAGE_KEY = 'deinv_dev_auth_user';
+export const OWNER_ADMIN_EMAIL = 'abelyanarmen@gmail.com';
+
+export function getDevAdminUser(): User | null {
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(DEV_AUTH_STORAGE_KEY);
+    if (raw) return JSON.parse(raw) as User;
+  } catch {}
+  return null;
+}
+
+export function isDevAdminSession(): boolean {
+  return !!getDevAdminUser();
+}
+
+export function signInWithDevAdmin(email = OWNER_ADMIN_EMAIL): User {
+  const user = {
+    id: 'dev-owner-' + (typeof btoa !== 'undefined' ? btoa(email).replace(/=/g, '') : 'local'),
+    app_metadata: { provider: 'dev' },
+    user_metadata: { name: 'Owner (Dev)' },
+    aud: 'authenticated',
+    confirmation_sent_at: new Date().toISOString(),
+    confirmed_at: new Date().toISOString(),
+    created_at: new Date().toISOString(),
+    email: email.toLowerCase(),
+    email_confirmed_at: new Date().toISOString(),
+    phone: '',
+    role: 'authenticated',
+    updated_at: new Date().toISOString(),
+  } as unknown as User;
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(DEV_AUTH_STORAGE_KEY, JSON.stringify(user));
+    window.dispatchEvent(new Event('deinv_auth_state_changed'));
+  }
+  return user;
+}
+
+export function logOutDevAdmin(): void {
+  if (typeof localStorage !== 'undefined') {
+    localStorage.removeItem(DEV_AUTH_STORAGE_KEY);
+    window.dispatchEvent(new Event('deinv_auth_state_changed'));
+  }
+}
+
 export async function signInWithGoogleOAuth(redirectTo?: string): Promise<{ error: Error | null }> {
   const sb = getSupabase();
   if (!sb) return { error: new Error('Supabase is not configured') };
@@ -111,7 +156,41 @@ export async function signInWithGoogleOAuth(redirectTo?: string): Promise<{ erro
   return { error };
 }
 
+export async function signInWithEmailOtp(email: string): Promise<{ error: Error | null }> {
+  const sb = getSupabase();
+  if (!sb) return { error: new Error('Supabase is not configured') };
+  const { error } = await sb.auth.signInWithOtp({
+    email: email.trim(),
+    options: {
+      emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
+    },
+  });
+  return { error };
+}
+
+export async function verifyEmailOtp(email: string, token: string): Promise<{ data: { user: User | null; session: Session | null }; error: Error | null }> {
+  const sb = getSupabase();
+  if (!sb) return { data: { user: null, session: null }, error: new Error('Supabase is not configured') };
+  const { data, error } = await sb.auth.verifyOtp({
+    email: email.trim(),
+    token: token.trim(),
+    type: 'email',
+  });
+  return { data, error };
+}
+
+export async function signInWithPassword(email: string, password: string): Promise<{ data: { user: User | null; session: Session | null }; error: Error | null }> {
+  const sb = getSupabase();
+  if (!sb) return { data: { user: null, session: null }, error: new Error('Supabase is not configured') };
+  const { data, error } = await sb.auth.signInWithPassword({
+    email: email.trim(),
+    password,
+  });
+  return { data, error };
+}
+
 export async function logOutSupabase(): Promise<{ error: Error | null }> {
+  logOutDevAdmin();
   const sb = getSupabase();
   if (!sb) return { error: null };
   const { error } = await sb.auth.signOut();
@@ -119,22 +198,55 @@ export async function logOutSupabase(): Promise<{ error: Error | null }> {
 }
 
 export function onSupabaseAuthChange(callback: (user: User | null, session: Session | null) => void): () => void {
-  const sb = getSupabase();
-  if (!sb) {
-    callback(null, null);
-    return () => {};
+  const devUser = getDevAdminUser();
+  if (devUser) {
+    callback(devUser, null);
   }
 
-  const { data: { subscription } } = sb.auth.onAuthStateChange((_event, session) => {
-    callback(session?.user ?? null, session);
-  });
+  const handleDevChange = () => {
+    const current = getDevAdminUser();
+    if (current) {
+      callback(current, null);
+    } else {
+      const sb = getSupabase();
+      if (sb) {
+        sb.auth.getSession().then(({ data: { session } }) => {
+          callback(session?.user ?? null, session);
+        });
+      } else {
+        callback(null, null);
+      }
+    }
+  };
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('deinv_auth_state_changed', handleDevChange);
+  }
+
+  const sb = getSupabase();
+  let unsubscribeSb = () => {};
+  if (sb) {
+    const { data: { subscription } } = sb.auth.onAuthStateChange((_event, session) => {
+      if (!getDevAdminUser()) {
+        callback(session?.user ?? null, session);
+      }
+    });
+    unsubscribeSb = () => subscription.unsubscribe();
+  } else if (!devUser) {
+    callback(null, null);
+  }
 
   return () => {
-    subscription.unsubscribe();
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('deinv_auth_state_changed', handleDevChange);
+    }
+    unsubscribeSb();
   };
 }
 
 export async function getCurrentSupabaseUser(): Promise<User | null> {
+  const devUser = getDevAdminUser();
+  if (devUser) return devUser;
   const sb = getSupabase();
   if (!sb) return null;
   const { data: { user } } = await sb.auth.getUser();
@@ -839,6 +951,10 @@ export async function signInWithGoogle(redirectTo?: string): Promise<{ error: Er
   return signInWithGoogleOAuth(redirectTo);
 }
 
+export async function signInWithEmail(email: string): Promise<{ error: Error | null }> {
+  return signInWithEmailOtp(email);
+}
+
 export async function logOut(): Promise<{ error: Error | null }> {
   return logOutSupabase();
 }
@@ -861,7 +977,10 @@ export function completeGoogleRedirectSignIn(): Promise<any> { return Promise.re
 export function consumeAuthReturnPath(): string | null { return null; }
 export function consumeRedirectPending(): boolean { return false; }
 export function isUsingFirebaseEmulator(): boolean { return false; }
-export function signInEmulatorWithEmail(): Promise<any> { return Promise.resolve({ error: new Error('Emulators disabled') }); }
+export function signInEmulatorWithEmail(): Promise<any> {
+  const user = signInWithDevAdmin();
+  return Promise.resolve({ user, error: null });
+}
 export function prefersRedirectSignIn(): boolean { return false; }
 
 export async function uploadExpenseAttachment(

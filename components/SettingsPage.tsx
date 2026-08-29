@@ -558,9 +558,9 @@ const SettingsPage: React.FC<Props> = ({
   const handleSignInPopup = async () => {
     setIsSigningInPopup(true);
     try {
-      const user = await signInWithGoogle();
-      if (user) {
-        showToast("Signed in successfully", "success");
+      const res = await signInWithGoogle();
+      if (res?.error) {
+        showToast(getAuthErrorMessage(res.error), "error");
       } else {
         showToast("Redirecting to Google sign-in…", "success");
       }
