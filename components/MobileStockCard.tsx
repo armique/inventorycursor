@@ -149,29 +149,29 @@ export const MobileStockCard: React.FC<{
   return (
     <>
       <article
-        className={`rounded-xl border bg-white px-2.5 py-2 ${
+        className={`rounded-2xl border bg-slate-900/90 border-slate-800 px-3 py-2.5 shadow-lg shadow-black/30 transition-all ${
           item.isPC
-            ? 'border-indigo-200 shadow-[inset_3px_0_0_0_#6366f1]'
+            ? 'border-indigo-500/50 shadow-[inset_4px_0_0_0_#6366f1]'
             : item.isBundle
-              ? 'border-violet-200 shadow-[inset_3px_0_0_0_#8b5cf6]'
+              ? 'border-violet-500/50 shadow-[inset_4px_0_0_0_#8b5cf6]'
               : selected
-                ? `border-slate-900 ring-1 ring-slate-900/10 ${partTone ? partTone.rowAccentClass : ''}`
-                : partTone
-                  ? `border-slate-100 ${partTone.rowAccentClass}`
-                  : 'border-slate-100'
+                ? 'border-emerald-500 ring-1 ring-emerald-500/30'
+                : 'border-slate-800/90 hover:border-slate-700'
         }`}
       >
-        <div className="flex gap-2 items-center">
+        <div className="flex gap-2.5 items-center">
           {onToggleSelect && (
             <button
               type="button"
               onClick={onToggleSelect}
-              className="h-11 w-11 -m-3 shrink-0 flex items-center justify-center"
+              className="h-10 w-8 shrink-0 flex items-center justify-center -ml-1"
               aria-label={selected ? 'Deselect' : 'Select'}
             >
               <span
-                className={`h-5 w-5 rounded border flex items-center justify-center text-[10px] font-black ${
-                  selected ? 'bg-slate-900 border-slate-900 text-white' : 'border-slate-300 bg-white text-transparent'
+                className={`h-5 w-5 rounded-lg border flex items-center justify-center text-[10px] font-black transition-all ${
+                  selected
+                    ? 'bg-emerald-500 border-emerald-500 text-slate-950'
+                    : 'border-slate-700 bg-slate-950 text-transparent'
                 }`}
               >
                 ✓
@@ -182,19 +182,19 @@ export const MobileStockCard: React.FC<{
           <button
             type="button"
             onClick={() => actions.onPhotos(item)}
-            className={`relative shrink-0 rounded-lg ${
-              hasPhotos ? 'ring-1 ring-emerald-500/50' : 'ring-1 ring-dashed ring-amber-400/70'
+            className={`relative shrink-0 rounded-xl overflow-hidden ${
+              hasPhotos ? 'ring-1 ring-emerald-500/50' : 'ring-1 ring-dashed ring-amber-400/50'
             }`}
             title={hasPhotos ? 'Photos' : 'Add photos'}
           >
             <ItemThumbnail
               item={item}
-              className="w-11 h-11 rounded-lg object-cover border border-slate-100 shrink-0"
-              size={44}
+              className="w-13 h-13 rounded-xl object-cover bg-slate-950 border border-slate-800 shrink-0"
+              size={52}
             />
             {!hasPhotos && (
-              <span className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-amber-100 text-amber-700 border border-amber-300 flex items-center justify-center">
-                <ImageOff size={8} />
+              <span className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center justify-center">
+                <ImageOff size={9} />
               </span>
             )}
           </button>
@@ -212,9 +212,54 @@ export const MobileStockCard: React.FC<{
               }}
               className="w-full text-left cursor-pointer"
             >
-              <p className="font-bold text-[13px] leading-tight text-slate-900 line-clamp-1">
+              <div className="flex items-center gap-1.5 mb-1">
+                <span
+                  className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${
+                    inStock
+                      ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                      : item.status === ItemStatus.SOLD
+                        ? 'bg-sky-500/15 text-sky-400 border border-sky-500/30'
+                        : 'bg-purple-500/15 text-purple-400 border border-purple-500/30'
+                  }`}
+                >
+                  {item.status}
+                </span>
+
+                {(item.isPC || item.isBundle) && (
+                  <span className={`text-[10px] font-bold ${item.isPC ? 'text-indigo-400' : 'text-violet-400'}`}>
+                    {item.isPC ? 'PC Build' : 'Bundle'}
+                  </span>
+                )}
+
+                {item.ebayOrderId && (
+                  <span className="text-[9px] font-black text-amber-400 bg-amber-500/10 px-1 py-0.2 rounded border border-amber-500/20">
+                    ⚡ eBay
+                  </span>
+                )}
+              </div>
+
+              <p className="font-black text-[13px] leading-tight text-white line-clamp-1">
                 {item.name}
               </p>
+
+              {/* Price & Profit Row */}
+              <div className="mt-1 flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] font-bold text-slate-400 tabular-nums">
+                  EK <span className="text-slate-200">€{formatEUR(item.buyPrice)}</span>
+                </span>
+
+                {item.sellPrice != null && Number(item.sellPrice) > 0 && (
+                  <span className="text-[11px] font-bold text-slate-400 tabular-nums">
+                    VK <span className="text-white font-black">€{formatEUR(item.sellPrice)}</span>
+                  </span>
+                )}
+
+                {inStock && item.sellPrice != null && Number(item.sellPrice) > Number(item.buyPrice) && (
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-black bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 tabular-nums">
+                    +€{formatEUR(Number(item.sellPrice) - Number(item.buyPrice))}
+                  </span>
+                )}
+              </div>
               {(() => {
                 const split =
                   item.sellPrice != null
@@ -222,72 +267,30 @@ export const MobileStockCard: React.FC<{
                         refundFallbackEur,
                       })
                     : null;
+                if (!split) return null;
                 return (
-                  <>
-                    <p className="mt-0.5 text-[11px] font-semibold text-slate-500 truncate flex items-center gap-1.5">
-                      {(item.isPC || item.isBundle) && (
-                        <span className={item.isPC ? 'text-indigo-600' : 'text-violet-600'}>
-                          {item.isPC ? 'PC · ' : 'Bundle · '}
-                        </span>
-                      )}
-                      {partPill ? (
-                        <span
-                          className={partPill.className}
-                          title={partPill.title}
-                        >
-                          {partPill.label}
-                        </span>
-                      ) : null}
-                      €{formatEUR(item.buyPrice)}
-                      <BuyPriceBumpBadge item={item} />
-                      {item.sellPrice != null && !split ? (
-                        <>
-                          {' · '}
-                          {onSaveShipping && canEditManualSellerShipping(item) ? (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setShippingOpen(true);
-                              }}
-                              className="underline decoration-dotted decoration-slate-400 underline-offset-2 text-slate-800"
-                            >
-                              €{formatEUR(item.sellPrice)}
-                            </button>
-                          ) : (
-                            `€${formatEUR(item.sellPrice)}`
-                          )}
-                        </>
-                      ) : null}
-                      {item.subCategory || item.category
-                        ? ` · ${item.subCategory || item.category}`
-                        : ''}
-                    </p>
-                    {split ? (
-                      <div className="mt-1 flex flex-wrap items-start gap-3">
-                        {onSaveShipping && canEditManualSellerShipping(item) ? (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setShippingOpen(true);
-                            }}
-                            className="text-left"
-                          >
-                            <SellSplitLedger
-                              split={split}
-                              showFees={shouldShowSellCellMarketplaceFees(item, showPriceBreakdown)}
-                            />
-                          </button>
-                        ) : (
-                          <SellSplitLedger
-                            split={split}
-                            showFees={shouldShowSellCellMarketplaceFees(item, showPriceBreakdown)}
-                          />
-                        )}
-                      </div>
-                    ) : null}
-                  </>
+                  <div className="mt-1 flex flex-wrap items-start gap-3">
+                    {onSaveShipping && canEditManualSellerShipping(item) ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShippingOpen(true);
+                        }}
+                        className="text-left"
+                      >
+                        <SellSplitLedger
+                          split={split}
+                          showFees={shouldShowSellCellMarketplaceFees(item, showPriceBreakdown)}
+                        />
+                      </button>
+                    ) : (
+                      <SellSplitLedger
+                        split={split}
+                        showFees={shouldShowSellCellMarketplaceFees(item, showPriceBreakdown)}
+                      />
+                    )}
+                  </div>
                 );
               })()}
               {item.specs && Object.keys(item.specs).length > 0 && (
@@ -534,17 +537,17 @@ export const MobileStockCard: React.FC<{
             <button
               type="button"
               onClick={() => actions.onEdit(item)}
-              className="h-11 w-11 rounded-lg bg-slate-900 text-white inline-flex items-center justify-center"
+              className="h-10 w-10 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 inline-flex items-center justify-center active:scale-95 shadow-sm"
               title="Edit"
               aria-label="Edit"
             >
-              <Edit2 size={16} />
+              <Edit2 size={15} />
             </button>
             <button
               type="button"
               disabled={!inStock}
               onClick={() => actions.onSell(item)}
-              className="h-11 w-11 rounded-lg bg-emerald-600 text-white inline-flex items-center justify-center disabled:opacity-35"
+              className="h-10 w-10 rounded-xl bg-emerald-500 text-slate-950 font-black inline-flex items-center justify-center disabled:opacity-30 disabled:bg-slate-800 disabled:text-slate-500 active:scale-95 shadow-md shadow-emerald-500/20"
               title="Sell"
               aria-label="Sell"
             >
@@ -553,11 +556,11 @@ export const MobileStockCard: React.FC<{
             <button
               type="button"
               onClick={() => setMoreOpen(true)}
-              className="h-11 w-11 rounded-lg border border-slate-200 text-slate-600 inline-flex items-center justify-center"
+              className="h-10 w-10 rounded-xl bg-slate-800/80 border border-slate-700/80 text-slate-300 inline-flex items-center justify-center active:scale-95 shadow-sm"
               title="More"
               aria-label="More actions"
             >
-              <MoreHorizontal size={18} />
+              <MoreHorizontal size={17} />
             </button>
               </>
             )}

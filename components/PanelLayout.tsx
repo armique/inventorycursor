@@ -4,7 +4,7 @@ import {
   Package, Settings, RefreshCw, Trash2, CloudUpload, LayoutDashboard,
   Loader2, Cloud, CheckCircle2, X, Receipt, History, Globe, Layers,
   Printer, LayoutTemplate, ChevronDown, ChevronLeft, ChevronRight, Plus, Images,
-  CircuitBoard, Radar, Coins, ShoppingBag, FileSpreadsheet, MoreHorizontal,
+  CircuitBoard, Radar, Coins, ShoppingBag, FileSpreadsheet, MoreHorizontal, Zap,
 } from 'lucide-react';
 import PanelBreadcrumbs from './PanelBreadcrumbs';
 import { usePanelLocale } from '../context/PanelLocaleContext';
@@ -543,70 +543,70 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
         </div>
       </main>
 
-      {/* MOBILE BOTTOM NAVIGATION */}
-      <nav className="md:hidden fixed bottom-0 inset-x-0 z-[120] border-t border-slate-200 bg-white/95 backdrop-blur-sm pb-safe">
-        <div className="flex justify-around items-stretch py-1 min-h-[56px]">
+      {/* MOBILE BOTTOM NAVIGATION — iPhone 13 Pro Max & Mobile Screens */}
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-[120] border-t border-slate-800 bg-slate-950/95 backdrop-blur-xl pb-safe shadow-2xl">
+        <div className="flex justify-around items-center py-1.5 px-2 min-h-[58px]">
           {[
-            { to: '/panel/dashboard', icon: <LayoutDashboard size={18} />, label: 'Home' },
-            { to: '/panel/inventory', icon: <Package size={18} />, label: 'Stock' },
-            { to: '/panel/add', icon: <Plus size={18} />, label: 'Add' },
-            { action: 'more' as const, icon: <MoreHorizontal size={18} />, label: 'More' },
-            { action: 'settings' as const, icon: <Settings size={18} />, label: 'Settings' },
+            { to: '/panel/dashboard', icon: <LayoutDashboard size={20} />, label: 'Home' },
+            { to: '/panel/inventory', icon: <Package size={20} />, label: 'Stock' },
+            { to: '/panel/add', isPrimary: true, icon: <Plus size={22} />, label: 'Add' },
+            { to: '/panel/ebay-abrechnung', icon: <Zap size={20} />, label: 'eBay' },
+            { action: 'more' as const, icon: <MoreHorizontal size={20} />, label: 'More' },
           ].map((item) => {
-              if ('action' in item && item.action === 'settings') {
-                return (
-                  <button
-                    key="settings"
-                    type="button"
-                    onClick={() => openSettings()}
-                    className="flex flex-col items-center justify-center flex-1 px-1 py-1.5 text-[11px] font-semibold transition-colors text-slate-400"
-                  >
-                    <span className="mb-0.5 inline-flex items-center justify-center rounded-full p-1.5 bg-slate-100 text-slate-500">
-                      {item.icon}
-                    </span>
-                    <span className="truncate">{item.label}</span>
-                  </button>
-                );
-              }
-              if ('action' in item && item.action === 'more') {
-                return (
-                  <button
-                    key="more"
-                    type="button"
-                    onClick={() => setMobileMoreOpen(true)}
-                    className="flex flex-col items-center justify-center flex-1 px-1 py-1.5 text-[11px] font-semibold transition-colors text-slate-400"
-                  >
-                    <span className="mb-0.5 inline-flex items-center justify-center rounded-full p-1.5 bg-slate-100 text-slate-500">
-                      {item.icon}
-                    </span>
-                    <span className="truncate">{item.label}</span>
-                  </button>
-                );
-              }
-              const { to, icon, label } = item as { to: string; icon: React.ReactNode; label: string };
-              const isActive =
-                to === '/panel/add'
-                  ? addHubActive
-                  : location.pathname === to;
+            if ('action' in item && item.action === 'more') {
+              return (
+                <button
+                  key="more"
+                  type="button"
+                  onClick={() => setMobileMoreOpen(true)}
+                  className="flex flex-col items-center justify-center flex-1 py-1 text-[10px] font-bold text-slate-400 active:scale-95 transition-all"
+                >
+                  <span className="mb-0.5 inline-flex items-center justify-center p-1 text-slate-400">
+                    {item.icon}
+                  </span>
+                  <span>{item.label}</span>
+                </button>
+              );
+            }
+
+            const { to, icon, label, isPrimary } = item as {
+              to: string;
+              icon: React.ReactNode;
+              label: string;
+              isPrimary?: boolean;
+            };
+            const isActive = to === '/panel/add' ? addHubActive : location.pathname === to;
+
+            if (isPrimary) {
               return (
                 <Link
                   key={to}
                   to={to}
-                  className={`flex flex-col items-center justify-center flex-1 px-1 py-1.5 text-[11px] font-semibold transition-colors ${
-                    isActive ? 'text-slate-900' : 'text-slate-400'
-                  }`}
+                  className="flex flex-col items-center justify-center -mt-4 active:scale-90 transition-all"
                 >
-                  <span
-                    className={`mb-0.5 inline-flex items-center justify-center rounded-full p-1.5 ${
-                      isActive ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'
-                    }`}
-                  >
+                  <span className="w-12 h-12 rounded-full bg-emerald-500 text-slate-950 flex items-center justify-center shadow-lg shadow-emerald-500/40 border-2 border-slate-950 font-black">
                     {icon}
                   </span>
-                  <span className="truncate">{label}</span>
+                  <span className="text-[10px] font-black text-emerald-400 mt-0.5">{label}</span>
                 </Link>
               );
-            })}
+            }
+
+            return (
+              <Link
+                key={to}
+                to={to}
+                className={`flex flex-col items-center justify-center flex-1 py-1 text-[10px] font-bold active:scale-95 transition-all ${
+                  isActive ? 'text-emerald-400' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <span className={`mb-0.5 inline-flex items-center justify-center p-1 ${isActive ? 'text-emerald-400' : 'text-slate-400'}`}>
+                  {icon}
+                </span>
+                <span>{label}</span>
+              </Link>
+            );
+          })}
         </div>
       </nav>
 

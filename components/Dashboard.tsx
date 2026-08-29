@@ -36,6 +36,7 @@ const DashboardPerformanceChart = lazy(() =>
 const DashboardStockPie = lazy(() =>
   import('./DashboardRecharts').then((m) => ({ default: m.DashboardStockPie }))
 );
+import MobileDashboardView from './MobileDashboardView';
 interface Props {
   items: InventoryItem[];
   expenses?: Expense[];
@@ -955,11 +956,20 @@ const Dashboard: React.FC<Props> = ({
 
   return (
     <>
-    <div className={`h-full min-h-0 w-full animate-in fade-in ${
-      isEmbeddedWorkspaceTab
-        ? 'flex flex-col overflow-hidden pb-2'
-        : 'overflow-y-auto space-y-3 sm:space-y-4 lg:space-y-6 xl:space-y-7 pb-8 lg:pb-10 xl:px-1'
-    }`}>
+      <MobileDashboardView
+        items={items}
+        expenses={expenses || []}
+        monthlyGoal={monthlyGoal}
+        businessSettings={businessSettings}
+        gameStats={gameStats}
+        onOpenQuickAdd={() => navigate('/panel/add')}
+      />
+
+      <div className={`hidden md:block h-full min-h-0 w-full animate-in fade-in ${
+        isEmbeddedWorkspaceTab
+          ? 'flex flex-col overflow-hidden pb-2'
+          : 'overflow-y-auto space-y-3 sm:space-y-4 lg:space-y-6 xl:space-y-7 pb-8 lg:pb-10 xl:px-1'
+      }`}>
       {/* Header + period filters */}
       <header className={`flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between ${isEmbeddedWorkspaceTab ? 'shrink-0 mb-3' : ''}`}>
         <div className="min-w-0">
