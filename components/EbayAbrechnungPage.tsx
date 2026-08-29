@@ -951,8 +951,14 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate, actionH
       if (!orderId) continue;
       const key = orderId.toLowerCase();
       const existing = map.get(key);
-      if (!existing || linkScore(item) > linkScore(existing)) {
+      if (!existing) {
         map.set(key, item);
+      } else {
+        const scoreNew = linkScore(item);
+        const scoreExisting = linkScore(existing);
+        if (scoreNew > scoreExisting || (scoreNew === scoreExisting && item.id.localeCompare(existing.id) < 0)) {
+          map.set(key, item);
+        }
       }
     }
     return map;
@@ -1347,80 +1353,8 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate, actionH
     );
   }, [items, onUpdate, report]);
 
-  // CSV Bestellung date is source of truth for every Abrechnung-linked item.
-  //
-  // `items` and `report` both populate asynchronously on page load (IndexedDB read, then
-  // cloud sync merge; CSV/API-sync report rebuild). Reacting the instant they first become
-  // non-empty means this can run against a still-partially-hydrated snapshot — computing a
-  // "fix" for a row whose real, about-to-arrive data didn't actually need one, then finding
-  // the reverse "fix" once hydration finishes a moment later. That's what shows up as this
-  // note (and the linked-count nearby) never quite settling across reloads. Debouncing past
-  // a quiet period lets the last hydration burst land before we compute/apply anything. Also
-  // gated on cloudReportsSettled — see that flag's comment — so this never even starts its
-  // debounce timer until the actual Firestore pull for these reports has landed.
-  useEffect(() => {
-    if (!report?.rows?.length || !items.length || loading || busy || !cloudReportsSettled) return;
-    const t = setTimeout(() => {
-      const { updates } = backfillEbayTxLinkedSellDates(items, report.rows);
-      if (!updates.length) return;
-      const key = updates
-        .map((item) => `${item.id}:${(item.sellDate || '').slice(0, 10)}`)
-        .sort()
-        .join('|');
-      if (sellDateAutoFixKeyRef.current === key) return;
-      sellDateAutoFixKeyRef.current = key;
-      onUpdate(updates, undefined, {
-        skipFieldPreserve: true,
-        skipMembershipSync: true,
-        skipContainerSync: true,
-        skipContainerSaleMetaSync: true,
-        skipUndo: true,
-        flushCloud: true,
-        actionNote: {
-          action: 'Abrechnung sell dates',
-          details: `${updates.length} linked item(s) ← CSV order dates (auto)`,
-        },
-      });
-      setLinkNote(
-        `Updated sell date on ${updates.length} linked item${updates.length === 1 ? '' : 's'} from CSV.`
-      );
-    }, 800);
-    return () => clearTimeout(t);
-  }, [busy, cloudReportsSettled, items, loading, onUpdate, report]);
-
-  // Auto-revert: an item's OWN order comes back fully refunded — unambiguous (it's that
-  // exact item's sale, no candidate to pick), so this applies without a confirm step. Same
-  // hydration-race debounce as the sell-date effect above, plus the same cloudReportsSettled
-  // gate — this one actually mutates buyPrice/status, so acting on a stale/partial ledger
-  // read during page-load hydration is a real, not just cosmetic, mistake.
-  useEffect(() => {
-    if (!report?.rows?.length || !items.length || loading || busy || !cloudReportsSettled) return;
-    const t = setTimeout(() => {
-      const updates = findOwnOrderFullRefundReverts(items, ledgers);
-      if (!updates.length) return;
-      const key = updates.map((item) => `${item.id}:${item.buyPrice}`).sort().join('|');
-      if (refundRevertAutoFixKeyRef.current === key) return;
-      refundRevertAutoFixKeyRef.current = key;
-      // Unlike the sell-date/matcher auto-fixes above, this touches buyPrice and status —
-      // keep it undoable (no skipUndo) since it's a real financial mutation, even though it
-      // applies without a confirm click.
-      onUpdate(updates, undefined, {
-        skipFieldPreserve: true,
-        skipMembershipSync: true,
-        skipContainerSync: true,
-        skipContainerSaleMetaSync: true,
-        flushCloud: true,
-        actionNote: {
-          action: 'Abrechnung refund revert',
-          details: `${updates.length} item(s) reverted to stock — order fully refunded (auto)`,
-        },
-      });
-      setLinkNote(
-        `Reverted ${updates.length} item${updates.length === 1 ? '' : 's'} to stock — order fully refunded (fee added to buy price).`
-      );
-    }, 800);
-    return () => clearTimeout(t);
-  }, [busy, cloudReportsSettled, items, ledgers, loading, onUpdate, report]);
+  // Manual sell date backfill is available via onBackfillLinkedSellDates button.
+  // Auto-mutation effects on mount are removed to ensure zero state fluctuation across refreshes.
 
   const matcherOrderCount = useMemo(() => {
     if (!report?.rows?.length) return 0;

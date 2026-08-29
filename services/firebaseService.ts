@@ -159,7 +159,10 @@ export function setLocalDataOnlyMode(localOnly: boolean): void {
   window.location.reload();
 }
 
+import { isSupabaseConfigured } from "./supabaseService";
+
 export function isCloudEnabled(): boolean {
+  if (isSupabaseConfigured()) return false;
   if (isLocalDataOnlyMode()) return false;
   const c = getFirebaseConfig();
   return !!(c?.apiKey && c?.projectId);

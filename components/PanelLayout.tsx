@@ -478,31 +478,6 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             <GlobalSearch items={items} expenses={expenses} businessSettings={businessSettings} />
           </div>
         )}
-        {isCloudEnabled && authUser && (
-          <div className="fixed bottom-3 left-3 z-[80] flex flex-col gap-1.5 items-start pointer-events-none max-w-[min(18rem,calc(100vw-1.5rem))]">
-            {syncState.status !== 'idle' && (
-              <button
-                type="button"
-                onClick={() => syncState.status === 'error' && onForcePush?.()}
-                disabled={syncState.status === 'syncing' || syncState.status === 'pending'}
-                className={`pointer-events-auto hidden md:inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold tracking-wide border shadow-lg transition-all ${
-                  syncState.status === 'pending' ? 'bg-sky-50 text-sky-800 border-sky-200' :
-                  syncState.status === 'syncing' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                  syncState.status === 'error' ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100 cursor-pointer' :
-                  'bg-emerald-50 text-emerald-700 border-emerald-200'
-                }`}
-                title={cloudSyncBadgeTitle(syncState)}
-              >
-                {(syncState.status === 'syncing' || syncState.status === 'pending') && (
-                  <Loader2 size={12} className="animate-spin shrink-0" />
-                )}
-                {syncState.status === 'success' && <CheckCircle2 size={12} className="shrink-0 text-emerald-500" />}
-                {syncState.status === 'error' && <RefreshCw size={12} className="shrink-0" />}
-                <span>{cloudSyncBadgeLabel(syncState)}</span>
-              </button>
-            )}
-          </div>
-        )}
         {tabDataStale && (
           <div className="mb-6 flex items-start gap-4 p-4 rounded-2xl bg-red-50 border border-red-200 text-red-900">
             <RefreshCw className="shrink-0 mt-0.5 text-red-600" size={20}/>
@@ -566,28 +541,6 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             </Suspense>
           </div>
         </div>
-        {/* Mobile sync: pending / uploading / error — never cover the stock list */}
-        {(syncState.status === 'pending' || syncState.status === 'syncing' || syncState.status === 'error') && (
-          <button
-            type="button"
-            onClick={() => syncState.status === 'error' && onForcePush?.()}
-            disabled={syncState.status === 'syncing' || syncState.status === 'pending'}
-            className={`md:hidden fixed top-[calc(0.75rem+env(safe-area-inset-top,0px))] right-3 z-[110] px-3 py-2 rounded-full shadow-lg flex items-center gap-2 text-[10px] font-bold tracking-wide border max-w-[min(70vw,16rem)] ${
-              syncState.status === 'error'
-                ? 'bg-red-600 text-white border-red-500'
-                : syncState.status === 'pending'
-                  ? 'bg-sky-900 text-white border-sky-800'
-                  : 'bg-slate-900 text-white border-slate-800'
-            }`}
-            title={cloudSyncBadgeTitle(syncState)}
-          >
-            {(syncState.status === 'syncing' || syncState.status === 'pending') && (
-              <Loader2 size={14} className="animate-spin text-blue-300 shrink-0" />
-            )}
-            {syncState.status === 'error' && <RefreshCw size={14} className="text-white shrink-0" />}
-            <span className="truncate">{cloudSyncBadgeLabel(syncState)}</span>
-          </button>
-        )}
       </main>
 
       {/* MOBILE BOTTOM NAVIGATION */}
