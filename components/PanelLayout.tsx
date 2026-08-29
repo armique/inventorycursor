@@ -19,7 +19,6 @@ import {
   prefersRedirectSignIn,
   prewarmGoogleSignIn,
 } from '../services/firebaseService';
-import QuotaMonitor from './QuotaMonitor';
 import GlobalSearch from './GlobalSearch';
 import { panelSuspenseFallback } from './RouteSkeletons';
 import { InventoryItem, Expense, BusinessSettings } from '../types';
@@ -460,11 +459,6 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             </div>
           )}
         </nav>
-        {!sidebarCollapsed && (
-          <div className="p-4 border-t border-white/5">
-            <QuotaMonitor />
-          </div>
-        )}
       </aside>
       {/* MAIN AREA */}
       <main

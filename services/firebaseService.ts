@@ -76,6 +76,7 @@ import {
   planSyncPackWrites,
   utf8ByteLength,
 } from "../utils/firestoreShardPack";
+import { isSupabaseConfigured } from "./supabaseService";
 
 // --- CONFIG ---
 
@@ -1553,6 +1554,10 @@ export function subscribeToData(
   uid: string,
   onData: (data: FirestoreInventoryPayload | null) => void
 ): Unsubscribe {
+  if (isSupabaseConfigured()) {
+    // Supabase is primary: do not open Firestore onSnapshot listeners
+    return () => {};
+  }
   const ctx = init();
   if (!ctx?.db) {
     onData(null);
@@ -1595,6 +1600,9 @@ export function subscribeToData(
  * Throws on Firestore errors so callers do not treat a failed pull as “empty cloud”.
  */
 export async function fetchFromCloud(): Promise<FirestoreInventoryPayload | null> {
+  if (isSupabaseConfigured()) {
+    return null;
+  }
   const ctx = init();
   const user = ctx?.auth?.currentUser;
   if (!ctx?.db || !user) return null;
@@ -1646,6 +1654,10 @@ export async function writeToCloud(
   data: FirestoreInventoryPayload,
   options?: { allowEmptyOverwrite?: boolean }
 ): Promise<void> {
+  if (isSupabaseConfigured()) {
+    // Supabase is primary: bypass Firestore writes completely to prevent conflicts & timeouts
+    return;
+  }
   const ctx = init();
   const user = ctx?.auth?.currentUser;
   if (!ctx?.db || !user) throw new Error("Not signed in");

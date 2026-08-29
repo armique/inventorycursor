@@ -3,7 +3,6 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useSearchParams, useN
 import { Cloud, CheckCircle2, Loader2, WifiOff, RefreshCw, X } from 'lucide-react';
 
 import PanelLayout from './components/PanelLayout';
-import QuotaMonitor from './components/QuotaMonitor';
 import { SettingsModalProvider } from './context/SettingsModalContext';
 import SettingsModalHost from './components/SettingsModalHost';
 import OpenSettingsFromRoute from './components/OpenSettingsFromRoute';
