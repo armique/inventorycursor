@@ -30,6 +30,8 @@ export interface SupabaseConfig {
 }
 
 const SUPABASE_CONFIG_STORAGE_KEY = 'deinv_supabase_config_v1';
+export const DEFAULT_SUPABASE_URL = 'https://lkmxlwpszekfuzqpqtrb.supabase.co';
+export const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_QR62aggcb-KO0H6pwig2zw_EyoQp0WJ';
 
 export function getSupabaseConfig(): SupabaseConfig | null {
   const envUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim();
@@ -50,7 +52,10 @@ export function getSupabaseConfig(): SupabaseConfig | null {
     }
   }
 
-  return null;
+  return {
+    url: DEFAULT_SUPABASE_URL,
+    anonKey: DEFAULT_SUPABASE_ANON_KEY,
+  };
 }
 
 export function saveSupabaseConfig(config: SupabaseConfig): void {
