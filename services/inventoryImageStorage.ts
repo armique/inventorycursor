@@ -17,6 +17,7 @@ import {
 } from '../utils/imageCompress';
 import { rememberPhotoThumb } from '../utils/photoThumbCache';
 import { CLOUD_OMITTED_PLACEHOLDER, getCurrentUser, isCloudEnabled, uploadItemImageBlob } from './firebaseService';
+import { isSupabaseConfigured, uploadItemPhotoToSupabase } from './supabaseService';
 import type { InventoryItem } from '../types';
 
 const CATEGORY_PLACEHOLDER_IMAGES = new Set(Object.values(CATEGORY_IMAGES));
@@ -46,6 +47,13 @@ const sourceUrlCache = new Map<string, string>();
 /** In-flight dedupe for concurrent imports of the same source URL. */
 const inFlightBySource = new Map<string, Promise<string>>();
 
+export function isSupabaseStorageInventoryUrl(url: string): boolean {
+  const s = url.trim();
+  if (!s) return false;
+  if (!s.startsWith('https://')) return false;
+  return s.includes('.supabase.co/storage/v1/object/public/inventory-images') || s.includes('/storage/v1/object/public/inventory-images');
+}
+
 export function isFirebaseStorageInventoryUrl(url: string): boolean {
   const s = url.trim();
   if (!s) return false;
@@ -54,9 +62,11 @@ export function isFirebaseStorageInventoryUrl(url: string): boolean {
   return s.includes('/items%2F') || s.includes('/items/');
 }
 
-/** Durable Firebase Storage URLs for inventory items OR AI product-card gallery. */
-export function isDurableFirebaseStorageUrl(url: string): boolean {
+/** Durable Storage URLs for inventory items OR AI product-card gallery. */
+export function isDurableStorageUrl(url: string): boolean {
   const s = url.trim();
+  if (!s) return false;
+  if (isSupabaseStorageInventoryUrl(s)) return true;
   if (!s.startsWith('https://')) return false;
   if (!s.includes('firebasestorage.googleapis.com') && !s.includes('firebasestorage.app')) return false;
   return (
@@ -66,6 +76,8 @@ export function isDurableFirebaseStorageUrl(url: string): boolean {
     s.includes('/product-cards/')
   );
 }
+
+export const isDurableFirebaseStorageUrl = isDurableStorageUrl;
 
 function isRemoteHttpUrl(url: string): boolean {
   const s = url.trim();
@@ -77,7 +89,7 @@ function isDataImageUrl(url: string): boolean {
 }
 
 function canUploadToCloud(): boolean {
-  return isCloudEnabled() && Boolean(getCurrentUser());
+  return isSupabaseConfigured() || (isCloudEnabled() && Boolean(getCurrentUser()));
 }
 
 export function canArchivePhotosToCloud(): boolean {
@@ -89,7 +101,7 @@ export function urlNeedsPhotoArchive(url: string | undefined | null): boolean {
   if (!s) return false;
   if (s === CLOUD_OMITTED_PLACEHOLDER) return false;
   if (isCategoryPlaceholderImage(s)) return false;
-  if (isFirebaseStorageInventoryUrl(s) || isDurableFirebaseStorageUrl(s)) return false;
+  if (isSupabaseStorageInventoryUrl(s) || isFirebaseStorageInventoryUrl(s) || isDurableStorageUrl(s)) return false;
   return isRemoteHttpUrl(s) || isDataImageUrl(s);
 }
 
@@ -438,6 +450,16 @@ async function fetchRemoteImageBlob(url: string): Promise<Blob> {
 async function uploadJpegWithOptionalThumb(jpeg: Blob, itemId: string): Promise<string> {
   const hash = await hashBlob(jpeg);
   const folder = itemId.trim() || 'shared';
+
+  if (isSupabaseConfigured()) {
+    try {
+      const sbUrl = await uploadItemPhotoToSupabase(folder, jpeg, `${hash}.jpg`);
+      return sbUrl;
+    } catch (e) {
+      console.warn('[supabase] Photo upload failed, falling back:', e);
+    }
+  }
+
   const originalUrl = await uploadItemImageBlob(jpeg, folder, `${hash}.jpg`);
   try {
     const thumb = await compressBlobToJpeg(jpeg, INVENTORY_PHOTO_THUMB_OPTIONS);

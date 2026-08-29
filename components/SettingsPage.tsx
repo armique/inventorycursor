@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { 
   Cloud, Building2, Layers, Wrench, ShoppingBag, Shield,
@@ -1564,13 +1564,13 @@ const SettingsPage: React.FC<Props> = ({
                    )}
                 </div>
 
-                {/* Photo archive → Firebase Storage */}
+                {/* Photo archive → Supabase Storage */}
                 <div className="bg-white p-6 rounded-[3rem] border border-slate-200 shadow-sm space-y-4">
                    <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                      <Images size={22} className="text-blue-600" /> Photo archive (Firebase Storage)
+                      <Images size={22} className="text-blue-600" /> Photo archive (Supabase Storage)
                    </h3>
                    <p className="text-sm text-slate-500 leading-relaxed">
-                      Turn existing eBay, search, and pasted image links into permanent copies in Firebase Storage.
+                      Turn existing eBay, search, and pasted image links into permanent copies in Supabase Storage (`inventory-images`).
                       You do <strong>not</strong> need to refetch from eBay — the app downloads from the URL already on each item.
                    </p>
 
