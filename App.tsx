@@ -1203,16 +1203,37 @@ const App: React.FC = () => {
       return;
     }
 
+    const taxMode = businessSettingsRef.current.taxMode;
     const migratedInv = inv.map(migrateContainerItem);
     const { items: filledInv, updatedCount: filledCount } = backfillContainerBuyDates(migratedInv);
-    const ramFix = applyCrucialRamInvoiceSaleFix(filledInv, businessSettingsRef.current.taxMode);
-    const integralKit = restoreIntegralRamKit(ramFix.changed ? ramFix.items : filledInv, tr);
+    const ramFix = applyCrucialRamInvoiceSaleFix(filledInv, taxMode);
+    const asusFix = applyAsusGtx1080RogStrixHubSaleFix(ramFix.changed ? ramFix.items : filledInv, taxMode);
+    const rxFix = applyRx6500XtHubSellSync(asusFix.changed ? asusFix.items : (ramFix.changed ? ramFix.items : filledInv), taxMode);
+    const evoFix = applySamsungEvo840RefundResale(rxFix.changed ? rxFix.items : (asusFix.changed ? asusFix.items : (ramFix.changed ? ramFix.items : filledInv)), taxMode);
+    const integralKit = restoreIntegralRamKit(evoFix.changed ? evoFix.items : (rxFix.changed ? rxFix.items : (asusFix.changed ? asusFix.items : (ramFix.changed ? ramFix.items : filledInv))), tr);
     const asusPc = restoreAsusA320mPcSale(integralKit.items);
     const healedParts = healActiveContainerPartMembership(asusPc.items);
-    if (filledCount > 0 || ramFix.changed || integralKit.changed || asusPc.changed || healedParts.changed) {
+    if (
+      filledCount > 0 ||
+      ramFix.changed ||
+      asusFix.changed ||
+      rxFix.changed ||
+      evoFix.changed ||
+      integralKit.changed ||
+      asusPc.changed ||
+      healedParts.changed
+    ) {
       requestFastCloudFlush();
       hasUnsavedChanges.current = true;
-      if (ramFix.changed || integralKit.changed || asusPc.changed || healedParts.changed) {
+      if (
+        ramFix.changed ||
+        asusFix.changed ||
+        rxFix.changed ||
+        evoFix.changed ||
+        integralKit.changed ||
+        asusPc.changed ||
+        healedParts.changed
+      ) {
         pendingCloudPushAfterRemoteRef.current = true;
       }
     }
