@@ -3338,59 +3338,69 @@ function TxCard({
 }) {
   const { detail, isOrder, isFullRefund, isPartialRefund, ads, label, fvf, pocket, realOrderId, orderUrl } =
     deriveTxRowDisplay(row, ledger, refundState);
-  const cardTone = isFullRefund
-    ? 'border-red-200 bg-red-50/70'
-    : isPartialRefund
-      ? 'border-amber-200 bg-amber-50/50'
-      : row.source === 'inventory'
-        ? 'border-sky-100 bg-sky-50/40'
-        : 'border-slate-200 bg-white';
+  const profitEur = linked && linked.buyPrice != null ? roundMoney(pocket - Number(linked.buyPrice)) : null;
+  const profitMargin = profitEur != null && pocket > 0 ? Math.round((profitEur / pocket) * 100) : null;
 
   return (
-    <div className={`rounded-xl border px-3 py-2.5 ${cardTone}`}>
+    <div className={`rounded-2xl border px-3.5 py-3 shadow-lg shadow-black/40 ${
+      isFullRefund
+        ? 'border-red-900/60 bg-red-950/40 text-red-100'
+        : isPartialRefund
+          ? 'border-amber-900/60 bg-amber-950/40 text-amber-100'
+          : linked
+            ? 'border-emerald-500/40 bg-slate-900/95 text-slate-100 ring-1 ring-emerald-500/20'
+            : 'border-slate-800 bg-slate-900 text-slate-100'
+    }`}>
+      {/* Top Header: Date, Kind, and External eBay Link */}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-[10px] font-bold text-slate-500 tabular-nums">{row.createdAt || '—'}</span>
-            <span className={`inline-flex px-1.5 py-0.5 rounded border text-[10px] font-bold ${KIND_TONE[row.kind]}`}>
+            <span className="text-[10px] font-bold text-slate-400 tabular-nums">{row.createdAt || '—'}</span>
+            <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold ${KIND_TONE[row.kind]}`}>
               {row.typeRaw || classifyEbayTxType(row.typeRaw)}
             </span>
-            {isFullRefund ? <span className="text-[10px] font-bold text-red-600">Refunded</span> : null}
-            {isPartialRefund ? <span className="text-[10px] font-bold text-amber-600">Partial refund</span> : null}
+            {isFullRefund ? <span className="text-[10px] font-black text-red-400 bg-red-500/15 px-1 rounded border border-red-500/30">Refunded</span> : null}
+            {isPartialRefund ? <span className="text-[10px] font-black text-amber-400 bg-amber-500/15 px-1 rounded border border-amber-500/30">Partial refund</span> : null}
           </div>
-          <p className="mt-1 text-sm font-semibold text-slate-800 truncate">{detail}</p>
-          <p className="text-[11px] text-slate-500 truncate">{row.buyerUsername || row.buyerName || '—'}</p>
+          <p className="mt-1 text-sm font-black text-white truncate">{detail}</p>
+          <p className="text-[11px] font-semibold text-slate-400 truncate">
+            {row.buyerUsername ? `Buyer: ${row.buyerUsername}` : row.buyerName || '—'}
+            {row.orderId ? ` · #${row.orderId}` : ''}
+          </p>
         </div>
-        {orderUrl ? (
-          <a
-            href={orderUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-sky-300 bg-sky-50 text-sky-700"
-            title={`Open eBay order ${row.orderId} ↗`}
-            aria-label={`Open eBay order ${row.orderId}`}
-          >
-            <ExternalLink size={14} strokeWidth={2.25} />
-          </a>
-        ) : null}
-        {onToggleNeedsReview ? (
-          <button
-            type="button"
-            onClick={onToggleNeedsReview}
-            className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border ${
-              needsReview
-                ? 'border-violet-300 bg-violet-100 text-violet-700'
-                : 'border-slate-200 bg-white text-slate-400'
-            }`}
-            title={needsReview ? 'Flagged for review — tap to clear' : 'Flag this order for review'}
-            aria-label="Toggle needs review"
-          >
-            <Flag size={16} strokeWidth={2.25} />
-          </button>
-        ) : null}
+        <div className="flex items-center gap-1 shrink-0">
+          {orderUrl ? (
+            <a
+              href={orderUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-sky-500/40 bg-sky-950/40 text-sky-400 hover:bg-sky-900"
+              title={`Open eBay order ${row.orderId} ↗`}
+              aria-label={`Open eBay order ${row.orderId}`}
+            >
+              <ExternalLink size={14} strokeWidth={2.25} />
+            </a>
+          ) : null}
+          {onToggleNeedsReview ? (
+            <button
+              type="button"
+              onClick={onToggleNeedsReview}
+              className={`inline-flex h-9 w-9 items-center justify-center rounded-xl border ${
+                needsReview
+                  ? 'border-violet-500/50 bg-violet-950/50 text-violet-400'
+                  : 'border-slate-800 bg-slate-950 text-slate-500'
+              }`}
+              title={needsReview ? 'Flagged for review — tap to clear' : 'Flag this order for review'}
+              aria-label="Toggle needs review"
+            >
+              <Flag size={14} strokeWidth={2.25} />
+            </button>
+          ) : null}
+        </div>
       </div>
 
-      <div className="mt-2 grid grid-cols-4 gap-x-2 gap-y-1.5 text-[11px]">
+      {/* Financial Breakdown Grid */}
+      <div className="mt-2.5 pt-2.5 border-t border-slate-800/80 grid grid-cols-4 gap-x-2 gap-y-1.5 text-[11px]">
         <Stat label="Item" value={row.itemSubtotalEur} cls={amountClass(row.itemSubtotalEur)} />
         <Stat label="Ship" value={row.shippingEur} cls={amountClass(row.shippingEur)} />
         <Stat label="FVF" value={fvf} cls={deductionClass(fvf)} />
@@ -3410,49 +3420,69 @@ function TxCard({
           />
         </div>
         <Stat label="Gross" value={row.grossEur} cls={amountClass(row.grossEur)} />
-        <div className="col-span-2 min-w-0" title={isOrder ? 'Item + buyer ship − FVF − ads − label' : undefined}>
-          <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Pocket</p>
-          <p className={`tabular-nums font-black ${pocketClass(pocket)}`}>{formatSigned(pocket)}</p>
+        <div className="col-span-2 min-w-0">
+          <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Pocket Payout</p>
+          <p className={`tabular-nums font-black text-sm ${pocketClass(pocket)}`}>{formatSigned(pocket)}</p>
         </div>
       </div>
 
+      {/* Connected Inventory Item Box */}
       {isOrder && realOrderId ? (
-        <div className="mt-2.5 flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={onMatch}
-            className={`inline-flex flex-1 min-w-0 min-h-11 items-center justify-center gap-1.5 px-2 py-2.5 rounded-lg border text-xs font-bold ${
-              linked
-                ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                : isFullRefund && feeAbsorbedItem
-                  ? 'border-violet-300 bg-violet-100 text-violet-900'
-                  : isFullRefund
-                    ? 'border-red-200 bg-red-50 text-red-700'
-                    : 'border-slate-200 bg-white text-slate-600'
-            }`}
-          >
-            {linked || feeAbsorbedItem ? <CheckCircle2 size={13} className="shrink-0" /> : <Link2 size={13} className="shrink-0" />}
-            <span className="truncate">
-              {linked
-                ? linked.name
-                : isFullRefund && feeAbsorbedItem
-                  ? `Absorbed → ${feeAbsorbedItem.name}`
-                  : isFullRefund
-                    ? 'Refunded — find match'
-                    : 'Match item'}
-            </span>
-          </button>
-          {linked && onUnlinkItem && row.orderId ? (
+        <div className="mt-3 pt-3 border-t border-slate-800/80">
+          {linked ? (
+            <div className="rounded-xl bg-slate-950/80 border border-emerald-500/30 p-2.5 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                  <CheckCircle2 size={12} className="text-emerald-400" /> Connected Item
+                </span>
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                  Linked
+                </span>
+              </div>
+              <p className="text-xs font-bold text-white truncate">{linked.name}</p>
+              <div className="flex items-center justify-between text-[11px] pt-0.5">
+                <span className="text-slate-400 font-semibold">
+                  EK: <span className="text-slate-200">€{formatEUR(linked.buyPrice)}</span>
+                </span>
+                {profitEur != null && (
+                  <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 tabular-nums">
+                    Net Profit +€{formatEUR(profitEur)} {profitMargin != null ? `(+${profitMargin}%)` : ''}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5 pt-1">
+                <button
+                  type="button"
+                  onClick={onMatch}
+                  className="flex-1 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-[11px] font-bold text-slate-200 hover:text-white"
+                >
+                  View Details
+                </button>
+                {onUnlinkItem && row.orderId && (
+                  <button
+                    type="button"
+                    onClick={() => onUnlinkItem(linked, row.orderId)}
+                    className="px-2.5 py-1.5 rounded-lg border border-purple-500/30 bg-purple-950/40 text-[11px] font-bold text-purple-300 hover:bg-purple-900/50"
+                  >
+                    Unlink
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
             <button
               type="button"
-              onClick={() => onUnlinkItem(linked, row.orderId)}
-              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-purple-200 bg-purple-50 text-purple-700"
-              title={`Unlink ${linked.name}`}
-              aria-label={`Unlink ${linked.name} from order ${row.orderId}`}
+              onClick={onMatch}
+              className={`w-full py-2.5 rounded-xl border text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 active:scale-98 transition-all ${
+                isFullRefund
+                  ? 'border-red-500/40 bg-red-950/40 text-red-300'
+                  : 'border-sky-500/40 bg-sky-950/40 text-sky-300 hover:bg-sky-900/50 shadow-md shadow-sky-950/20'
+              }`}
             >
-              <Unlink size={15} strokeWidth={2.25} />
+              <Link2 size={14} />
+              {isFullRefund ? 'Refunded — Find Match' : 'Match Inventory Item'}
             </button>
-          ) : null}
+          )}
         </div>
       ) : null}
     </div>
