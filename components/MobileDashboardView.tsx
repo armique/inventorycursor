@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   Tag,
   DollarSign,
+  Settings,
 } from 'lucide-react';
 import { InventoryItem, Expense, BusinessSettings, ItemStatus } from '../types';
 import { formatEUR } from '../utils/formatMoney';
@@ -108,9 +109,10 @@ export const MobileDashboardView: React.FC<MobileDashboardViewProps> = ({
         <button
           type="button"
           onClick={() => navigate('/panel/settings')}
-          className="px-2.5 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs font-bold text-slate-300 hover:text-white flex items-center gap-1 shadow-sm"
+          className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white flex items-center justify-center shadow-sm"
+          aria-label="Settings"
         >
-          {gameStats.currentLevel.name}
+          <Settings size={16} />
         </button>
       </div>
 

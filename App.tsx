@@ -48,7 +48,7 @@ import {
   snapshotThreeDPrintCloudNow,
   type ThreeDPrintCloudState,
 } from './services/threeDPrintCloud';
-import { isCloudEnabled, onAuthChange, subscribeToData, writeToCloud, writeStoreCatalog, getSyncErrorMessage, CLOUD_OMITTED_PLACEHOLDER, fetchGamificationState, writeGamificationState, completeGoogleRedirectSignIn, consumeAuthReturnPath, consumeRedirectPending, getAuthErrorMessage } from './services/firebaseService';
+import { isCloudEnabled, onAuthChange, subscribeToData, writeToCloud, writeStoreCatalog, getSyncErrorMessage, CLOUD_OMITTED_PLACEHOLDER, completeGoogleRedirectSignIn, consumeAuthReturnPath, consumeRedirectPending, getAuthErrorMessage } from './services/firebaseService';
 import {
   saveItemChangesToSupabase,
   isSupabaseConfigured,
@@ -59,14 +59,6 @@ import {
 import { runWeeklyPhotoPruneIfDue } from './services/photoPruneService';
 import { computeItemHistoryDiff, appendItemHistoryEntry } from './utils/itemHistoryDiff';
 import { withTimeout } from './utils/withTimeout';
-import {
-  defaultGamificationState,
-  ensureFreshDay,
-  ensureFreshMonth,
-  loadGamificationStateLocal,
-  saveGamificationStateLocal,
-  type GamificationState,
-} from './utils/gamification';
 import { runDailyBackupIfDue } from './services/backupService';
 import { pullOrderIndexFromCloud } from './services/ebayOrderIndex';
 import { pullPurchaseIndexFromCloud } from './services/ebayPurchaseIndex';
@@ -658,30 +650,10 @@ const App: React.FC = () => {
 
   const [threeDPrintCloud, setThreeDPrintCloud] = useState<ThreeDPrintCloudState>(() => composeThreeDPrintCloudFromLocal());
   const applyingRemote3dRef = useRef(false);
-  const [gamification, setGamificationState] = useState<GamificationState>(() =>
-    ensureFreshMonth(ensureFreshDay(loadGamificationStateLocal())),
-  );
-  const gamificationPulledRef = useRef(false);
   const dailyBackupRanRef = useRef(false);
   const dailyGitHubBackupRanRef = useRef(false);
   const githubBackupInFlightRef = useRef(false);
   const ebayTxDailyExportRanRef = useRef(false);
-  const gamificationWriteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const updateGamification = useCallback((updater: (prev: GamificationState) => GamificationState) => {
-    setGamificationState((prev) => {
-      const next = ensureFreshMonth(ensureFreshDay(updater(ensureFreshDay(prev))));
-      saveGamificationStateLocal(next);
-      if (isCloudEnabled()) {
-        if (gamificationWriteTimer.current) clearTimeout(gamificationWriteTimer.current);
-        gamificationWriteTimer.current = setTimeout(() => {
-          writeGamificationState(next as unknown as Record<string, unknown>).catch((e) =>
-            console.warn('Gamification cloud write failed:', e),
-          );
-        }, 1500);
-      }
-      return next;
-    });
-  }, []);
   const dashboardPrefsRef = useRef(dashboardPrefs);
   const threeDPrintCloudRef = useRef(threeDPrintCloud);
   const threeDPrintCloudSeededRef = useRef(false);
@@ -1799,21 +1771,6 @@ const App: React.FC = () => {
     }, 35000);
     return () => clearTimeout(t);
   }, [appState]);
-
-  // Hydrate Reinvest gamification state (bank, quests, achievements) from its own doc — same
-  // pull-on-boot pattern as the eBay indexes above, kept out of the main syncPack blob.
-  useEffect(() => {
-    if (!authUser || !isCloudEnabled() || gamificationPulledRef.current) return;
-    gamificationPulledRef.current = true;
-    void fetchGamificationState()
-      .then((remote) => {
-        if (!remote) return;
-        setGamificationState(
-          ensureFreshMonth(ensureFreshDay({ ...defaultGamificationState(), ...remote } as GamificationState)),
-        );
-      })
-      .catch((e) => console.warn('Gamification cloud pull failed:', e));
-  }, [authUser]);
 
   // Daily off-site snapshot to Firebase Storage. Runs once per local calendar day, built from
   // the already-loaded app state (zero extra Firestore reads) and deferred well past first paint
@@ -3221,8 +3178,6 @@ const App: React.FC = () => {
                 expenses={expenses}
                 businessSettings={businessSettings}
                 onUpdateItems={handleUpdate}
-                gamification={gamification}
-                updateGamification={updateGamification}
               />
               <SettingsModalHost
                 items={items}
@@ -3280,8 +3235,6 @@ const App: React.FC = () => {
                 items={items}
                 expenses={expenses}
                 taxMode={businessSettings.taxMode}
-                gamification={gamification}
-                updateGamification={updateGamification}
               />
             }
           />

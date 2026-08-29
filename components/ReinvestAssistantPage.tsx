@@ -6,7 +6,6 @@ import { loadReinvestFees, type ReinvestFees } from '../utils/reinvestFees';
 import { saveFlipFees, totalEbayFeePct, type FlipFeeSettings } from '../utils/flipCoach';
 import { loadReinvestMarginOverrides } from '../utils/reinvestSettings';
 import { canUseReinvestAI, generateReinvestHypotheses, hypothesisToGroup } from '../services/reinvestAI';
-import { markQuestDone, type GamificationState } from '../utils/gamification';
 import { formatEURPrefix } from '../utils/formatMoney';
 import { computeCategoryBudgetsDetailed } from '../utils/categoryBudgets';
 import { detectReinvestSuspicions, applySuspicionAnswersToGroups } from '../utils/reinvestSuspicion';
@@ -17,11 +16,9 @@ import ReinvestCheatSheet from './reinvest/ReinvestCheatSheet';
 import ReinvestBestSellers from './reinvest/ReinvestBestSellers';
 import ReinvestStockedStrip from './reinvest/ReinvestStockedStrip';
 import ReinvestSkipList from './reinvest/ReinvestSkipList';
-import ReinvestGameTab from './reinvest/ReinvestGameTab';
 import ReinvestCategoryBudgets from './reinvest/ReinvestCategoryBudgets';
 import ReinvestStockGaps from './reinvest/ReinvestStockGaps';
 import ReinvestTodayBriefPanel from './reinvest/ReinvestTodayBrief';
-import ReinvestScenarios from './reinvest/ReinvestScenarios';
 import CapitalReserveCard from './CapitalReserveCard';
 import MaxBuyPanel from './MaxBuyPanel';
 import { computeRepeatWinners } from '../utils/repeatWinners';
@@ -31,15 +28,13 @@ type Props = {
   items: InventoryItem[];
   expenses: Expense[];
   taxMode: TaxMode;
-  gamification: GamificationState;
-  updateGamification: (updater: (prev: GamificationState) => GamificationState) => void;
 };
 
-type View = 'buylist' | 'progress' | 'planning';
+type View = 'buylist' | 'planning';
 
 const ReinvestAdvisorTab = lazy(() => import('./reinvest/ReinvestAdvisorTab'));
 
-const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gamification, updateGamification }) => {
+const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode }) => {
   const [view, setView] = useState<View>('buylist');
   const [buyListMode, setBuyListMode] = useState<'cards' | 'table'>('cards');
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -98,93 +93,90 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
     () =>
       detectReinvestSuspicions({
         items,
-        data: { ...data, variants: adjustedVariants, bundles: adjustedBundles },
-        budgets: budgetsDetailed,
-        answers,
+        variants: data.variants,
+        bundles: data.bundles,
+        agingCount: data.agingListings.length,
       }),
-    [items, data, adjustedVariants, adjustedBundles, budgetsDetailed, answers],
+    [items, data.variants, data.bundles, data.agingListings.length],
   );
 
   const todayBrief = useMemo(
     () =>
       buildReinvestTodayBrief({
-        restock,
-        skipped,
+        variants: adjustedVariants,
+        bundles: adjustedBundles,
+        aging: data.agingListings,
         suspicions,
+        answers,
         items,
-        fees,
-        gamification,
-        intentFilter,
       }),
-    [restock, skipped, suspicions, items, fees, gamification, intentFilter],
+    [adjustedVariants, adjustedBundles, data.agingListings, suspicions, answers, items],
   );
 
-  const opportunity = useMemo(
-    () => restock.reduce((sum, g) => sum + Math.max(0, g.targetStock - g.currentStock) * Math.max(0, g.allInclAvgProfit), 0),
-    [restock],
-  );
-
-  const winners = useMemo(() => computeRepeatWinners(items, 6), [items]);
-
-  const displayRestock = useMemo(() => {
-    if (intentFilter === 'kit') return restock.filter((g) => g.kind === 'bundle');
-    if (intentFilter === 'standalone') return restock.filter((g) => g.kind !== 'bundle');
-    return restock;
-  }, [restock, intentFilter]);
+  const winners = useMemo(() => computeRepeatWinners(items), [items]);
 
   useEffect(() => {
     if (!focusGroupKey) return;
-    const el = document.querySelector(`[data-reinvest-group="${CSS.escape(focusGroupKey)}"]`);
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    setFocusGroupKey(null);
-  }, [focusGroupKey, buyListMode, view]);
+    const el = document.querySelector(`[data-reinvest-group="${focusGroupKey}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('ring-2', 'ring-brand-500', 'ring-offset-2');
+      const t = setTimeout(() => el.classList.remove('ring-2', 'ring-brand-500', 'ring-offset-2'), 2500);
+      return () => clearTimeout(t);
+    }
+  }, [focusGroupKey]);
 
   useEffect(() => {
     if (!canUseReinvestAI()) return;
-    let cancelled = false;
+    let cancel = false;
     setLoadingHypotheses(true);
-    const knownCategories = Array.from(
-      new Set(items.map((i) => i.subCategory || i.category).filter(Boolean)),
-    ) as string[];
-    const avgBuy = data.variants.length
-      ? data.variants.reduce((sum, g) => sum + g.avgBuyPrice, 0) / data.variants.length
-      : 0;
-    generateReinvestHypotheses(knownCategories, avgBuy, 3, data.adjacentCategories)
-      .then((list) => {
-        if (!cancelled) setAiHypotheses(list.map(hypothesisToGroup));
+    generateReinvestHypotheses(data.variants)
+      .then((hyps) => {
+        if (cancel) return;
+        setAiHypotheses(hyps.map(hypothesisToGroup));
+      })
+      .catch((err) => {
+        if (cancel) return;
+        console.warn('AI Reinvest hypotheses failed:', err);
       })
       .finally(() => {
-        if (!cancelled) setLoadingHypotheses(false);
+        if (!cancel) setLoadingHypotheses(false);
       });
     return () => {
-      cancelled = true;
+      cancel = true;
     };
-    // Mount-only: regenerating AI ideas on every inventory edit would spam the AI provider.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [data.variants]);
 
-  const updateFees = (patch: Partial<FlipFeeSettings>) => {
-    const next: FlipFeeSettings = {
-      ebayFeePct: patch.ebayFeePct ?? fees.ebayFeePct,
-      ebayAdsPct: patch.ebayAdsPct ?? fees.ebayAdsPct,
-    };
-    saveFlipFees(next);
-    setFees(loadReinvestFees());
+  const updateFees = (partial: Partial<ReinvestFees>) => {
+    setFees((prev) => {
+      const next = { ...prev, ...partial };
+      const flipSettings: FlipFeeSettings = {
+        ebayFeePct: next.ebayFeePct,
+        adsPct: next.ebayAdsPct,
+        manualOverride: true,
+      };
+      saveFlipFees(flipSettings);
+      return next;
+    });
   };
 
-  const nothingToShow = !displayRestock.length && !hypotheses.length && !loadingHypotheses;
+  const opportunity = useMemo(() => {
+    const sumRestock = restock.reduce((acc, g) => acc + g.avgProfit, 0);
+    return sumRestock;
+  }, [restock]);
 
-  const handlePurchaseConfirmed = (buyPrice: number) => {
-    updateGamification((prev) => ({
-      ...prev,
-      reinvestRookie: true,
-      dailyBudget: { ...prev.dailyBudget, spentVirtual: prev.dailyBudget.spentVirtual + Math.max(0, buyPrice) },
-    }));
-  };
+  const displayRestock = useMemo(() => {
+    if (intentFilter === 'standalone') return restock.filter((g) => g.kind === 'variant');
+    if (intentFilter === 'kit') return restock.filter((g) => g.kind === 'bundle');
+    return restock;
+  }, [restock, intentFilter]);
 
-  const handleHypothesisSearchOpened = (groupKey: string) => {
-    updateGamification((prev) => markQuestDone(prev, `try-hypothesis-${groupKey}`));
-  };
+  const nothingToShow =
+    displayRestock.length === 0 &&
+    bundleFocus.length === 0 &&
+    stocked.length === 0 &&
+    skipped.length === 0 &&
+    hypotheses.length === 0;
 
   return (
     <div className="reinvest-shell space-y-5 pb-10">
@@ -196,9 +188,6 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
           <button type="button" aria-pressed={view === 'buylist'} onClick={() => setView('buylist')}>
             Buy
           </button>
-          <button type="button" aria-pressed={view === 'progress'} onClick={() => setView('progress')}>
-            Progress
-          </button>
           <button type="button" aria-pressed={view === 'planning'} onClick={() => setView('planning')}>
             Plan
           </button>
@@ -207,7 +196,7 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
 
       {view === 'buylist' && (
         <div className="space-y-3">
-          <CapitalReserveCard cashOnHand={(gamification.bankBalance || 0) + (gamification.circulationBalance || 0)} />
+          <CapitalReserveCard cashOnHand={0} />
           <MaxBuyPanel items={items} compact />
           {winners.length > 0 && (
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2.5">
@@ -253,18 +242,6 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
           onAnswer={(suspicion, optionId) => {
             setAnswers(saveReinvestUserAnswer(suspicion.id, optionId));
           }}
-        />
-      )}
-
-      {view === 'buylist' && (
-        <ReinvestScenarios
-          items={items}
-          data={data}
-          budgets={budgetsDetailed}
-          restock={restock}
-          skipped={skipped}
-          fees={fees}
-          gamification={gamification}
         />
       )}
 
@@ -352,22 +329,13 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
         </button>
       )}
 
-      {view === 'progress' ? (
-        <ReinvestGameTab
-          items={items}
-          reinvestData={data}
-          gamification={gamification}
-          updateGamification={updateGamification}
-        />
-      ) : view === 'planning' ? (
+      {view === 'planning' ? (
         <Suspense fallback={<div className="h-64 rounded-xl bg-[var(--rx-soft)] animate-pulse" />}>
           <ReinvestAdvisorTab
             items={items}
             expenses={expenses}
             taxMode={taxMode}
             reinvestData={data}
-            gamification={gamification}
-            updateGamification={updateGamification}
           />
         </Suspense>
       ) : buyListMode === 'table' ? (
@@ -396,8 +364,8 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
                       group={g}
                       fees={fees}
                       initialMarginPct={marginOverrides[g.key]}
-                      onPurchaseConfirmed={handlePurchaseConfirmed}
-                      onOpenHypothesisSearch={handleHypothesisSearchOpened}
+                      onPurchaseConfirmed={() => {}}
+                      onOpenHypothesisSearch={() => {}}
                     />
                   </div>
                 ))}
@@ -415,8 +383,8 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
                     group={g}
                     fees={fees}
                     initialMarginPct={marginOverrides[g.key]}
-                    onPurchaseConfirmed={handlePurchaseConfirmed}
-                    onOpenHypothesisSearch={handleHypothesisSearchOpened}
+                    onPurchaseConfirmed={() => {}}
+                    onOpenHypothesisSearch={() => {}}
                   />
                 ))}
               </div>
@@ -439,8 +407,8 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
                       group={g}
                       fees={fees}
                       initialMarginPct={marginOverrides[g.key]}
-                      onPurchaseConfirmed={handlePurchaseConfirmed}
-                      onOpenHypothesisSearch={handleHypothesisSearchOpened}
+                      onPurchaseConfirmed={() => {}}
+                      onOpenHypothesisSearch={() => {}}
                     />
                   ))}
                 </div>

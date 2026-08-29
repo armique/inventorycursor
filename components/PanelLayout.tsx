@@ -23,9 +23,6 @@ import GlobalSearch from './GlobalSearch';
 import { panelSuspenseFallback } from './RouteSkeletons';
 import { InventoryItem, Expense, BusinessSettings } from '../types';
 import { cloudSyncBadgeLabel, cloudSyncBadgeTitle } from '../utils/cloudSyncStatus';
-import { defaultGamificationState, type GamificationState } from '../utils/gamification';
-import { useGamificationEvents } from '../hooks/useGamificationEvents';
-import GamificationEventLayer from './gamification/GamificationEventLayer';
 import { useStaleDealCount } from '../hooks/useInboxAlerts';
 
 interface SyncState {
@@ -50,11 +47,9 @@ interface PanelLayoutProps {
   expenses?: Expense[];
   businessSettings?: BusinessSettings;
   onUpdateItems?: (items: InventoryItem[], deleteIds?: string[]) => void;
-  gamification?: GamificationState;
-  updateGamification?: (updater: (prev: GamificationState) => GamificationState) => void;
 }
 
-const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, authReady = false, isAdmin = false, syncState = { status: 'idle', lastSynced: null }, onForcePush, backupBannerDismissed = true, onDismissBackupBanner, tabDataStale = false, items = [], expenses = [], businessSettings = { companyName: '', ownerName: '', address: '', phone: '', taxId: '', iban: '', bic: '', bankName: '', taxMode: 'SmallBusiness' }, onUpdateItems, gamification, updateGamification }) => {
+const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, authReady = false, isAdmin = false, syncState = { status: 'idle', lastSynced: null }, onForcePush, backupBannerDismissed = true, onDismissBackupBanner, tabDataStale = false, items = [], expenses = [], businessSettings = { companyName: '', ownerName: '', address: '', phone: '', taxId: '', iban: '', bic: '', bankName: '', taxMode: 'SmallBusiness' }, onUpdateItems }) => {
   const location = useLocation();
   const { locale, setLocale } = usePanelLocale();
   const { openSettings } = useSettingsModal();
@@ -102,26 +97,6 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   // eBay order sync now runs from the Abrechnung page itself (where new orders are
   // reviewed and linked), not as a global banner on every page — see
   // components/EbayAbrechnungPage.tsx.
-
-  const gamificationState = gamification ?? defaultGamificationState();
-  const updateGamificationState = updateGamification ?? (() => {});
-  // Wait for cloud download (or a failed sync) before celebrating sales — otherwise every
-  // already-sold item looks "new" on an empty phone and pops the deal toast over Inventory.
-  const gamificationEventsArmed =
-    !isCloudEnabled || syncState.status === 'success' || syncState.status === 'error';
-  const {
-    current: gamificationEvent,
-    dismiss: dismissGamificationEvent,
-    resolveDealClosed: resolveGamificationDealClosed,
-  } = useGamificationEvents({
-    items,
-    expenses,
-    taxMode: businessSettings.taxMode,
-    gamification: gamificationState,
-    updateGamification: updateGamificationState,
-    eventsArmed: gamificationEventsArmed,
-    allowProactiveEvents: !mobileRedirectSignIn,
-  });
 
   /** Inventory/trash use internal scroll + docked bulk bar; EST / bulk entry use full-width workspace layout. */
   const isDockedPanelPage =
@@ -670,12 +645,6 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
           </div>
         </div>
       )}
-
-      <GamificationEventLayer
-        event={gamificationEvent}
-        onDismiss={dismissGamificationEvent}
-        onResolveDealClosed={resolveGamificationDealClosed}
-      />
     </div>
   );
 };

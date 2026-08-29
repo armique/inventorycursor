@@ -50,14 +50,6 @@ interface Props {
   onBusinessSettingsChange?: (next: BusinessSettings) => void;
 }
 
-const LEVELS = [
-  { name: 'Novice Flipper', min: 0, icon: <Package size={20}/>, color: 'text-slate-500', bg: 'bg-slate-100' },
-  { name: 'Hobby Reseller', min: 500, icon: <Star size={20}/>, color: 'text-blue-500', bg: 'bg-blue-100' },
-  { name: 'Pro Merchant', min: 2500, icon: <Zap size={20}/>, color: 'text-purple-500', bg: 'bg-purple-100' },
-  { name: 'Dealwatch Tycoon', min: 10000, icon: <Crown size={20}/>, color: 'text-yellow-500', bg: 'bg-yellow-100' },
-  { name: 'Inventory Legend', min: 50000, icon: <Trophy size={20}/>, color: 'text-emerald-500', bg: 'bg-emerald-100' }
-];
-
 const PIE_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#6366F1', '#64748B'];
 
 const DASHBOARD_WIDGET_IDS = DEFAULT_DASHBOARD_WIDGET_IDS;
@@ -125,7 +117,7 @@ function exportPeriodSalesCsv(sold: InventoryItem[], label: string, taxMode: Tax
 }
 
 const WIDGET_LABELS: Record<WidgetId, string> = {
-  gamification: 'Monthly goal & level',
+  gamification: 'Monthly profit goal & lifetime metrics',
   statCards: 'Stats (inventory, sales, profit, overhead, capital trap)',
   performanceChart: 'Performance analytics',
   capitalDistribution: 'Capital distribution (pie)',
@@ -510,12 +502,6 @@ const Dashboard: React.FC<Props> = ({
       sumDedupedSaleProfit(soldForRollup, taxMode, statsItems) - sumOperatingExpenseAmount(statsExpenses)
     );
 
-    const currentLevel = LEVELS.slice().reverse().find((l) => allTimeProfit >= l.min) || LEVELS[0];
-    const nextLevel = LEVELS.find((l) => l.min > allTimeProfit);
-    const progressToNext = nextLevel
-      ? ((allTimeProfit - currentLevel.min) / (nextLevel.min - currentLevel.min)) * 100
-      : 100;
-
     const thisYearMonth = currentLocalYearMonth();
     const currentMonthItems = soldForRollup.filter(
       (i) => !!i.sellDate && yearMonthKeyFromDate(i.sellDate) === thisYearMonth
@@ -533,9 +519,6 @@ const Dashboard: React.FC<Props> = ({
 
     return {
       allTimeProfit,
-      currentLevel,
-      nextLevel,
-      progressToNext,
       monthProfit,
       monthSaleProfit,
       monthExpensesTotal,
@@ -1167,11 +1150,11 @@ const Dashboard: React.FC<Props> = ({
         )}
 
         {isVisible('gamification') && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 border-b border-slate-100">
+        <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 border-b border-slate-100">
           <div className="px-3 py-4 sm:px-4 lg:px-6 lg:py-5 min-w-0 flex flex-col">
             <div className="flex items-center justify-between gap-2 min-h-[1.25rem] lg:min-h-[1.5rem] mb-2">
               <span className={`${KPI_LABEL} flex items-center gap-1.5`}>
-                <Target size={11} className="lg:w-4 lg:h-4 text-blue-600 shrink-0" /> Goal
+                <Target size={11} className="lg:w-4 lg:h-4 text-blue-600 shrink-0" /> Monthly Profit Goal
               </span>
               <button type="button" onClick={() => setIsEditingGoal(true)} className="p-1 lg:p-1.5 text-slate-400 hover:text-slate-700 shrink-0" aria-label="Edit goal">
                 <Edit3 size={11} className="lg:w-4 lg:h-4" />
@@ -1195,22 +1178,7 @@ const Dashboard: React.FC<Props> = ({
           </div>
           <div className="px-3 py-4 sm:px-4 lg:px-6 lg:py-5 min-w-0 flex flex-col">
             <div className="flex items-center justify-between gap-2 min-h-[1.25rem] lg:min-h-[1.5rem] mb-2">
-              <span className={KPI_LABEL}>Rank</span>
-              <span className="w-7 lg:w-8 shrink-0" aria-hidden="true" />
-            </div>
-            <div className="min-h-[2rem] lg:min-h-[2.75rem] flex items-center">
-              <p className="text-base sm:text-lg lg:text-xl font-black truncate flex items-center gap-2 w-full">
-                <span className={`inline-flex p-1 lg:p-1.5 rounded-lg shrink-0 ${gameStats.currentLevel.bg}`}>{React.cloneElement(gameStats.currentLevel.icon as React.ReactElement<any>, { size: 16 })}</span>
-                <span className="truncate">{gameStats.currentLevel.name}</span>
-              </p>
-            </div>
-            <div className="h-2 lg:h-2.5 bg-slate-100 rounded-full mt-3 overflow-hidden shrink-0">
-              <div className="h-full bg-slate-700 rounded-full" style={{ width: `${gameStats.progressToNext}%` }} />
-            </div>
-          </div>
-          <div className="px-3 py-4 sm:px-4 lg:px-6 lg:py-5 min-w-0 flex flex-col">
-            <div className="flex items-center justify-between gap-2 min-h-[1.25rem] lg:min-h-[1.5rem] mb-2">
-              <span className={KPI_LABEL}>Lifetime</span>
+              <span className={KPI_LABEL}>All-Time Net Profit</span>
               <span className="w-7 lg:w-8 shrink-0" aria-hidden="true" />
             </div>
             <div className="min-h-[2rem] lg:min-h-[2.75rem] flex items-center">

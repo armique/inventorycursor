@@ -9,7 +9,6 @@ import type { ReinvestFees } from './reinvestFees';
 import { defaultMarginForGroup } from './reinvestPricing';
 import { roundMoney } from '../services/financialAggregation';
 import type { ReinvestSuspicion } from './reinvestSuspicion';
-import type { GamificationState } from './gamification';
 import { extractPrimaryComponentKey } from './componentKeyExtractor';
 
 export type TodayBuyRow = {
@@ -88,23 +87,15 @@ export function buildReinvestTodayBrief(params: {
   suspicions: ReinvestSuspicion[];
   items: InventoryItem[];
   fees: ReinvestFees;
-  gamification?: GamificationState;
   /** When set, prefer kit/standalone filtering for wave 2. */
   intentFilter?: 'standalone' | 'kit' | 'all';
 }): ReinvestTodayBrief {
-  const { restock, skipped, suspicions, items, fees, gamification, intentFilter = 'all' } = params;
+  const { restock, skipped, suspicions, items, fees, intentFilter = 'all' } = params;
 
-  const dailyLeft =
-    gamification != null
-      ? Math.max(0, roundMoney(gamification.dailyBudget.amount - gamification.dailyBudget.spentVirtual))
-      : null;
-  const bankLeft = gamification != null ? Math.max(0, gamification.bankBalance) : null;
   const hotCat = concentrationCategory(items);
 
   let capitalNote: string | undefined;
-  if (dailyLeft != null && gamification && gamification.dailyBudget.amount > 0 && dailyLeft <= 0) {
-    capitalNote = 'Daily buy budget is used up — restock suggestions are paused until tomorrow.';
-  } else if (hotCat) {
+  if (hotCat) {
     capitalNote = `Recent buys are heavily concentrated in ${hotCat} — diversify before stacking more.`;
   }
 
@@ -117,9 +108,6 @@ export function buildReinvestTodayBrief(params: {
   const buy: TodayBuyRow[] = [];
   for (const g of filteredRestock) {
     if (buy.length >= 5) break;
-    if (capitalNote && dailyLeft != null && gamification && gamification.dailyBudget.amount > 0 && dailyLeft <= 0) {
-      break;
-    }
     if (hotCat && (g.key.startsWith(`${hotCat}:`) || g.category.toLowerCase().includes(hotCat))) {
       continue;
     }
@@ -127,28 +115,6 @@ export function buildReinvestTodayBrief(params: {
     const calc = computeReinvestPricing(g, fees, margin);
     const channel = preferredChannel(g);
     const maxBuy = calc.suggestedMaxBuy;
-    if (maxBuy != null && dailyLeft != null && gamification && gamification.dailyBudget.amount > 0 && maxBuy > dailyLeft) {
-      buy.push({
-        group: g,
-        maxBuy,
-        channel,
-        why: `Usually ~€${g.profitPerDay.toFixed(0)}/day after fees · need ${g.targetStock - g.currentStock} more`,
-        confidence: g.confidence,
-        gated: `Over today's remaining budget (€${dailyLeft})`,
-      });
-      continue;
-    }
-    if (maxBuy != null && bankLeft != null && bankLeft > 0 && maxBuy > bankLeft * 0.5 && bankLeft < maxBuy) {
-      buy.push({
-        group: g,
-        maxBuy,
-        channel,
-        why: `Usually ~€${g.profitPerDay.toFixed(0)}/day after fees`,
-        confidence: g.confidence,
-        gated: `Above bank cash on hand (€${bankLeft})`,
-      });
-      continue;
-    }
     buy.push({
       group: g,
       maxBuy,

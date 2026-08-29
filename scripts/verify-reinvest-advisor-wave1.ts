@@ -9,7 +9,6 @@ import { computeCategoryBudgetsDetailed } from '../utils/categoryBudgets';
 import { detectReinvestSuspicions } from '../utils/reinvestSuspicion';
 import { buildReinvestTodayBrief } from '../utils/reinvestTodayBrief';
 import { loadReinvestFees } from '../utils/reinvestFees';
-import { defaultGamificationState } from '../utils/gamification';
 
 function item(partial: Partial<InventoryItem> & Pick<InventoryItem, 'id' | 'name'>): InventoryItem {
   return {
@@ -118,7 +117,6 @@ const brief = buildReinvestTodayBrief({
   suspicions,
   items,
   fees: loadReinvestFees(),
-  gamification: defaultGamificationState(),
 });
 assert.ok(brief.sell.length >= 1, 'aging stock should appear in sell-first');
 assert.ok('buy' in brief && 'skip' in brief && 'clarify' in brief);
