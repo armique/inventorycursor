@@ -700,9 +700,6 @@ const App: React.FC = () => {
    *  tab has stopped autosaving to avoid overwriting it. Reload to pick up the latest. */
   const [tabDataStale, setTabDataStale] = useState(false);
   const abrechnungHealDoneRef = useRef(false);
-  /** One-shot historical item heals — must not rescan inventory on every edit (freezes scroll/UI). */
-  const inventoryBootHealsDoneRef = useRef(false);
-  const containerMembershipBootHealDoneRef = useRef(false);
   const bulkImportCrossLinkDoneRef = useRef(false);
   const healthInsuranceLedgerDoneRef = useRef(false);
   
@@ -1442,19 +1439,6 @@ const App: React.FC = () => {
     }
   }, [appState, items.length]);
 
-  // Fill empty Acquired on PC / Bundle / Mixed whenever blanks remain.
-  // Re-run only while blanks exist — skip the full scan when every container already has a date.
-  useEffect(() => {
-    if (appState !== 'READY' || items.length === 0) return;
-    if (isCloudEnabled() && authUser && !cloudHydrated) return;
-    if (countBlankContainerBuyDates(items) === 0) return;
-    const { items: next, updatedCount } = backfillContainerBuyDates(items);
-    if (updatedCount === 0) return;
-    requestFastCloudFlush();
-    setItems(next);
-    hasUnsavedChanges.current = true;
-  }, [appState, authUser, cloudHydrated, items, requestFastCloudFlush]);
-
   // Replace DAK Gesundheit history with bank-accurate rows + start AOK Bayern on the 17th.
   useEffect(() => {
     if (appState !== 'READY') return;
@@ -1467,73 +1451,6 @@ const App: React.FC = () => {
     hasUnsavedChanges.current = true;
     requestFastCloudFlush();
   }, [appState, expenses, recurringExpenses, requestFastCloudFlush]);
-
-  // Historical sale/heal patches — once after cloud hydrate (remote apply runs its own copy).
-  useEffect(() => {
-    if (appState !== 'READY') return;
-    if (isCloudEnabled() && authUser && !cloudHydrated) return;
-    if (inventoryBootHealsDoneRef.current) return;
-
-    const taxMode = businessSettingsRef.current.taxMode || 'SmallBusiness';
-    let nextItems = itemsRef.current;
-    if (!nextItems.length) return;
-    inventoryBootHealsDoneRef.current = true;
-    let nextTrash = trashRef.current;
-    let changed = false;
-    let clearUndo = false;
-
-    const applyItems = (result: { items: InventoryItem[]; changed: boolean }, opts?: { clearUndo?: boolean }) => {
-      if (!result.changed) return;
-      nextItems = result.items;
-      changed = true;
-      if (opts?.clearUndo) clearUndo = true;
-    };
-
-    applyItems(applyCrucialRamInvoiceSaleFix(nextItems, taxMode));
-    applyItems(applyAsusGtx1080RogStrixHubSaleFix(nextItems, taxMode));
-    applyItems(applyRx6500XtHubSellSync(nextItems, taxMode));
-    applyItems(applySamsungEvo840RefundResale(nextItems, taxMode), { clearUndo: true });
-
-    const integralKit = restoreIntegralRamKit(nextItems, nextTrash);
-    if (integralKit.changed) {
-      nextItems = integralKit.items;
-      nextTrash = integralKit.trash;
-      changed = true;
-      addRecentItemId(INTEGRAL_RAM_KIT_ID);
-    }
-
-    applyItems(restoreAsusA320mPcSale(nextItems), { clearUndo: true });
-
-    if (!changed) return;
-    if (clearUndo) clearUndoStackRef.current = true;
-    setItems(nextItems);
-    if (nextTrash !== trashRef.current) setTrash(nextTrash);
-    hasUnsavedChanges.current = true;
-    requestFastCloudFlush();
-  }, [appState, authUser, cloudHydrated, items.length, requestFastCloudFlush]);
-
-  // After return/restock: nest Active PC parts and drop ghost standalone duplicates (boot + remote apply only).
-  useEffect(() => {
-    if (appState !== 'READY') return;
-    if (isCloudEnabled() && authUser && !cloudHydrated) return;
-    if (containerMembershipBootHealDoneRef.current) return;
-
-    const current = itemsRef.current;
-    if (!current.length) return;
-    containerMembershipBootHealDoneRef.current = true;
-    const next = healActiveContainerPartMembership(current);
-    if (!next.changed) return;
-    clearUndoStackRef.current = true;
-    setItems(next.items);
-    if (next.toTrash.length) {
-      setTrash((prev) => {
-        const ids = new Set(prev.map((t) => t.id));
-        return [...prev, ...next.toTrash.filter((t) => !ids.has(t.id))];
-      });
-    }
-    hasUnsavedChanges.current = true;
-    requestFastCloudFlush();
-  }, [appState, authUser, cloudHydrated, items.length, requestFastCloudFlush]);
 
   // Bulk-import chat proof + bulkImportId stamp — once after hydrate (not on every item edit).
   useEffect(() => {

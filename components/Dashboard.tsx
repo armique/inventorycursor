@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, lazy, Suspense, useDeferredValue } from 'react';
+import React, { useMemo, useState, useEffect, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { formatEUR } from '../utils/formatMoney';
 import {
@@ -145,10 +145,8 @@ const Dashboard: React.FC<Props> = ({
   const timeFilter = dashboardPreferences.timeFilter;
   const customStart = dashboardPreferences.customStart;
   const customEnd = dashboardPreferences.customEnd;
-  const tasks = dashboardPreferences.tasks;
-  /** Defer heavy rollups while cloud/inventory props catch up so clicks stay responsive after launch. */
-  const statsItems = useDeferredValue(items);
-  const statsExpenses = useDeferredValue(expenses);
+  const statsItems = items;
+  const statsExpenses = expenses;
 
   const setTimeFilter = (v: string) =>
     onDashboardPreferencesChange({ ...dashboardPreferences, timeFilter: v });

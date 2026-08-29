@@ -9,6 +9,8 @@ import { applyRx6500XtHubSellSync } from './rx6500XtHubSellSync';
 import { applySamsungEvo840RefundResale } from './applySamsungEvo840RefundResale';
 import { backfillContainerBuyDates } from './backfillContainerBuyDates';
 import { healActiveContainerPartMembership } from './healActiveContainerPartMembership';
+import { restoreIntegralRamKit } from './restoreIntegralRamKit';
+import { restoreAsusA320mPcSale } from './restoreAsusA320mPcSale';
 
 /**
  * Extracts all canonical eBay order IDs associated with an inventory item.
@@ -93,7 +95,13 @@ export function canonicalizeInventoryItems(
   const evoFix = applySamsungEvo840RefundResale(rxFix.items, taxMode);
   if (evoFix.changed) changedOverall = true;
 
-  const healed = healActiveContainerPartMembership(evoFix.items);
+  const asusSale = restoreAsusA320mPcSale(evoFix.items);
+  if (asusSale.changed) changedOverall = true;
+
+  const integral = restoreIntegralRamKit(asusSale.items);
+  if (integral.changed) changedOverall = true;
+
+  const healed = healActiveContainerPartMembership(integral.items);
   if (healed.changed) changedOverall = true;
 
   return {
