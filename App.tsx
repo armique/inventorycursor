@@ -1304,63 +1304,72 @@ const App: React.FC = () => {
       cloudHydratedRef.current = false;
 
       if (isSupabaseConfigured()) {
-        void (async () => {
-          try {
-            const sbSnapshot = await fetchSupabaseSnapshotDirect(user.uid);
-            if (sbSnapshot) {
-              const payload = {
-                inventory: sbSnapshot.items,
-                trash: sbSnapshot.trash,
-                expenses: sbSnapshot.expenses,
-                recurringExpenses: sbSnapshot.recurringExpenses,
-                categories: sbSnapshot.categories,
-                categoryFields: sbSnapshot.categoryFields,
-                settings: sbSnapshot.businessSettings,
-                goals: { monthly: sbSnapshot.monthlyGoal },
-                dashboard: sbSnapshot.dashboardPrefs,
-                actionHistory: sbSnapshot.actionHistory,
-                bulkImports: sbSnapshot.bulkImports,
-                updatedAt: new Date().toISOString()
-              };
-              applyRemoteData(payload as any);
-              markCloudHydrated();
-              pendingCloudFlushRef.current = false;
-              initialWriteDoneRef.current = true;
-              setSyncState({ status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED });
-            } else {
-              markCloudHydrated();
-              pendingCloudFlushRef.current = false;
-              initialWriteDoneRef.current = true;
-              setSyncState({ status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED });
-            }
-          } catch (err) {
-            console.error('[supabase] Initial fetch failed:', err);
-            markCloudHydrated();
-            setSyncState({ status: 'error', message: 'Supabase sync error' });
-          }
-        })();
-
-        unsubSnapshot = subscribeToSupabaseRealtime(() => {
+        const uid = user.id || (user as any).uid;
+        if (uid) {
           void (async () => {
-            const updated = await fetchSupabaseSnapshotDirect(user.uid);
-            if (updated) {
-              applyRemoteData({
-                inventory: updated.items,
-                trash: updated.trash,
-                expenses: updated.expenses,
-                recurringExpenses: updated.recurringExpenses,
-                categories: updated.categories,
-                categoryFields: updated.categoryFields,
-                settings: updated.businessSettings,
-                goals: { monthly: updated.monthlyGoal },
-                dashboard: updated.dashboardPrefs,
-                actionHistory: updated.actionHistory,
-                bulkImports: updated.bulkImports,
-                updatedAt: new Date().toISOString()
-              } as any);
+            try {
+              const sbSnapshot = await fetchSupabaseSnapshotDirect(uid);
+              if (sbSnapshot) {
+                const payload = {
+                  inventory: sbSnapshot.items,
+                  trash: sbSnapshot.trash,
+                  expenses: sbSnapshot.expenses,
+                  recurringExpenses: sbSnapshot.recurringExpenses,
+                  categories: sbSnapshot.categories,
+                  categoryFields: sbSnapshot.categoryFields,
+                  settings: sbSnapshot.businessSettings,
+                  goals: { monthly: sbSnapshot.monthlyGoal },
+                  dashboard: sbSnapshot.dashboardPrefs,
+                  actionHistory: sbSnapshot.actionHistory,
+                  bulkImports: sbSnapshot.bulkImports,
+                  updatedAt: new Date().toISOString()
+                };
+                applyRemoteData(payload as any);
+                markCloudHydrated();
+                pendingCloudFlushRef.current = false;
+                initialWriteDoneRef.current = true;
+                setSyncState({ status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED });
+              } else {
+                markCloudHydrated();
+                pendingCloudFlushRef.current = false;
+                initialWriteDoneRef.current = true;
+                setSyncState({ status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED });
+              }
+            } catch (err) {
+              console.error('[supabase] Initial fetch failed:', err);
+              markCloudHydrated();
+              setSyncState({ status: 'error', message: 'Supabase sync error' });
             }
           })();
-        });
+
+          unsubSnapshot = subscribeToSupabaseRealtime(() => {
+            if (Date.now() < suppressRemoteApplyUntilRef.current) return;
+            if (cloudSyncInFlightRef.current) return;
+            void (async () => {
+              try {
+                const updated = await fetchSupabaseSnapshotDirect(uid);
+                if (updated && shouldApplyRemoteSnapshot(updated)) {
+                  applyRemoteData({
+                    inventory: updated.items,
+                    trash: updated.trash,
+                    expenses: updated.expenses,
+                    recurringExpenses: updated.recurringExpenses,
+                    categories: updated.categories,
+                    categoryFields: updated.categoryFields,
+                    settings: updated.businessSettings,
+                    goals: { monthly: updated.monthlyGoal },
+                    dashboard: updated.dashboardPrefs,
+                    actionHistory: updated.actionHistory,
+                    bulkImports: updated.bulkImports,
+                    updatedAt: new Date().toISOString()
+                  } as any);
+                }
+              } catch (e) {
+                console.warn('[supabase] Realtime fetch error:', e);
+              }
+            })();
+          });
+        }
       }
     });
     return () => {
@@ -1841,16 +1850,19 @@ const App: React.FC = () => {
 
     // Use current expenses state to check for duplicates and to self-heal legacy UTC-shifted recurring dates.
     setExpenses(currentExpenses => {
+      let changed = false;
       let workingExpenses = currentExpenses.map((expense) => {
         if (!expense.recurringExpenseId || !expense.date) return expense;
         const shifted = plusOneDay(expense.date);
         // Legacy bug wrote recurring rows as last day of previous month (UTC shift from local 1st).
         if (!shifted.endsWith('-01')) return expense;
+        changed = true;
         return { ...expense, date: shifted };
       });
 
       // De-duplicate possible collisions after date normalization.
       const normalizedDedup = new Set<string>();
+      const beforeFilterLen = workingExpenses.length;
       workingExpenses = workingExpenses.filter((expense) => {
         if (!expense.recurringExpenseId) return true;
         const key = `${expense.recurringExpenseId}:${expense.date}:${expense.description}:${Number(expense.amount) || 0}`;
@@ -1858,6 +1870,7 @@ const App: React.FC = () => {
         normalizedDedup.add(key);
         return true;
       });
+      if (workingExpenses.length !== beforeFilterLen) changed = true;
 
       for (const recurring of recurringExpenses) {
         const { expenses: generated, lastGeneratedDate } = generateExpensesFromRecurring(recurring, workingExpenses);
@@ -1882,6 +1895,7 @@ const App: React.FC = () => {
         ) {
           return expense;
         }
+        changed = true;
         return {
           ...expense,
           amount: recurring.monthlyAmount,
@@ -1905,6 +1919,7 @@ const App: React.FC = () => {
         return [...workingExpenses, ...uniqueNew];
       }
       
+      if (!changed) return currentExpenses;
       return workingExpenses;
     });
   }, [appState, recurringExpenses, requestFastCloudFlush]);
