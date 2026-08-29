@@ -946,10 +946,11 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate, actionH
     const map = new Map<string, InventoryItem>();
     const linkScore = (item: InventoryItem) =>
       (item.isBundle || item.isPC ? 4 : 0) + (item.parentContainerId ? 0 : 2);
-    for (const item of items) {
-      const orderId = (item.ebayOrderId || '').trim();
-      if (!orderId) continue;
-      const key = orderId.toLowerCase();
+
+    const indexOrder = (orderId: string | undefined | null, item: InventoryItem) => {
+      const trimmed = (orderId || '').trim();
+      if (!trimmed) return;
+      const key = trimmed.toLowerCase();
       const existing = map.get(key);
       if (!existing) {
         map.set(key, item);
@@ -959,6 +960,19 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate, actionH
         if (scoreNew > scoreExisting || (scoreNew === scoreExisting && item.id.localeCompare(existing.id) < 0)) {
           map.set(key, item);
         }
+      }
+    };
+
+    for (const item of items) {
+      indexOrder(item.ebayOrderId, item);
+      if (item.saleProceeds?.externalOrderId) {
+        indexOrder(item.saleProceeds.externalOrderId, item);
+      }
+      for (const cycle of item.ebaySaleCycles || []) {
+        indexOrder(cycle.ebayOrderId, item);
+      }
+      for (const refundOrderId of item.pendingRefundFeeOrderIds || []) {
+        indexOrder(refundOrderId, item);
       }
     }
     return map;
