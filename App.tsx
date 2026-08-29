@@ -57,6 +57,7 @@ import {
   subscribeToSupabaseRealtime,
   writeFullAppStateToSupabase
 } from './services/supabaseService';
+import { runWeeklyPhotoPruneIfDue } from './services/photoPruneService';
 import { withTimeout } from './utils/withTimeout';
 import {
   defaultGamificationState,
@@ -1757,6 +1758,19 @@ const App: React.FC = () => {
       .catch((e) => {
         console.warn('Kleinanzeigen daily listing refresh failed:', e);
       });
+  }, [appState]);
+
+  // Weekly background photo storage optimization for items sold > 30 days
+  useEffect(() => {
+    if (appState !== 'READY' || !items.length) return;
+    const t = setTimeout(() => {
+      scheduleBackgroundWork(async () => {
+        await runWeeklyPhotoPruneIfDue(itemsRef.current, (updatedItems) => {
+          setItems(updatedItems);
+        });
+      });
+    }, 35000);
+    return () => clearTimeout(t);
   }, [appState]);
 
   // Hydrate Reinvest gamification state (bank, quests, achievements) from its own doc — same

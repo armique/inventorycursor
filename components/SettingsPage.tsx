@@ -22,6 +22,14 @@ import {
   type PhotoArchiveResult,
 } from '../services/inventoryImageStorage';
 import {
+  analyzePrunableSoldPhotos,
+  pruneOldSoldItemPhotos,
+  isAutoPhotoPruneEnabled,
+  setAutoPhotoPruneEnabled,
+  type PrunablePhotosSummary,
+  type PruneResult
+} from '../services/photoPruneService';
+import {
   getStoredConfig,
   getStoredToken,
   getStoredLogin,
@@ -490,7 +498,7 @@ const SettingsPage: React.FC<Props> = ({
       if (result.success) {
         onApplyArchivedPhotos?.(result.items, result.trash);
         setPhotoArchiveFailures((prev) => prev.filter((f) => f.url !== url));
-        showToast('Photo archived to Firebase Storage.', 'success');
+        showToast('Photo archived to Supabase Storage.', 'success');
       } else {
         showToast(result.error || 'Retry failed.', 'error');
       }
@@ -498,6 +506,52 @@ const SettingsPage: React.FC<Props> = ({
       showToast((e as Error)?.message || 'Retry failed.', 'error');
     } finally {
       setRetryingPhotoUrl(null);
+    }
+  };
+
+  const [autoPruneEnabled, setAutoPruneEnabledState] = useState<boolean>(() => isAutoPhotoPruneEnabled());
+  const [pruneRunning, setPruneRunning] = useState(false);
+  const [pruneProgress, setPruneProgress] = useState<{ done: number; total: number } | null>(null);
+  const [lastPruneResult, setLastPruneResult] = useState<PruneResult | null>(null);
+
+  const prunableSummary = useMemo<PrunablePhotosSummary>(() => {
+    return analyzePrunableSoldPhotos(items, 30);
+  }, [items]);
+
+  const handleToggleAutoPrune = (enabled: boolean) => {
+    setAutoPruneEnabled(enabled);
+    setAutoPruneEnabledState(enabled);
+    showToast(enabled ? 'Weekly auto-pruning enabled' : 'Auto-pruning disabled', 'success');
+  };
+
+  const handlePruneSoldPhotos = async () => {
+    if (prunableSummary.eligibleItemsCount === 0) {
+      showToast('No sold photos older than 30 days found.', 'success');
+      return;
+    }
+
+    const mb = (prunableSummary.estimatedBytesSaved / (1024 * 1024)).toFixed(1);
+    const ok = window.confirm(
+      `Clean up photos for ${prunableSummary.eligibleItemsCount} sold items (> 30 days old)?\n\n` +
+      `• Photos to remove: ${prunableSummary.totalPhotosCount} (~${mb} MB)\n` +
+      `• Accounting & sales records, profit, and serial numbers will remain intact.`
+    );
+    if (!ok) return;
+
+    setPruneRunning(true);
+    setPruneProgress({ done: 0, total: prunableSummary.eligibleItemsCount });
+    try {
+      const res = await pruneOldSoldItemPhotos(items, 30, (done, total) => {
+        setPruneProgress({ done, total });
+      });
+      setLastPruneResult(res);
+      onApplyArchivedPhotos?.(res.updatedItems, trash);
+      showToast(`Cleaned photos for ${res.itemsCleanedCount} items. Freed ~${mb} MB!`, 'success');
+    } catch (err: unknown) {
+      showToast((err as Error)?.message || 'Prune failed', 'error');
+    } finally {
+      setPruneRunning(false);
+      setPruneProgress(null);
     }
   };
 
@@ -1717,6 +1771,82 @@ const SettingsPage: React.FC<Props> = ({
                          <li>In Firebase Console → Storage → <strong>Files</strong>, you should see folders like <code className="bg-slate-200 px-1 rounded text-[10px]">items/your-uid/…</code>.</li>
                       </ol>
                    </details>
+                </div>
+
+                {/* Storage Optimization & Auto-Pruning */}
+                <div className="bg-white p-6 rounded-[3rem] border border-slate-200 shadow-sm space-y-4">
+                   <div className="flex flex-wrap items-center justify-between gap-3">
+                      <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                         <Wrench size={22} className="text-emerald-600" /> Storage Optimization (Auto-Pruning)
+                      </h3>
+                      <label className="flex items-center gap-2 cursor-pointer bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+                         <input
+                            type="checkbox"
+                            checked={autoPruneEnabled}
+                            onChange={(e) => handleToggleAutoPrune(e.target.checked)}
+                            className="rounded text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
+                         />
+                         <span className="text-xs font-bold text-slate-700">Auto-clean weekly (&gt; 30 days sold)</span>
+                      </label>
+                   </div>
+
+                   <p className="text-sm text-slate-500 leading-relaxed">
+                      Automatically removes heavy photos from Supabase Storage for items sold more than 30 days ago to keep you safely on the <strong>Free 1 GB limit</strong>.
+                      All sales history, profit calculations, purchase dates, and customer records remain <strong>100% intact forever</strong>.
+                   </p>
+
+                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="bg-slate-50 rounded-2xl px-4 py-3 border border-slate-100">
+                         <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Sold items (&gt; 30d)</p>
+                         <p className="text-2xl font-black text-slate-900">{prunableSummary.eligibleItemsCount}</p>
+                         <p className="text-xs text-slate-500">items with photos</p>
+                      </div>
+                      <div className="bg-slate-50 rounded-2xl px-4 py-3 border border-slate-100">
+                         <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Photos to clean</p>
+                         <p className="text-2xl font-black text-slate-900">{prunableSummary.totalPhotosCount}</p>
+                         <p className="text-xs text-slate-500">files in Storage</p>
+                      </div>
+                      <div className="bg-slate-50 rounded-2xl px-4 py-3 border border-slate-100">
+                         <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Space to reclaim</p>
+                         <p className="text-2xl font-black text-emerald-700">~{(prunableSummary.estimatedBytesSaved / (1024 * 1024)).toFixed(1)} MB</p>
+                         <p className="text-xs text-slate-500">free tier storage</p>
+                      </div>
+                   </div>
+
+                   {pruneRunning && pruneProgress && (
+                      <div className="space-y-2">
+                         <div className="flex justify-between text-xs font-bold text-slate-600">
+                            <span>Cleaning old sold photos…</span>
+                            <span>{pruneProgress.done} / {pruneProgress.total} items</span>
+                         </div>
+                         <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                            <div
+                               className="h-full bg-emerald-600 transition-all duration-300"
+                               style={{
+                                  width: pruneProgress.total
+                                     ? `${Math.round((pruneProgress.done / pruneProgress.total) * 100)}%`
+                                     : '0%',
+                               }}
+                            />
+                         </div>
+                      </div>
+                   )}
+
+                   {lastPruneResult && !pruneRunning && (
+                      <p className="text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2">
+                         Cleaned {lastPruneResult.itemsCleanedCount} items ({lastPruneResult.filesDeletedCount} photo files deleted from Storage).
+                      </p>
+                   )}
+
+                   <button
+                      type="button"
+                      onClick={handlePruneSoldPhotos}
+                      disabled={pruneRunning || prunableSummary.eligibleItemsCount === 0}
+                      className="px-5 py-3 bg-emerald-600 text-white rounded-xl font-bold text-xs uppercase hover:bg-emerald-700 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                   >
+                      {pruneRunning ? <Loader2 size={16} className="animate-spin" /> : <Wrench size={16} />}
+                      Clean sold photos (&gt; 30 days) now
+                   </button>
                 </div>
 
                 {/* Backup & restore */}
