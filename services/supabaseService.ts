@@ -95,7 +95,20 @@ export function isSupabaseConfigured(): boolean {
 const DEV_AUTH_STORAGE_KEY = 'deinv_dev_auth_user';
 export const OWNER_ADMIN_EMAIL = 'abelyanarmen@gmail.com';
 
+export function isLocalOrDevEnvironment(): boolean {
+  if (typeof window === 'undefined') return false;
+  const host = window.location.hostname;
+  return (
+    Boolean(import.meta.env.DEV) ||
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host === '::1' ||
+    host.endsWith('.local')
+  );
+}
+
 export function getDevAdminUser(): User | null {
+  if (!isLocalOrDevEnvironment()) return null;
   if (typeof localStorage === 'undefined') return null;
   try {
     const raw = localStorage.getItem(DEV_AUTH_STORAGE_KEY);
@@ -108,7 +121,11 @@ export function isDevAdminSession(): boolean {
   return !!getDevAdminUser();
 }
 
-export function signInWithDevAdmin(email = OWNER_ADMIN_EMAIL): User {
+export function signInWithDevAdmin(email = OWNER_ADMIN_EMAIL): User | null {
+  if (!isLocalOrDevEnvironment()) {
+    console.warn('Dev admin login is only permitted in local/dev environment.');
+    return null;
+  }
   const user = {
     id: 'dev-owner-' + (typeof btoa !== 'undefined' ? btoa(email).replace(/=/g, '') : 'local'),
     app_metadata: { provider: 'dev' },

@@ -19,6 +19,7 @@ import {
   prefersRedirectSignIn,
   prewarmGoogleSignIn,
   OWNER_ADMIN_EMAIL,
+  isLocalOrDevEnvironment,
 } from '../services/supabaseService';
 import GlobalSearch from './GlobalSearch';
 import { panelSuspenseFallback } from './RouteSkeletons';
@@ -107,23 +108,25 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   /** Stock list: no breadcrumb / locale / settings strip — ACTIVE|SOLD|INBOX is the first row. */
   const hidePanelChrome = location.pathname.startsWith('/panel/inventory');
 
-  const requireAuth = isCloudEnabled && authReady && !authUser;
+  const isLocalDev = isLocalOrDevEnvironment();
+  const requireAuth = !authUser;
 
   // Same fix as SettingsPage's sign-in button: warm the Google Identity Services script
-  // ahead of the tap so mobile Safari doesn't silently block the popup (see
-  // prewarmGoogleSignIn's own comment). This gate is actually the more common place
-  // someone hits "Sign in with Google" from, once cloud sync is on but not yet signed in.
+  // ahead of the tap so mobile Safari doesn't silently block the popup.
   React.useEffect(() => {
     if (requireAuth) prewarmGoogleSignIn();
   }, [requireAuth]);
 
-  if (isCloudEnabled && authReady && authUser && !isAdmin) {
+  if (authReady && authUser && !isAdmin) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="max-w-sm w-full bg-white rounded-2xl shadow-xl border border-slate-200 p-8 text-center">
-          <h2 className="text-xl font-bold text-slate-900 mb-2">Access denied</h2>
-          <p className="text-slate-600 text-sm mb-4">This admin panel is only available to the owner.</p>
-          <p className="text-xs text-slate-400 mb-6 break-all">{authUser.email}</p>
+          <div className="w-12 h-12 rounded-xl bg-red-100 text-red-600 flex items-center justify-center mx-auto mb-4 font-black text-xl">
+            ✕
+          </div>
+          <h2 className="text-xl font-bold text-slate-900 mb-2">Access Denied</h2>
+          <p className="text-slate-600 text-sm mb-4">This admin panel is strictly reserved for the owner ({OWNER_ADMIN_EMAIL}).</p>
+          <p className="text-xs text-slate-400 mb-6 break-all">Signed in as: {authUser.email}</p>
           <div className="flex gap-3">
             <a href="/" className="flex-1 py-3 px-4 rounded-xl bg-slate-100 text-slate-700 font-semibold text-sm hover:bg-slate-200">
               Back to store
@@ -157,7 +160,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             D
           </div>
           <h2 className="text-xl font-bold text-slate-900 mb-1">DeInventory Admin</h2>
-          <p className="text-slate-500 text-xs sm:text-sm mb-6">Choose your sign-in method to access the dashboard.</p>
+          <p className="text-slate-500 text-xs sm:text-sm mb-6">Owner access only ({OWNER_ADMIN_EMAIL}).</p>
 
           <div className="flex p-1 bg-slate-100 rounded-xl mb-5 text-xs font-bold text-slate-600">
             <button
@@ -174,13 +177,15 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             >
               Email OTP
             </button>
-            <button
-              type="button"
-              onClick={() => { setAuthTab('dev'); setSignInError(null); }}
-              className={`flex-1 py-1.5 rounded-lg transition-colors ${authTab === 'dev' ? 'bg-white text-slate-900 shadow-sm' : 'hover:text-slate-900'}`}
-            >
-              Dev / Quick Access
-            </button>
+            {isLocalDev && (
+              <button
+                type="button"
+                onClick={() => { setAuthTab('dev'); setSignInError(null); }}
+                className={`flex-1 py-1.5 rounded-lg transition-colors ${authTab === 'dev' ? 'bg-white text-slate-900 shadow-sm' : 'hover:text-slate-900'}`}
+              >
+                Local Dev
+              </button>
+            )}
           </div>
 
           {authTab === 'google' && (
