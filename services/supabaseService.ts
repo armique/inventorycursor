@@ -981,7 +981,11 @@ export function onAuthChange(callback: (user: User | null, session: Session | nu
 }
 
 export function getAuthErrorMessage(err: any): string {
-  return err?.message || String(err || 'Authentication failed');
+  const msg = err?.message || err?.msg || String(err || 'Authentication failed');
+  if (msg.includes('provider is not enabled') || msg.includes('Unsupported provider')) {
+    return 'Google login is not enabled yet in your Supabase Dashboard (Auth > Providers > Google). Use Dev Access or Email OTP to enter.';
+  }
+  return msg;
 }
 
 export function getSyncErrorMessage(err: any): string {
