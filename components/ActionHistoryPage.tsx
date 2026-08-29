@@ -1,6 +1,16 @@
 import React, { useMemo, useState } from 'react';
 import { ActionHistoryEntry, InventoryItem, ItemStatus } from '../types';
-import { History, RotateCcw, Search, Trash2 } from 'lucide-react';
+import {
+  History,
+  RotateCcw,
+  Search,
+  Trash2,
+  TrendingUp,
+  Boxes,
+  ShoppingBag,
+  Layers,
+  Filter,
+} from 'lucide-react';
 import ItemLink from './ItemLink';
 
 interface Props {
@@ -11,15 +21,26 @@ interface Props {
   onRevertSale?: (entry: ActionHistoryEntry) => void;
 }
 
+type ActionCategory = 'all' | 'prices' | 'bundles' | 'ebay' | 'status' | 'trash';
+
 type ActionTone = { badge: string; dot: string };
 
 function getActionTone(action: string): ActionTone {
   const a = action.toLowerCase();
+  if (a.includes('buy price') || a.includes('ek') || a.includes('sell price') || a.includes('vk')) {
+    return { badge: 'bg-blue-50 text-blue-900 border-blue-200', dot: 'bg-blue-500' };
+  }
   if (a.includes('sold') || a.includes('sale')) {
     return { badge: 'bg-amber-50 text-amber-900 border-amber-200', dot: 'bg-amber-500' };
   }
   if (a.includes('trade')) {
     return { badge: 'bg-purple-50 text-purple-900 border-purple-200', dot: 'bg-purple-500' };
+  }
+  if (a.includes('bundle') || a.includes('split') || a.includes('pc')) {
+    return { badge: 'bg-purple-50 text-purple-900 border-purple-200', dot: 'bg-purple-500' };
+  }
+  if (a.includes('ebay') || a.includes('abrechnung') || a.includes('linked')) {
+    return { badge: 'bg-sky-50 text-sky-900 border-sky-200', dot: 'bg-sky-500' };
   }
   if (a.includes('created') || a.includes('added')) {
     return { badge: 'bg-emerald-50 text-emerald-900 border-emerald-200', dot: 'bg-emerald-500' };
@@ -28,26 +49,53 @@ function getActionTone(action: string): ActionTone {
     return { badge: 'bg-red-50 text-red-800 border-red-200', dot: 'bg-red-500' };
   }
   if (a.includes('revert') || a.includes('undo') || a.includes('redo')) {
-    return { badge: 'bg-sky-50 text-sky-900 border-sky-200', dot: 'bg-sky-500' };
-  }
-  if (a.includes('hub') || a.includes('split')) {
-    return { badge: 'bg-orange-50 text-orange-900 border-orange-200', dot: 'bg-orange-500' };
+    return { badge: 'bg-teal-50 text-teal-900 border-teal-200', dot: 'bg-teal-500' };
   }
   if (a.includes('updated') || a.includes('changed')) {
-    return { badge: 'bg-blue-50 text-blue-900 border-blue-200', dot: 'bg-blue-500' };
+    return { badge: 'bg-indigo-50 text-indigo-900 border-indigo-200', dot: 'bg-indigo-500' };
   }
   return { badge: 'bg-slate-100 text-slate-700 border-slate-200', dot: 'bg-slate-400' };
 }
 
 function formatWhen(iso: string): { date: string; time: string } {
-  const d = new Date(iso);
-  return {
-    date: d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' }),
-    time: d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-  };
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return { date: iso.slice(0, 10), time: '' };
+    return {
+      date: d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' }),
+      time: d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+    };
+  } catch {
+    return { date: iso.slice(0, 10), time: '' };
+  }
 }
 
-function matchesFilter(entry: ActionHistoryEntry, query: string): boolean {
+function matchesCategory(entry: ActionHistoryEntry, cat: ActionCategory): boolean {
+  if (cat === 'all') return true;
+  const a = (entry.action || '').toLowerCase();
+  const d = (entry.details || '').toLowerCase();
+  const combined = `${a} ${d}`;
+
+  if (cat === 'prices') {
+    return combined.includes('price') || combined.includes('ek') || combined.includes('vk') || combined.includes('€');
+  }
+  if (cat === 'bundles') {
+    return combined.includes('bundle') || combined.includes('split') || combined.includes('pc') || combined.includes('part');
+  }
+  if (cat === 'ebay') {
+    return combined.includes('ebay') || combined.includes('abrechnung') || combined.includes('order') || combined.includes('linked');
+  }
+  if (cat === 'status') {
+    return combined.includes('status') || combined.includes('sold') || combined.includes('trade') || combined.includes('gift');
+  }
+  if (cat === 'trash') {
+    return combined.includes('trash') || combined.includes('deleted') || combined.includes('restored');
+  }
+  return true;
+}
+
+function matchesFilter(entry: ActionHistoryEntry, query: string, cat: ActionCategory): boolean {
+  if (!matchesCategory(entry, cat)) return false;
   const q = query.trim().toLowerCase();
   if (!q) return true;
   return [entry.action, entry.itemName, entry.details, entry.timestamp]
@@ -59,13 +107,28 @@ function matchesFilter(entry: ActionHistoryEntry, query: string): boolean {
 
 const ActionHistoryPage: React.FC<Props> = ({ entries, items, onClear, onRevertTrade, onRevertSale }) => {
   const [query, setQuery] = useState('');
+  const [category, setCategory] = useState<ActionCategory>('all');
 
   const sorted = useMemo(
     () => [...entries].sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1)),
     [entries]
   );
 
-  const filtered = useMemo(() => sorted.filter((e) => matchesFilter(e, query)), [sorted, query]);
+  const filtered = useMemo(
+    () => sorted.filter((e) => matchesFilter(e, query, category)),
+    [sorted, query, category]
+  );
+
+  const counts = useMemo(() => {
+    return {
+      all: sorted.length,
+      prices: sorted.filter((e) => matchesCategory(e, 'prices')).length,
+      bundles: sorted.filter((e) => matchesCategory(e, 'bundles')).length,
+      ebay: sorted.filter((e) => matchesCategory(e, 'ebay')).length,
+      status: sorted.filter((e) => matchesCategory(e, 'status')).length,
+      trash: sorted.filter((e) => matchesCategory(e, 'trash')).length,
+    };
+  }, [sorted]);
 
   return (
     <div className="w-full min-w-0 -mx-2 sm:-mx-4 md:-mx-6 lg:-mx-8 px-2 sm:px-4 md:px-6 lg:px-8 pb-10 animate-in fade-in duration-300">
@@ -77,7 +140,7 @@ const ActionHistoryPage: React.FC<Props> = ({ entries, items, onClear, onRevertT
           <div className="min-w-0">
             <h1 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">Action History</h1>
             <p className="text-sm text-slate-500 font-medium mt-1">
-              Audit log — every inventory change with timestamp, item, and details
+              Detailed audit log — buying & selling prices, bundle/split events, eBay links, and status changes
             </p>
           </div>
         </div>
@@ -99,15 +162,92 @@ const ActionHistoryPage: React.FC<Props> = ({ entries, items, onClear, onRevertT
         </div>
       </header>
 
-      <div className="mb-4 relative max-w-xl">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Filter by action, item, or details…"
-          className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-        />
+      {/* Quick Filter Categories & Search Bar */}
+      <div className="space-y-3 mb-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setCategory('all')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wide transition-all border ${
+              category === 'all'
+                ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
+                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+            }`}
+          >
+            All ({counts.all})
+          </button>
+          <button
+            type="button"
+            onClick={() => setCategory('prices')}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wide transition-all border ${
+              category === 'prices'
+                ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                : 'bg-white text-blue-700 border-blue-200 hover:bg-blue-50'
+            }`}
+          >
+            <TrendingUp size={13} />
+            Price Changes ({counts.prices})
+          </button>
+          <button
+            type="button"
+            onClick={() => setCategory('bundles')}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wide transition-all border ${
+              category === 'bundles'
+                ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
+                : 'bg-white text-purple-700 border-purple-200 hover:bg-purple-50'
+            }`}
+          >
+            <Boxes size={13} />
+            Bundles & Splits ({counts.bundles})
+          </button>
+          <button
+            type="button"
+            onClick={() => setCategory('ebay')}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wide transition-all border ${
+              category === 'ebay'
+                ? 'bg-sky-600 text-white border-sky-600 shadow-sm'
+                : 'bg-white text-sky-700 border-sky-200 hover:bg-sky-50'
+            }`}
+          >
+            <ShoppingBag size={13} />
+            eBay Links ({counts.ebay})
+          </button>
+          <button
+            type="button"
+            onClick={() => setCategory('status')}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wide transition-all border ${
+              category === 'status'
+                ? 'bg-amber-600 text-white border-amber-600 shadow-sm'
+                : 'bg-white text-amber-700 border-amber-200 hover:bg-amber-50'
+            }`}
+          >
+            <Layers size={13} />
+            Status & Sales ({counts.status})
+          </button>
+          <button
+            type="button"
+            onClick={() => setCategory('trash')}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wide transition-all border ${
+              category === 'trash'
+                ? 'bg-red-600 text-white border-red-600 shadow-sm'
+                : 'bg-white text-red-700 border-red-200 hover:bg-red-50'
+            }`}
+          >
+            <Trash2 size={13} />
+            Trash & Restores ({counts.trash})
+          </button>
+        </div>
+
+        <div className="relative max-w-xl">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Filter by action, item name, price delta, or order ID…"
+            className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+          />
+        </div>
       </div>
 
       <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
@@ -118,7 +258,7 @@ const ActionHistoryPage: React.FC<Props> = ({ entries, items, onClear, onRevertT
             </div>
             <p className="font-black text-slate-700 text-lg">No actions recorded yet</p>
             <p className="text-sm text-slate-500 mt-1 max-w-md mx-auto">
-              Edits, sales, trades, and other important changes will appear here.
+              Price adjustments, bundle conversions, eBay links, and sales will automatically generate detailed audit records here.
             </p>
           </div>
         ) : (
@@ -127,9 +267,9 @@ const ActionHistoryPage: React.FC<Props> = ({ entries, items, onClear, onRevertT
               <thead className="sticky top-0 z-10 bg-slate-100 border-b border-slate-200">
                 <tr className="text-[10px] font-black uppercase tracking-widest text-slate-500">
                   <th className="px-4 py-3.5 w-[150px] whitespace-nowrap">Date & time</th>
-                  <th className="px-4 py-3.5 w-[220px]">Action</th>
-                  <th className="px-4 py-3.5 min-w-[180px]">Item</th>
-                  <th className="px-4 py-3.5 min-w-[280px]">Details</th>
+                  <th className="px-4 py-3.5 w-[240px]">Action</th>
+                  <th className="px-4 py-3.5 min-w-[200px]">Item</th>
+                  <th className="px-4 py-3.5 min-w-[300px]">Details & Diffs</th>
                   <th className="px-4 py-3.5 w-[130px] text-right">Actions</th>
                 </tr>
               </thead>
@@ -195,7 +335,7 @@ const ActionHistoryPage: React.FC<Props> = ({ entries, items, onClear, onRevertT
 
                         <td className="px-4 py-3.5">
                           {e.details ? (
-                            <p className="text-sm text-slate-600 leading-relaxed break-words" title={e.details}>
+                            <p className="text-sm font-medium text-slate-700 leading-relaxed break-words" title={e.details}>
                               {e.details}
                             </p>
                           ) : (
@@ -227,9 +367,6 @@ const ActionHistoryPage: React.FC<Props> = ({ entries, items, onClear, onRevertT
                               <RotateCcw size={13} />
                               Revert sale
                             </button>
-                          )}
-                          {!isTradeCompleted && !isSale && (
-                            <span className="text-xs text-slate-300">—</span>
                           )}
                         </td>
                       </tr>

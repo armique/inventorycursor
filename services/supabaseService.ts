@@ -267,6 +267,7 @@ function mapItemToRow(item: InventoryItem, userId: string, isTrash: boolean): Re
     ebay_sale_adjustments: item.ebaySaleAdjustments ?? [],
     ebay_sale_cycles: item.ebaySaleCycles ?? [],
     price_history: item.priceHistory ?? [],
+    history: item.history ?? [],
     proof_attachments: item.proofAttachments ?? [],
     is_trash: isTrash,
   };
@@ -374,6 +375,7 @@ function mapRowToItem(row: Record<string, unknown>): InventoryItem {
     ebaySaleAdjustments: Array.isArray(row.ebay_sale_adjustments) ? (row.ebay_sale_adjustments as InventoryItem['ebaySaleAdjustments']) : [],
     ebaySaleCycles: Array.isArray(row.ebay_sale_cycles) ? (row.ebay_sale_cycles as InventoryItem['ebaySaleCycles']) : [],
     priceHistory: Array.isArray(row.price_history) ? (row.price_history as InventoryItem['priceHistory']) : [],
+    history: Array.isArray(row.history) ? (row.history as InventoryItem['history']) : [],
     proofAttachments: Array.isArray(row.proof_attachments) ? (row.proof_attachments as InventoryItem['proofAttachments']) : [],
   };
 }

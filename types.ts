@@ -116,6 +116,39 @@ export interface PriceHistoryEntry {
   orderId?: string;
 }
 
+export type ItemHistoryActionType =
+  | 'created'
+  | 'buy_price_changed'
+  | 'sell_price_changed'
+  | 'status_changed'
+  | 'bundle_created'
+  | 'bundle_split'
+  | 'added_to_bundle'
+  | 'removed_from_bundle'
+  | 'ebay_linked'
+  | 'ebay_unlinked'
+  | 'customer_set'
+  | 'condition_changed'
+  | 'photos_updated'
+  | 'general_edit';
+
+export interface ItemFieldDiff {
+  field: string;
+  from: any;
+  to: any;
+  label?: string;
+}
+
+export interface ItemHistoryEntry {
+  id: string;
+  timestamp: string;
+  action: ItemHistoryActionType;
+  title: string;
+  details?: string;
+  actor?: 'manual' | 'ai' | 'system';
+  diffs?: ItemFieldDiff[];
+}
+
 /** Documented eBay post-sale change (return, refund, cancellation) — Finanzamt-auditable. */
 export type EbaySaleAdjustmentKind =
   | 'refund'
@@ -553,6 +586,9 @@ export interface InventoryItem extends AiAttribution, SourceLinks {
 
   /** Price and sale history: changes to buy/sell price over time. */
   priceHistory?: PriceHistoryEntry[];
+
+  /** Complete chronological audit log of all changes to this specific item. */
+  history?: ItemHistoryEntry[];
 
   // Storefront
   /** If false, item is hidden from the public store. Default true when unset. */

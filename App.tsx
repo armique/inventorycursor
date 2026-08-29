@@ -57,6 +57,7 @@ import {
   writeFullAppStateToSupabase
 } from './services/supabaseService';
 import { runWeeklyPhotoPruneIfDue } from './services/photoPruneService';
+import { computeItemHistoryDiff, appendItemHistoryEntry } from './utils/itemHistoryDiff';
 import { withTimeout } from './utils/withTimeout';
 import {
   defaultGamificationState,
@@ -2515,18 +2516,14 @@ const App: React.FC = () => {
           if (final.status === ItemStatus.SOLD || final.status === ItemStatus.TRADED || final.status === ItemStatus.GIFTED) {
             final = { ...final, storeVisible: false };
           }
+          // Compute rich structured diff for item timeline and global action history
+          const { historyEntry, actionEntry } = computeItemHistoryDiff(oldItem, final, options?.actionNote);
+          final = appendItemHistoryEntry(final, historyEntry);
+
           if (idx >= 0) {
             nextItems[idx] = final;
             if (recordAction) {
-              const note = options?.actionNote;
-              if (note?.action) {
-                const details = note.detailsByItemId?.[final.id] ?? note.details;
-                actionEntries.push(makeActionEntry(note.action, final, details));
-              } else if (oldItem?.status !== final.status) {
-                actionEntries.push(makeActionEntry(`Status changed: ${oldItem?.status || '-'} -> ${final.status}`, final));
-              } else {
-                actionEntries.push(makeActionEntry('Item updated', final));
-              }
+              actionEntries.push(actionEntry);
             }
           } else {
             if (!final.assetTag) {
@@ -2535,13 +2532,7 @@ const App: React.FC = () => {
             indexById.set(final.id, nextItems.length);
             nextItems.push(final);
             if (recordAction) {
-              const note = options?.actionNote;
-              if (note?.action) {
-                const details = note.detailsByItemId?.[final.id] ?? note.details;
-                actionEntries.push(makeActionEntry(note.action, final, details));
-              } else {
-                actionEntries.push(makeActionEntry('Item created', final));
-              }
+              actionEntries.push(actionEntry);
             }
           }
         });
