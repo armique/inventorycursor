@@ -5710,218 +5710,222 @@ const InventoryList: React.FC<Props> = ({
            </div>
          )}
 
-         {/* Compact phone chrome — hide dense desktop toolbar below lg */}
-         <div className="lg:hidden space-y-1.5">
-           <div className="flex items-center gap-1.5">
-             <div className="flex flex-1 rounded-lg border border-slate-200 bg-white p-0.5">
-               <button
-                 type="button"
-                 onClick={() => { setStatusFilter('ACTIVE'); setSplitView(false); }}
-                 className={`flex-1 inline-flex items-center justify-center gap-1 px-2 py-2 rounded-md text-[11px] font-black uppercase ${
-                   statusFilter === 'ACTIVE' ? 'bg-slate-900 text-white' : 'text-slate-600'
-                 }`}
-               >
-                 <Package size={13} /> Active
-               </button>
-               <button
-                 type="button"
-                 onClick={() => { setStatusFilter('SOLD'); setSplitView(false); }}
-                 className={`flex-1 inline-flex items-center justify-center gap-1 px-2 py-2 rounded-md text-[11px] font-black uppercase ${
-                   statusFilter === 'SOLD' ? 'bg-slate-900 text-white' : 'text-slate-600'
-                 }`}
-               >
-                 <ShoppingBag size={13} /> Sold
-               </button>
-               <button
-                 type="button"
-                 onClick={() => { setStatusFilter('PURCHASES'); setSplitView(false); }}
-                 className={`flex-1 inline-flex items-center justify-center gap-1 px-1.5 py-2 rounded-md text-[11px] font-black uppercase ${
-                   statusFilter === 'PURCHASES' ? 'bg-slate-900 text-white' : 'text-slate-600'
-                 }`}
-                 title="Pending eBay and Kleinanzeigen deals — buys and sells"
-               >
-                 <Inbox size={13} /> Inbox
-                 {purchasesView.openCount > 0 && (
-                   <span
-                     className={`ml-0.5 min-w-[16px] px-1 rounded-full text-white text-[9px] tabular-nums ${
-                       purchasesView.staleCount > 0 ? 'bg-red-500' : 'bg-amber-500'
-                     }`}
-                     title={
-                       purchasesView.staleCount > 0
-                         ? `${purchasesView.staleCount} deal(s) unresolved for 3+ days`
-                         : undefined
-                     }
-                   >
-                     {purchasesView.openCount}
-                   </span>
-                 )}
-               </button>
-               <select
-                 value={statusFilter === 'DRAFTS' || statusFilter === 'ALL' ? statusFilter : ''}
-                 onChange={(e) => {
-                   const v = e.target.value as StatusFilter;
-                   if (v) { setStatusFilter(v); setSplitView(false); }
-                 }}
-                 className="max-w-[4.75rem] py-2 pl-1.5 pr-5 rounded-md border-0 bg-transparent text-[11px] font-bold text-slate-600 outline-none appearance-none bg-no-repeat bg-right"
-                 style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.2rem center' }}
-                 aria-label="More stock views"
-               >
-                 <option value="">More</option>
-                 <option value="DRAFTS">Drafts</option>
-                 <option value="ALL">All</option>
-               </select>
-             </div>
-             <button
-               type="button"
-               onClick={() => setShowMobileFiltersSheet(true)}
-               disabled={isSpecialListTab(statusFilter)}
-               className={`shrink-0 inline-flex items-center gap-1 px-2.5 py-2 rounded-lg border text-[11px] font-black uppercase ${
-                 isSpecialListTab(statusFilter)
-                   ? 'bg-white text-slate-300 border-slate-100'
-                   : hasActiveFilters || activeSpecFilterCount > 0 || smartPreset
-                   ? 'bg-slate-900 text-white border-slate-900'
-                   : 'bg-white text-slate-700 border-slate-200'
-               }`}
-             >
-               <Sliders size={13} />
-               Filter
-             </button>
-             <button
-               type="button"
-               onClick={() => navigate('/panel/bulk-imports')}
-               className="shrink-0 inline-flex items-center gap-1 px-2.5 py-2 rounded-lg border border-violet-200 bg-violet-50 text-[11px] font-black uppercase text-violet-900"
-               title="Bulk import / parse history — reopen a batch"
-             >
-               <Layers size={13} />
-               Imports
-               {bulkImports.length > 0 && (
-                 <span className="text-[10px] opacity-75">({Math.min(bulkImports.length, 99)}{bulkImports.length > 99 ? '+' : ''})</span>
-               )}
-             </button>
-           </div>
-           <div className="relative">
-             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={15} />
-             <input
-               type="search"
-               enterKeyHint="search"
-               className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:ring-2 focus:ring-slate-900/15"
-               placeholder={
-                 statusFilter === 'PURCHASES'
-                   ? 'Search purchases…'
-                   : 'Search stock, seller profile…'
-               }
-               value={searchTerm}
-               onChange={(e) => setSearchTerm(e.target.value)}
-               onFocus={() => setSearchSuggestionsOpen(true)}
-               onBlur={() => setTimeout(() => setSearchSuggestionsOpen(false), 180)}
-             />
-             {searchSuggestionsOpen && searchSuggestions.length > 0 && (
-               <div className="absolute z-50 left-0 right-0 top-full mt-1 py-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-48 overflow-y-auto">
-                 {searchSuggestions.map((s, sidx) => (
-                   <button
-                     key={`${s.type}-${s.text}-${sidx}`}
-                     type="button"
-                     className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50 flex items-center gap-2"
-                     onMouseDown={(e) => {
-                       e.preventDefault();
-                       setSearchTerm(s.text);
-                       setSearchSuggestionsOpen(false);
-                       if (s.type === 'name') {
-                         const match = items.find((i) => i.name === s.text);
-                         if (match) revealItemInList(match);
-                       }
-                     }}
-                   >
-                     <span className="text-slate-900 font-medium truncate">{s.text}</span>
-                     <span className="text-[10px] text-slate-400 shrink-0">{s.type}</span>
-                   </button>
-                 ))}
-               </div>
-             )}
-           </div>
-           <div className="flex items-center justify-between gap-2 px-0.5">
-             <span className="min-w-0 truncate text-[11px] font-semibold text-slate-500">
-               {listCountLabel}
-               {statusFilter !== 'PURCHASES' && categoryFilter !== 'ALL' ? ` · ${categoryFilter}` : ''}
-             </span>
-             <div className="flex shrink-0 items-center gap-1">
-               {mobileSortOptions && (
-                 <>
-                   <label className="relative">
-                     <ArrowUpDown
-                       size={12}
-                       className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-slate-400"
-                     />
-                     <span className="sr-only">Sort inventory</span>
-                     <select
-                       value={mobileSortValue}
-                       onChange={(e) => {
-                         const key = e.target.value;
-                         setSortConfig((prev) => {
-                           const prevKey = prev.key === 'item' ? 'name' : prev.key;
-                           return prevKey === key
-                             ? prev
-                             : { key, direction: defaultMobileSortDirection(key) };
-                         });
-                       }}
-                       className="max-w-[8rem] appearance-none rounded-lg border border-slate-200 bg-white py-1.5 pl-6 pr-6 text-[10px] font-black uppercase text-slate-700 outline-none"
-                       aria-label={`Sort ${statusFilter.toLowerCase()} inventory by`}
-                     >
-                       {mobileSortValue === '' && <option value="">Custom sort</option>}
-                       {mobileSortOptions.map((option) => (
-                         <option key={option.key} value={option.key}>
-                           {option.label}
-                         </option>
-                       ))}
-                     </select>
-                   </label>
-                   <button
-                     type="button"
-                     onClick={() =>
-                       setSortConfig((prev) => ({
-                         ...prev,
-                         direction: prev.direction === 'asc' ? 'desc' : 'asc',
-                       }))
-                     }
-                     className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700"
-                     aria-label={`Sort ${sortConfig.direction === 'asc' ? 'descending' : 'ascending'}`}
-                     title={sortConfig.direction === 'asc' ? 'Ascending — tap for descending' : 'Descending — tap for ascending'}
-                   >
-                     {sortConfig.direction === 'asc' ? <ArrowUp size={13} /> : <ArrowDown size={13} />}
-                   </button>
-                 </>
-               )}
-               {hasActiveFilters && !isSpecialListTab(statusFilter) && (
-                 <button type="button" onClick={clearAllFilters} className="px-1 text-[10px] font-black uppercase text-slate-500">
-                   Reset
-                 </button>
-               )}
-             </div>
-           </div>
-           <div className="min-h-[28px]">
-             {statusFilter === 'PURCHASES' ? (
-               purchasesView.chrome
-             ) : quickCategoryPins.length > 0 ? (
-             <div className="flex gap-1 overflow-x-auto pb-0.5 -mx-0.5 px-0.5">
-               {quickCategoryPins.map((pin) => {
-                 const active = isQuickCategoryPinActive(pin);
-                 return (
-                   <button
-                     key={pin.id}
-                     type="button"
-                     onClick={() => applyQuickCategoryPin(pin)}
-                     className={`shrink-0 px-2.5 py-1 rounded-full text-[10px] font-bold border ${
-                       active ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200'
-                     }`}
-                   >
-                     {pin.label}
-                   </button>
-                 );
-               })}
-             </div>
-             ) : null}
-           </div>
-         </div>
+          {/* Compact executive phone chrome for iPhone 13 Pro Max */}
+          <div className="lg:hidden space-y-2.5 pb-1">
+            {/* Header: Title + Quick Actions */}
+            <div className="flex items-center justify-between gap-2 px-1">
+              <div>
+                <h1 className="text-base font-black text-white tracking-tight flex items-center gap-2">
+                  <span>Stock &amp; Assets</span>
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                    statusFilter === 'ACTIVE'
+                      ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                      : statusFilter === 'SOLD'
+                        ? 'bg-sky-500/15 text-sky-400 border border-sky-500/30'
+                        : 'bg-purple-500/15 text-purple-400 border border-purple-500/30'
+                  }`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${
+                      statusFilter === 'ACTIVE' ? 'bg-emerald-400 animate-pulse' : statusFilter === 'SOLD' ? 'bg-sky-400' : 'bg-purple-400'
+                    }`} />
+                    {sortedItems.length} {statusFilter === 'ACTIVE' ? 'In Stock' : statusFilter.toLowerCase()}
+                  </span>
+                </h1>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setShowMobileFiltersSheet(true)}
+                  disabled={isSpecialListTab(statusFilter)}
+                  className={`h-9 px-2.5 rounded-xl border text-[11px] font-black uppercase inline-flex items-center gap-1.5 transition-all active:scale-95 ${
+                    isSpecialListTab(statusFilter)
+                      ? 'bg-slate-900 text-slate-600 border-slate-800'
+                      : hasActiveFilters || activeSpecFilterCount > 0 || smartPreset
+                      ? 'bg-emerald-500 text-slate-950 border-emerald-500 shadow-md shadow-emerald-500/20'
+                      : 'bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700'
+                  }`}
+                  aria-label="Open filters"
+                >
+                  <Sliders size={13} />
+                  <span>Filters</span>
+                  {(hasActiveFilters || activeSpecFilterCount > 0) && (
+                    <span className="h-4 w-4 rounded-full bg-slate-950 text-white text-[9px] font-black flex items-center justify-center">
+                      {activeSpecFilterCount || 1}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => navigate('/panel/bulk-imports')}
+                  className="h-9 px-2.5 rounded-xl border border-violet-500/40 bg-violet-500/10 text-violet-300 text-[11px] font-black uppercase inline-flex items-center gap-1 active:scale-95"
+                  title="Bulk imports"
+                >
+                  <Layers size={13} />
+                  {bulkImports.length > 0 && (
+                    <span className="text-[10px] tabular-nums font-bold">
+                      {Math.min(bulkImports.length, 99)}
+                    </span>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Segmented Status Toggle Bar */}
+            <div className="grid grid-cols-4 gap-1 p-1 rounded-2xl bg-slate-900 border border-slate-800 shadow-inner">
+              <button
+                type="button"
+                onClick={() => { setStatusFilter('ACTIVE'); setSplitView(false); }}
+                className={`py-2 rounded-xl text-xs font-black uppercase flex items-center justify-center gap-1.5 transition-all ${
+                  statusFilter === 'ACTIVE'
+                    ? 'bg-slate-800 text-emerald-400 border border-slate-700 shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Package size={13} />
+                <span>Active</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setStatusFilter('SOLD'); setSplitView(false); }}
+                className={`py-2 rounded-xl text-xs font-black uppercase flex items-center justify-center gap-1.5 transition-all ${
+                  statusFilter === 'SOLD'
+                    ? 'bg-slate-800 text-sky-400 border border-slate-700 shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <ShoppingBag size={13} />
+                <span>Sold</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setStatusFilter('PURCHASES'); setSplitView(false); }}
+                className={`py-2 rounded-xl text-xs font-black uppercase flex items-center justify-center gap-1.5 transition-all relative ${
+                  statusFilter === 'PURCHASES'
+                    ? 'bg-slate-800 text-amber-400 border border-slate-700 shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Inbox size={13} />
+                <span>Inbox</span>
+                {purchasesView.openCount > 0 && (
+                  <span className={`h-4 min-w-[16px] px-1 rounded-full text-white text-[9px] font-black flex items-center justify-center tabular-nums ${
+                    purchasesView.staleCount > 0 ? 'bg-red-500' : 'bg-amber-500'
+                  }`}>
+                    {purchasesView.openCount}
+                  </span>
+                )}
+              </button>
+
+              <select
+                value={statusFilter === 'DRAFTS' || statusFilter === 'ALL' ? statusFilter : ''}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v) { setStatusFilter(v); setSplitView(false); }
+                }}
+                className={`w-full py-2 px-1 text-center rounded-xl text-xs font-black uppercase bg-transparent outline-none transition-all ${
+                  statusFilter === 'DRAFTS' || statusFilter === 'ALL'
+                    ? 'bg-slate-800 text-purple-400 border border-slate-700 shadow-sm'
+                    : 'text-slate-400'
+                }`}
+              >
+                <option value="" className="bg-slate-900 text-slate-300">More…</option>
+                <option value="DRAFTS" className="bg-slate-900 text-slate-300">Drafts</option>
+                <option value="ALL" className="bg-slate-900 text-slate-300">All Items</option>
+              </select>
+            </div>
+
+            {/* Dark Search Bar */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" size={16} />
+              <input
+                type="search"
+                enterKeyHint="search"
+                className="w-full pl-9 pr-8 py-2.5 rounded-xl border border-slate-800 bg-slate-900 text-white placeholder-slate-500 text-sm font-semibold outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 transition-all shadow-inner"
+                placeholder={
+                  statusFilter === 'PURCHASES'
+                    ? 'Search incoming purchases…'
+                    : 'Search GPU, CPU, SSD, serial, buyer…'
+                }
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                onFocus={() => setSearchSuggestionsOpen(true)}
+                onBlur={() => setTimeout(() => setSearchSuggestionsOpen(false), 180)}
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1"
+                >
+                  <X size={14} />
+                </button>
+              )}
+              {searchSuggestionsOpen && searchSuggestions.length > 0 && (
+                <div className="absolute z-50 left-0 right-0 top-full mt-1 py-1 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl max-h-48 overflow-y-auto divide-y divide-slate-800/60">
+                  {searchSuggestions.map((s, sidx) => (
+                    <button
+                      key={`${s.type}-${s.text}-${sidx}`}
+                      type="button"
+                      className="w-full px-3 py-2 text-left text-sm hover:bg-slate-800 flex items-center justify-between text-slate-200"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setSearchTerm(s.text);
+                        setSearchSuggestionsOpen(false);
+                        if (s.type === 'name') {
+                          const match = items.find((i) => i.name === s.text);
+                          if (match) revealItemInList(match);
+                        }
+                      }}
+                    >
+                      <span className="font-semibold truncate">{s.text}</span>
+                      <span className="text-[10px] uppercase font-bold text-slate-500 shrink-0">{s.type}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Horizontal Thumb-Scrollable Category Chips */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 custom-scrollbar">
+              <button
+                type="button"
+                onClick={() => { setCategoryFilter('ALL'); setSubCategoryFilter(''); }}
+                className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-black uppercase tracking-wider transition-all active:scale-95 ${
+                  categoryFilter === 'ALL'
+                    ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/25'
+                    : 'bg-slate-900 border border-slate-800 text-slate-300 hover:border-slate-700'
+                }`}
+              >
+                All ({sortedItems.length})
+              </button>
+
+              {Object.keys(categories).map((cat) => {
+                const isSelected = categoryFilter === cat;
+                const count = items.filter((i) => {
+                  const matchesStatus = statusFilter === 'ACTIVE' ? i.status === 'In Stock' : statusFilter === 'Sold' ? i.status === 'Sold' : true;
+                  return matchesStatus && i.category === cat;
+                }).length;
+
+                return (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => { setCategoryFilter(cat); setSubCategoryFilter(''); }}
+                    className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-black uppercase tracking-wider transition-all active:scale-95 ${
+                      isSelected
+                        ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/25'
+                        : 'bg-slate-900 border border-slate-800 text-slate-300 hover:border-slate-700'
+                    }`}
+                  >
+                    {cat} {count > 0 && <span className="opacity-75">({count})</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
          <div className="hidden lg:block space-y-1">
          <div className="flex flex-wrap items-center gap-1">
@@ -6930,7 +6934,7 @@ const InventoryList: React.FC<Props> = ({
 
       {/* Shared list shells — only the inner items swap between Active / Sold / Purchases / Hub orders */}
       <div
-        className="lg:hidden flex-1 min-h-0 px-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] overflow-y-auto overscroll-y-contain touch-pan-y custom-scrollbar space-y-1.5"
+        className="lg:hidden flex-1 min-h-0 px-2.5 pt-1 pb-[calc(6rem+env(safe-area-inset-bottom))] overflow-y-auto overscroll-y-contain touch-pan-y custom-scrollbar space-y-2.5 bg-slate-950"
         style={{ WebkitOverflowScrolling: 'touch' }}
       >
           {statusFilter === 'PURCHASES' ? (
