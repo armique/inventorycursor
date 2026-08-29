@@ -1,32 +1,16 @@
 /**
- * Phone → PC photo bridge sessions.
- *
- * Stored under users/{uid}/photoUploadSessions/{token} so existing Firestore rules apply
- * (same path family as inventory sync). Phone must sign in with the SAME Google account.
- * Photos upload to items/{uid}/{itemId}/… (existing Storage rules).
+ * Phone → PC photo bridge sessions via Supabase.
  */
 
 import {
-  collection,
-  doc,
-  getDoc,
-  onSnapshot,
-  serverTimestamp,
-  setDoc,
-  updateDoc,
-  type Unsubscribe,
-} from 'firebase/firestore';
-import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
-import {
   getCurrentUser,
-  getFirebaseContext,
+  getSupabase,
   isCloudEnabled,
   signInWithGoogle,
-} from './firebaseService';
+} from './supabaseService';
 import { createPhotoUploadToken } from '../utils/photoUploadToken';
-import { assertStorageUploadBudget, recordStorageUploads } from './storageOpsCounter';
 
-export const PHOTO_UPLOAD_SESSIONS = 'photoUploadSessions';
+export const PHOTO_UPLOAD_SESSIONS = 'photo_upload_sessions';
 export const PHOTO_UPLOAD_TTL_MS = 25 * 60 * 1000;
 export const PHOTO_UPLOAD_MAX = 12;
 
@@ -44,17 +28,6 @@ export interface PhotoUploadSession {
   expiresAtMs: number;
 }
 
-function requireCtx() {
-  const ctx = getFirebaseContext();
-  if (!ctx) throw new Error('Cloud is not configured.');
-  return ctx;
-}
-
-function sessionDocRef(uid: string, token: string) {
-  const ctx = requireCtx();
-  return doc(ctx.db, 'users', uid, PHOTO_UPLOAD_SESSIONS, token);
-}
-
 export function buildPhoneUploadUrl(token: string, origin = window.location.origin): string {
   return `${origin.replace(/\/$/, '')}/upload/${encodeURIComponent(token)}`;
 }
@@ -65,10 +38,11 @@ export async function createPhotoUploadSession(params: {
   maxPhotos?: number;
   ttlMs?: number;
 }): Promise<PhotoUploadSession> {
-  if (!isCloudEnabled()) throw new Error('Sign in to cloud backup to use iPhone upload.');
-  const user = getCurrentUser();
+  const sb = getSupabase();
+  if (!sb) throw new Error('Supabase is not configured.');
+
+  const user = await getCurrentUser();
   if (!user) throw new Error('Sign in with Google first.');
-  if (user.isAnonymous) throw new Error('Sign in with Google (not anonymous) on the PC.');
 
   const token = createPhotoUploadToken();
   const now = Date.now();
@@ -80,7 +54,7 @@ export async function createPhotoUploadSession(params: {
 
   const session: PhotoUploadSession = {
     token,
-    ownerUid: user.uid,
+    ownerUid: user.id,
     itemId: String(params.itemId),
     itemName: (params.itemName || 'Item').slice(0, 120),
     status: 'active',
@@ -90,72 +64,64 @@ export async function createPhotoUploadSession(params: {
     expiresAtMs,
   };
 
-  await setDoc(sessionDocRef(user.uid, token), {
+  await sb.from('photo_upload_sessions').upsert({
     token: session.token,
-    ownerUid: session.ownerUid,
-    itemId: session.itemId,
-    itemName: session.itemName,
+    owner_uid: session.ownerUid,
+    item_id: session.itemId,
+    item_name: session.itemName,
     status: session.status,
-    maxPhotos: session.maxPhotos,
-    uploadedUrls: session.uploadedUrls,
-    createdAtMs: session.createdAtMs,
-    expiresAtMs: session.expiresAtMs,
-    createdAt: serverTimestamp(),
-    expiresAt: new Date(expiresAtMs),
+    max_photos: session.maxPhotos,
+    uploaded_urls: session.uploadedUrls,
+    created_at_ms: session.createdAtMs,
+    expires_at_ms: session.expiresAtMs,
+    updated_at: new Date().toISOString(),
   });
 
   return session;
 }
 
 export async function fetchPhotoUploadSession(token: string): Promise<PhotoUploadSession | null> {
-  const user = getCurrentUser();
-  if (!user || user.isAnonymous) {
-    throw new Error('Sign in with the same Google account you use on the PC.');
-  }
-  const snap = await getDoc(sessionDocRef(user.uid, token));
-  if (!snap.exists()) return null;
-  return normalizeSession(token, snap.data() as Record<string, unknown>);
+  const sb = getSupabase();
+  if (!sb) return null;
+  const { data } = await sb.from('photo_upload_sessions').select('*').eq('token', token).maybeSingle();
+  if (!data) return null;
+  return normalizeSession(token, data);
 }
 
 export function subscribePhotoUploadSession(
   token: string,
   onChange: (session: PhotoUploadSession | null) => void
-): Unsubscribe {
-  const user = getCurrentUser();
-  if (!user || user.isAnonymous) {
+): () => void {
+  const sb = getSupabase();
+  if (!sb) {
     onChange(null);
     return () => {};
   }
-  return onSnapshot(
-    sessionDocRef(user.uid, token),
-    (snap) => {
-      if (!snap.exists()) {
-        onChange(null);
-        return;
-      }
-      onChange(normalizeSession(token, snap.data() as Record<string, unknown>));
-    },
-    () => onChange(null)
-  );
+
+  void fetchPhotoUploadSession(token).then(onChange);
+
+  const channel = sb
+    .channel(`public:photo_upload_sessions:${token}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'photo_upload_sessions', filter: `token=eq.${token}` }, () => {
+      void fetchPhotoUploadSession(token).then(onChange);
+    })
+    .subscribe();
+
+  return () => {
+    void sb.removeChannel(channel);
+  };
 }
 
 export async function revokePhotoUploadSession(token: string): Promise<void> {
-  const user = getCurrentUser();
-  if (!user || user.isAnonymous) return;
-  const ref = sessionDocRef(user.uid, token);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) return;
-  await updateDoc(ref, { status: 'revoked' });
+  const sb = getSupabase();
+  if (!sb) return;
+  await sb.from('photo_upload_sessions').update({ status: 'revoked' }).eq('token', token);
 }
 
-/** Phone page: must use the same Google account as the PC panel. */
 export async function ensureGoogleUploadAuth(): Promise<void> {
-  const ctx = requireCtx();
-  if (ctx.auth.currentUser && !ctx.auth.currentUser.isAnonymous) return;
-  // Prefer mobile redirect (same path as panel) — popup-only broke iOS Safari.
-  await signInWithGoogle({
-    returnPath: `${window.location.pathname}${window.location.search}`,
-  });
+  const user = await getCurrentUser();
+  if (user) return;
+  await signInWithGoogle();
 }
 
 export async function uploadPhonePhotoToSession(
@@ -163,75 +129,55 @@ export async function uploadPhonePhotoToSession(
   file: File | Blob,
   fileName?: string
 ): Promise<string> {
-  const user = getCurrentUser();
-  if (!user || user.isAnonymous) {
-    throw new Error('Sign in with the same Google account you use on the PC.');
-  }
+  const sb = getSupabase();
+  if (!sb) throw new Error('Supabase is not configured.');
+
+  const user = await getCurrentUser();
+  if (!user) throw new Error('Sign in with Google first.');
 
   const session = await fetchPhotoUploadSession(token);
-  if (!session) {
-    throw new Error(
-      'Upload link not found. Use the same Google account as on your PC, and make sure the QR session is still open.'
-    );
-  }
+  if (!session) throw new Error('Upload link not found.');
   if (session.status !== 'active') throw new Error('This upload link was closed.');
   if (Date.now() > session.expiresAtMs) throw new Error('This upload link expired.');
   if (session.uploadedUrls.length >= session.maxPhotos) {
     throw new Error(`Limit reached (${session.maxPhotos} photos).`);
   }
 
-  const ctx = requireCtx();
   const name = (fileName || `iphone-${Date.now()}.jpg`).replace(/[^a-zA-Z0-9.\-_]/g, '_');
-  // Use existing Storage rules: items/{uid}/{itemId}/…
-  const path = `items/${user.uid}/${session.itemId}/phone-bridge/${Date.now()}-${name}`;
-  const ref = storageRef(ctx.storage, path);
-  const blob =
-    file instanceof Blob
-      ? file
-      : new Blob([file], { type: (file as File).type || 'image/jpeg' });
-  assertStorageUploadBudget();
-  const snapshot = await uploadBytes(ref, blob, {
-    contentType: blob.type || 'image/jpeg',
-  });
-  recordStorageUploads();
-  const url = await getDownloadURL(snapshot.ref);
+  const path = `${user.id}/${session.itemId}/phone-bridge/${Date.now()}-${name}`;
 
-  const nextUrls = [...session.uploadedUrls, url].slice(0, session.maxPhotos);
-  await updateDoc(sessionDocRef(user.uid, token), {
-    uploadedUrls: nextUrls,
-    updatedAtMs: Date.now(),
+  const { error } = await sb.storage.from('inventory-images').upload(path, file, {
+    upsert: true,
+    contentType: file.type || 'image/jpeg',
   });
-  return url;
+  if (error) throw error;
+
+  const { data: { publicUrl } } = sb.storage.from('inventory-images').getPublicUrl(path);
+  const nextUrls = [...session.uploadedUrls, publicUrl].slice(0, session.maxPhotos);
+
+  await sb.from('photo_upload_sessions').update({
+    uploaded_urls: nextUrls,
+    updated_at: new Date().toISOString(),
+  }).eq('token', token);
+
+  return publicUrl;
 }
 
 function normalizeSession(token: string, data: Record<string, unknown>): PhotoUploadSession {
-  const expiresAtMs =
-    typeof data.expiresAtMs === 'number'
-      ? data.expiresAtMs
-      : data.expiresAt &&
-          typeof (data.expiresAt as { toMillis?: () => number }).toMillis === 'function'
-        ? (data.expiresAt as { toMillis: () => number }).toMillis()
-        : Date.now();
+  const expiresAtMs = Number(data.expires_at_ms || data.expiresAtMs) || Date.now();
   let status = (data.status as PhotoUploadSessionStatus) || 'active';
   if (status === 'active' && Date.now() > expiresAtMs) status = 'expired';
   return {
     token,
-    ownerUid: String(data.ownerUid || ''),
-    itemId: String(data.itemId || ''),
-    itemName: String(data.itemName || 'Item'),
+    ownerUid: String(data.owner_uid || data.ownerUid || ''),
+    itemId: String(data.item_id || data.itemId || ''),
+    itemName: String(data.item_name || data.itemName || 'Item'),
     status,
-    maxPhotos: Number(data.maxPhotos) || PHOTO_UPLOAD_MAX,
-    uploadedUrls: Array.isArray(data.uploadedUrls)
-      ? (data.uploadedUrls as string[]).filter((u) => typeof u === 'string')
+    maxPhotos: Number(data.max_photos || data.maxPhotos) || PHOTO_UPLOAD_MAX,
+    uploadedUrls: Array.isArray(data.uploaded_urls || data.uploadedUrls)
+      ? ((data.uploaded_urls || data.uploadedUrls) as string[]).filter((u) => typeof u === 'string')
       : [],
-    createdAtMs: typeof data.createdAtMs === 'number' ? data.createdAtMs : Date.now(),
+    createdAtMs: Number(data.created_at_ms || data.createdAtMs) || Date.now(),
     expiresAtMs,
   };
-}
-
-export function photoUploadSessionsCollection(uid?: string) {
-  const user = getCurrentUser();
-  const id = uid || user?.uid;
-  if (!id) throw new Error('Not signed in');
-  return collection(requireCtx().db, 'users', id, PHOTO_UPLOAD_SESSIONS);
 }

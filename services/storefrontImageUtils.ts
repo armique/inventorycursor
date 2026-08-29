@@ -1,4 +1,4 @@
-import { CLOUD_OMITTED_PLACEHOLDER } from './firebaseService';
+import { CLOUD_OMITTED_PLACEHOLDER } from './supabaseService';
 
 /** URLs safe to put in <img src> on the public storefront (avoids broken icons). */
 export function isUsableProductImageUrl(url: string | undefined | null): boolean {

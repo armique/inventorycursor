@@ -1,7 +1,7 @@
 /**
  * Gallery history for AI-generated product cards.
  * Always keeps a durable local copy in IndexedDB first (so paid gens are never lost),
- * then uploads high-quality files to Firebase Storage when signed in.
+ * then uploads high-quality files to Supabase Storage when signed in.
  */
 
 import type { GeneratedProductCardEntry } from '../types';
@@ -17,7 +17,7 @@ import {
   isCloudEnabled,
   uploadProductCardBlob,
   writeProductCardGalleryEntry,
-} from './firebaseService';
+} from './supabaseService';
 
 const LOCAL_KEY = 'dein_product_card_gallery_v1';
 const MAX_LOCAL_ENTRIES = 120;
@@ -218,7 +218,7 @@ async function prepareHighQualityBlob(
 
 /**
  * Persist a freshly generated card.
- * Order: IndexedDB (always) → Firebase Storage (if signed in) → metadata.
+ * Order: IndexedDB (always) → Supabase Storage (if signed in) → metadata.
  */
 export async function saveGeneratedProductCard(
   input: SaveGeneratedCardInput

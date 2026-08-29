@@ -1,5 +1,5 @@
 import { filterUsableImageUrls } from '../../services/storefrontImageUtils';
-import type { StoreCatalogPayload } from '../../services/firebaseService';
+import type { StoreCatalogPayload } from '../../services/supabaseService';
 
 export type StoreItem = NonNullable<StoreCatalogPayload['items']>[number];
 

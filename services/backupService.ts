@@ -1,20 +1,20 @@
 /**
  * Automated daily snapshot backups.
  *
- * Why Storage and not Firestore: a full daily copy of the inventory would consume Firestore
- * document writes and stored bytes against its 1 GiB / 20k-writes-per-day free tier. Firebase
+ * Why Storage and not Supabase: a full daily copy of the inventory would consume Supabase
+ * document writes and stored bytes against its 1 GiB / 20k-writes-per-day free tier. Supabase
  * Storage has a separate 5 GB allowance that nothing else here comes close to using, and a
  * gzipped snapshot is a few hundred KB — so a year of history costs a rounding error.
  *
  * Snapshots are built from the in-memory app state that is already being synced, so a backup
- * costs ZERO extra Firestore reads.
+ * costs ZERO extra Supabase reads.
  */
 
 import {
   deleteBackupSnapshot,
   listBackupSnapshotNames,
   uploadBackupSnapshot,
-} from './firebaseService';
+} from './supabaseService';
 import { todayLocalDateKey } from '../utils/calendarDate';
 
 const LAST_RUN_KEY = 'dein_last_backup_day_v1';

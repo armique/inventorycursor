@@ -10,7 +10,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const Dealwatch = require('../dealwatch-runtime/server.js');
-const { filterSoldMedianOutliers, summarizeComponentTotals, loadClassifierConfig, classifyLotType, normalizeListingText } = dealwatchRuntime;
+const { filterSoldMedianOutliers, summarizeComponentTotals, loadClassifierConfig, classifyLotType, normalizeListingText } = Dealwatch;
 
 function item(sourceText: string, total: number) {
   return {

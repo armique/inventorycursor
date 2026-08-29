@@ -9,7 +9,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const Dealwatch = require('../dealwatch-runtime/server.js');
-const { classifyLotType, normalizeListingText } = dealwatchRuntime;
+const { classifyLotType, normalizeListingText } = Dealwatch;
 
 type Case = { title: string; expected: string; note: string; source: 'real' | 'synthetic' };
 

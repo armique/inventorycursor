@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Eye, EyeOff, Tag, MessageCircle, ExternalLink, Loader2, Check, Mail, Phone, Upload, CheckCircle2, Pencil, X, Filter, Search as SearchIcon, Sparkles, Copy, Download } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
 import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
-import { subscribeToStoreInquiries, markStoreInquiryRead, updateStoreInquiryStatus, type StoreInquiryStatus } from '../services/firebaseService';
+import { subscribeToStoreInquiries, markStoreInquiryRead, updateStoreInquiryStatus, type StoreInquiryStatus } from '../services/supabaseService';
 import { generateStoreDescription } from '../services/specsAI';
 import ItemThumbnail from './ItemThumbnail';
 import { isPublishedOnStorefront } from '../utils/storefrontCatalog';

@@ -1,5 +1,5 @@
 /**
- * Persist inventory photos to Firebase Storage (durable copies) or compressed local data URLs.
+ * Persist inventory photos to Supabase Storage (durable copies) or compressed local data URLs.
  * Remote URLs (eBay, search, Imgur) are downloaded, compressed, and uploaded so listings can
  * disappear without breaking your inventory photos.
  */
@@ -16,7 +16,7 @@ import {
   INVENTORY_PHOTO_THUMB_OPTIONS,
 } from '../utils/imageCompress';
 import { rememberPhotoThumb } from '../utils/photoThumbCache';
-import { CLOUD_OMITTED_PLACEHOLDER, getCurrentUser, isCloudEnabled, uploadItemImageBlob } from './firebaseService';
+import { CLOUD_OMITTED_PLACEHOLDER, getCurrentUser, isCloudEnabled, uploadItemImageBlob } from './supabaseService';
 import { isSupabaseConfigured, uploadItemPhotoToSupabase } from './supabaseService';
 import type { InventoryItem } from '../types';
 
@@ -54,30 +54,16 @@ export function isSupabaseStorageInventoryUrl(url: string): boolean {
   return s.includes('.supabase.co/storage/v1/object/public/inventory-images') || s.includes('/storage/v1/object/public/inventory-images');
 }
 
-export function isFirebaseStorageInventoryUrl(url: string): boolean {
-  const s = url.trim();
-  if (!s) return false;
-  if (!s.startsWith('https://')) return false;
-  if (!s.includes('firebasestorage.googleapis.com') && !s.includes('firebasestorage.app')) return false;
-  return s.includes('/items%2F') || s.includes('/items/');
-}
-
 /** Durable Storage URLs for inventory items OR AI product-card gallery. */
 export function isDurableStorageUrl(url: string): boolean {
   const s = url.trim();
   if (!s) return false;
-  if (isSupabaseStorageInventoryUrl(s)) return true;
-  if (!s.startsWith('https://')) return false;
-  if (!s.includes('firebasestorage.googleapis.com') && !s.includes('firebasestorage.app')) return false;
-  return (
-    s.includes('/items%2F') ||
-    s.includes('/items/') ||
-    s.includes('/product-cards%2F') ||
-    s.includes('/product-cards/')
-  );
+  return isSupabaseStorageInventoryUrl(s);
 }
 
+export const isDurableSupabaseStorageUrl = isDurableStorageUrl;
 export const isDurableFirebaseStorageUrl = isDurableStorageUrl;
+export const isFirebaseStorageInventoryUrl = isSupabaseStorageInventoryUrl;
 
 function isRemoteHttpUrl(url: string): boolean {
   const s = url.trim();
@@ -101,7 +87,7 @@ export function urlNeedsPhotoArchive(url: string | undefined | null): boolean {
   if (!s) return false;
   if (s === CLOUD_OMITTED_PLACEHOLDER) return false;
   if (isCategoryPlaceholderImage(s)) return false;
-  if (isSupabaseStorageInventoryUrl(s) || isFirebaseStorageInventoryUrl(s) || isDurableStorageUrl(s)) return false;
+  if (isSupabaseStorageInventoryUrl(s) || isSupabaseStorageInventoryUrl(s) || isDurableStorageUrl(s)) return false;
   return isRemoteHttpUrl(s) || isDataImageUrl(s);
 }
 
@@ -116,7 +102,7 @@ export interface PhotoArchiveAnalysis {
   itemsAffected: number;
   /** Unique remote/local photos across inventory (+ trash if scanned). */
   uniquePhotosToArchive: number;
-  /** Photo slots already on Firebase Storage. */
+  /** Photo slots already on Supabase Storage. */
   alreadyArchivedSlots: number;
 }
 
@@ -136,7 +122,7 @@ export function analyzeInventoryPhotoArchive(
       if (urlNeedsPhotoArchive(url)) {
         unique.add(url);
         itemNeeds = true;
-      } else if (isFirebaseStorageInventoryUrl(url)) {
+      } else if (isSupabaseStorageInventoryUrl(url)) {
         alreadyArchivedSlots++;
       }
     }
@@ -261,7 +247,7 @@ function remapItemPhotoUrls(item: InventoryItem, urlMap: Map<string, string>): I
   };
 }
 
-/** Bulk-download remote photos and upload to Firebase Storage; updates item URLs in place. */
+/** Bulk-download remote photos and upload to Supabase Storage; updates item URLs in place. */
 export async function bulkArchiveInventoryPhotos(
   items: InventoryItem[],
   options?: {
@@ -300,7 +286,7 @@ export async function bulkArchiveInventoryPhotos(
     try {
       const persisted = await persistOneInventoryImageUrl(source, 'shared', { force: true });
       urlMap.set(source, persisted);
-      if (isFirebaseStorageInventoryUrl(persisted) && persisted !== source) {
+      if (isSupabaseStorageInventoryUrl(persisted) && persisted !== source) {
         photosArchived++;
       } else {
         photosFailed++;
@@ -372,7 +358,7 @@ export async function archiveSinglePhotoUrl(
   clearPhotoArchiveCacheForUrl(trimmed);
   try {
     const persisted = await persistOneInventoryImageUrl(trimmed, 'shared', { force: true });
-    if (!isFirebaseStorageInventoryUrl(persisted) || persisted === trimmed) {
+    if (!isSupabaseStorageInventoryUrl(persisted) || persisted === trimmed) {
       const probe = await probePhotoArchiveUrl(trimmed);
       return {
         items,
@@ -490,7 +476,7 @@ async function persistOneInventoryImageUrl(
   if (!trimmed) return trimmed;
 
   // Already durable in Storage (inventory photos or AI card gallery) — do not re-fetch/re-encode
-  if (isDurableFirebaseStorageUrl(trimmed) || isFirebaseStorageInventoryUrl(trimmed)) {
+  if (isDurableSupabaseStorageUrl(trimmed) || isSupabaseStorageInventoryUrl(trimmed)) {
     return trimmed;
   }
 
@@ -607,10 +593,10 @@ export async function persistInventoryImageFiles(
   return out;
 }
 
-/** Persist sale-proof screenshot (eBay order, Kleinanzeigen chat) to Firebase Storage or compressed data URL. */
+/** Persist sale-proof screenshot (eBay order, Kleinanzeigen chat) to Supabase Storage or compressed data URL. */
 export async function persistSaleProofImage(source: string, itemId: string): Promise<string> {
   const trimmed = source.trim();
   if (!trimmed) return '';
-  if (isFirebaseStorageInventoryUrl(trimmed)) return trimmed;
+  if (isSupabaseStorageInventoryUrl(trimmed)) return trimmed;
   return persistOneInventoryImageUrl(trimmed, itemId.trim() || 'shared');
 }

@@ -7,7 +7,7 @@ import {
   uploadPhonePhotoToSession,
   type PhotoUploadSession,
 } from '../services/photoUploadSession';
-import { getAuthErrorMessage, getCurrentUser } from '../services/firebaseService';
+import { getAuthErrorMessage, getCurrentUser } from '../services/supabaseService';
 import { compressImageFileToBlob, INVENTORY_PHOTO_STORAGE_OPTIONS } from '../utils/imageCompress';
 
 const PhonePhotoUploadPage: React.FC = () => {

@@ -14,11 +14,9 @@ import {
   signInWithGoogle,
   logOut,
   getAuthErrorMessage,
-  isUsingFirebaseEmulator,
-  signInEmulatorWithEmail,
   prefersRedirectSignIn,
   prewarmGoogleSignIn,
-} from '../services/firebaseService';
+} from '../services/supabaseService';
 import GlobalSearch from './GlobalSearch';
 import { panelSuspenseFallback } from './RouteSkeletons';
 import { InventoryItem, Expense, BusinessSettings } from '../types';
@@ -34,7 +32,7 @@ interface SyncState {
 interface PanelLayoutProps {
   isCloudEnabled: boolean;
   authUser: any;
-  /** True once Firebase auth has completed initial check (so we don't flash login before session restore). */
+  /** True once Supabase auth has completed initial check (so we don't flash login before session restore). */
   authReady?: boolean;
   /** Whether the current user is allowed to access the admin panel. */
   isAdmin?: boolean;
@@ -56,7 +54,6 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   usePanelKeyboardShortcuts();
   const [signingIn, setSigningIn] = React.useState(false);
   const [signInError, setSignInError] = React.useState<string | null>(null);
-  const [emulatorEmail, setEmulatorEmail] = React.useState('abelyanarmen@gmail.com');
   const [moreNavOpen, setMoreNavOpen] = React.useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = React.useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(() => {
@@ -187,39 +184,6 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             <p className="text-xs text-slate-500 mt-3">
               A Google account window will open. After you approve, your inventory downloads from the cloud onto this phone.
             </p>
-          )}
-          {isUsingFirebaseEmulator() && (
-            <div className="mt-4 pt-4 border-t border-dashed border-slate-200 text-left">
-              <p className="text-[10px] font-black uppercase tracking-widest text-amber-600 mb-2">
-                Emulator dev sign-in — not present in production builds
-              </p>
-              <div className="flex gap-2">
-                <input
-                  value={emulatorEmail}
-                  onChange={(e) => setEmulatorEmail(e.target.value)}
-                  placeholder="email@example.com"
-                  className="flex-1 min-w-0 rounded-lg border border-slate-200 px-2.5 py-2 text-xs font-semibold"
-                />
-                <button
-                  type="button"
-                  disabled={signingIn || !emulatorEmail.trim()}
-                  onClick={async () => {
-                    setSigningIn(true);
-                    try {
-                      await signInEmulatorWithEmail(emulatorEmail.trim());
-                    } catch (e) {
-                      console.error(e);
-                      alert(getAuthErrorMessage(e));
-                    } finally {
-                      setSigningIn(false);
-                    }
-                  }}
-                  className="shrink-0 px-3 py-2 rounded-lg bg-amber-500 text-white text-xs font-black uppercase tracking-wider hover:bg-amber-600 disabled:opacity-50"
-                >
-                  Emulator sign-in
-                </button>
-              </div>
-            </div>
           )}
           <a href="/" className="block mt-4 text-sm text-slate-500 hover:text-slate-700">← Back to store</a>
         </div>

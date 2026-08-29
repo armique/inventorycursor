@@ -10,7 +10,7 @@ import {
 import { useSearchParams } from 'react-router-dom';
 import { Expense, ExpenseCategory, RecurringExpense } from '../types';
 import { sumInventoryStockExpenseAmount, sumOperatingExpenseAmount } from '../utils/expenseCategories';
-import { uploadExpenseAttachment } from '../services/firebaseService';
+import { uploadExpenseAttachment } from '../services/supabaseService';
 import { VirtualList } from './VirtualList';
 import PhoneUploadQrPanel from './PhoneUploadQrPanel';
 import { parseFuelReceiptFromImageInput } from '../services/fuelReceiptAI';
@@ -201,7 +201,7 @@ const ExpenseManager: React.FC<Props> = ({
       } as Partial<Expense>));
     } catch (err: any) {
       console.error('Upload failed', err);
-      alert(err?.message || 'Failed to upload attachment. Please check Firebase Storage configuration.');
+      alert(err?.message || 'Failed to upload attachment. Please check Supabase Storage configuration.');
     } finally {
       setUploading(false);
       setUploadProgress(null);

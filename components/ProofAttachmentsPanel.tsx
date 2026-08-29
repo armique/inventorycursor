@@ -11,7 +11,7 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { ExternalLink, FileText, Loader2, Paperclip, Trash2, Upload } from 'lucide-react';
 import type { ProofAttachment, ProofAttachmentType } from '../types';
-import { uploadProofAttachment } from '../services/firebaseService';
+import { uploadProofAttachment } from '../services/supabaseService';
 import {
   addProofAttachment,
   collectProofAttachments,

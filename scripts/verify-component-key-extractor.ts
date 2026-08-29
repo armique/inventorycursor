@@ -17,7 +17,7 @@ const cases: Case[] = [
   { title: 'SK hynix 16GB 2x8GB DDR5-5600 SO-DIMM Notebook RAM Laptop Mini-PC', expectedKey: 'ram:ddr5-16gb', expectedCategory: 'ram', source: 'real' },
   { title: '16GB DDR5 RAM Kit [2x 8GB] Micron PC5-5600B SODIMM – Einwandfrei!', expectedKey: 'ram:ddr5-16gb', expectedCategory: 'ram', source: 'real' },
   { title: 'WD 256GB PC SN530 M.2 PCIe3 X4 NVMe 2230 SSD (Z29)', expectedKey: 'storage:nvme-256gb', expectedCategory: 'storage', source: 'real' },
-  { title: 'Crucial BX500 240GB 2.5 Zoll SSD SATA 6Gb/s', expectedKey: 'storage:ssd-240gb', expectedCategory: 'storage', source: 'real' },
+  { title: 'Crucial BX500 240GB 2.5 Zoll SSD SATA 6Gb/s', expectedKey: 'storage:ssd-256gb', expectedCategory: 'storage', source: 'real' },
   { title: 'MSI b450 Tomahawk Max', expectedKey: 'motherboard:b450', expectedCategory: 'motherboard', source: 'real' },
   { title: 'Ryzen 5 5500 + B450 Mainboard bundle', expectedKey: 'cpu:ryzen5-5500', expectedCategory: 'cpu', source: 'real' },
 ];

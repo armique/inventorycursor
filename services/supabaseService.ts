@@ -823,3 +823,697 @@ export async function uploadItemPhotoToSupabase(
 
   return publicUrl;
 }
+
+
+export const CLOUD_OMITTED_PLACEHOLDER = '__CLOUD_OMITTED__';
+
+export function isCloudEnabled(): boolean {
+  return isSupabaseConfigured();
+}
+
+export async function getCurrentUser(): Promise<User | null> {
+  return getCurrentSupabaseUser();
+}
+
+export async function signInWithGoogle(redirectTo?: string): Promise<{ error: Error | null }> {
+  return signInWithGoogleOAuth(redirectTo);
+}
+
+export async function logOut(): Promise<{ error: Error | null }> {
+  return logOutSupabase();
+}
+
+export function onAuthChange(callback: (user: User | null, session: Session | null) => void): () => void {
+  return onSupabaseAuthChange(callback);
+}
+
+export function getAuthErrorMessage(err: any): string {
+  return err?.message || String(err || 'Authentication failed');
+}
+
+export function getSyncErrorMessage(err: any): string {
+  return err?.message || String(err || 'Sync failed');
+}
+
+export function setLocalDataOnlyMode(_mode: boolean): void {}
+export function prewarmGoogleSignIn(): void {}
+export function completeGoogleRedirectSignIn(): Promise<any> { return Promise.resolve(null); }
+export function consumeAuthReturnPath(): string | null { return null; }
+export function consumeRedirectPending(): boolean { return false; }
+export function isUsingFirebaseEmulator(): boolean { return false; }
+export function signInEmulatorWithEmail(): Promise<any> { return Promise.resolve({ error: new Error('Emulators disabled') }); }
+export function prefersRedirectSignIn(): boolean { return false; }
+
+export async function uploadExpenseAttachment(
+  file: File,
+  expenseId: string,
+  onProgress?: (percent: number) => void
+): Promise<string> {
+  const sb = getSupabase();
+  if (!sb) throw new Error('Supabase is not configured');
+
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) throw new Error('Not signed in to Supabase');
+
+  const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+  const path = `${user.id}/expenses/${expenseId || 'generic'}/${Date.now()}-${safeName}`;
+
+  if (onProgress) onProgress(20);
+  const { error } = await sb.storage.from('inventory-images').upload(path, file, {
+    upsert: true,
+    contentType: file.type || 'application/octet-stream',
+  });
+  if (error) throw error;
+  if (onProgress) onProgress(90);
+
+  const { data: { publicUrl } } = sb.storage.from('inventory-images').getPublicUrl(path);
+  if (onProgress) onProgress(100);
+  return publicUrl;
+}
+
+export async function uploadProofAttachment(
+  file: Blob,
+  recordId: string,
+  fileName: string
+): Promise<string> {
+  const sb = getSupabase();
+  if (!sb) throw new Error('Supabase is not configured');
+
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) throw new Error('Not signed in to Supabase');
+
+  const safeName = fileName.replace(/[^a-zA-Z0-9.\-_]/g, '_') || 'proof.jpg';
+  const safeId = recordId.replace(/[^a-zA-Z0-9.\-_]/g, '_') || 'generic';
+  const path = `${user.id}/proof/${safeId}/${Date.now()}-${safeName}`;
+
+  const { error } = await sb.storage.from('inventory-images').upload(path, file, {
+    upsert: true,
+    contentType: file.type || 'image/jpeg',
+  });
+  if (error) throw error;
+
+  const { data: { publicUrl } } = sb.storage.from('inventory-images').getPublicUrl(path);
+  return publicUrl;
+}
+
+export async function uploadItemImageBlob(
+  blob: Blob,
+  folder: string,
+  fileName?: string
+): Promise<string> {
+  return uploadItemPhotoToSupabase(folder, blob, fileName);
+}
+
+export async function getCachedProductPhoto(ean: string): Promise<string | null> {
+  const sb = getSupabase();
+  if (!sb || !ean) return null;
+  try {
+    const { data } = await sb.from('product_photo_cache').select('image_url').eq('ean', ean.trim()).maybeSingle();
+    return data?.image_url || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function setCachedProductPhoto(ean: string, imageUrl: string): Promise<void> {
+  const sb = getSupabase();
+  if (!sb || !ean || !imageUrl) return;
+  try {
+    await sb.from('product_photo_cache').upsert({
+      ean: ean.trim(),
+      image_url: imageUrl.trim(),
+      updated_at: new Date().toISOString(),
+    });
+  } catch {
+    // non-fatal
+  }
+}
+
+export async function fetchStoreCatalog(userId?: string): Promise<any | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+  try {
+    let query = sb.from('storefront_catalog').select('*');
+    if (userId) query = query.eq('user_id', userId);
+    const { data } = await query.order('updated_at', { ascending: false }).limit(1).maybeSingle();
+    return data?.catalog_data || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function writeStoreCatalog(payload: any): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return;
+  try {
+    await sb.from('storefront_catalog').upsert({
+      user_id: user.id,
+      catalog_data: payload,
+      updated_at: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.warn('[supabase] writeStoreCatalog failed:', err);
+  }
+}
+
+export function subscribeToStoreInquiries(
+  userId: string,
+  callback: (inquiries: StoreInquiry[]) => void
+): () => void {
+  const sb = getSupabase();
+  if (!sb) {
+    callback([]);
+    return () => {};
+  }
+
+  const load = async () => {
+    const { data } = await sb.from('store_inquiries').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+    callback((data || []).map((r: any) => ({
+      id: r.id,
+      itemId: r.item_id,
+      itemName: r.item_name,
+      customerName: r.customer_name,
+      customerEmail: r.customer_email,
+      customerPhone: r.customer_phone,
+      message: r.message,
+      status: r.status,
+      createdAt: r.created_at,
+      read: !!r.read,
+    })));
+  };
+
+  void load();
+
+  const channel = sb
+    .channel(`public:store_inquiries:${userId}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'store_inquiries', filter: `user_id=eq.${userId}` }, () => {
+      void load();
+    })
+    .subscribe();
+
+  return () => {
+    void sb.removeChannel(channel);
+  };
+}
+
+export async function markStoreInquiryRead(inquiryId: string): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  await sb.from('store_inquiries').update({ read: true }).eq('id', inquiryId);
+}
+
+export async function updateStoreInquiryStatus(inquiryId: string, status: string): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  await sb.from('store_inquiries').update({ status }).eq('id', inquiryId);
+}
+
+export async function fetchPendingTransactionsFromCloud(): Promise<Record<string, unknown>[] | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return null;
+  const { data } = await sb.from('pending_transactions').select('*').eq('user_id', user.id);
+  return data ? data.map((r: any) => r.tx_data || r) : [];
+}
+
+export async function writePendingTransactionsToCloud(rows: (Record<string, unknown> & { id: string })[]): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return;
+  const dbRows = rows.map((r) => ({
+    id: r.id,
+    user_id: user.id,
+    tx_data: r,
+    updated_at: new Date().toISOString(),
+  }));
+  await sb.from('pending_transactions').upsert(dbRows, { onConflict: 'id' });
+}
+
+export async function deletePendingTransactionsFromCloud(ids: string[]): Promise<void> {
+  const sb = getSupabase();
+  if (!sb || !ids.length) return;
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return;
+  await sb.from('pending_transactions').delete().in('id', ids).eq('user_id', user.id);
+}
+
+export async function fetchProductCardGalleryEntries(itemId?: string): Promise<any[]> {
+  const sb = getSupabase();
+  if (!sb) return [];
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return [];
+  let q = sb.from('product_card_gallery').select('*').eq('user_id', user.id);
+  if (itemId) q = q.eq('item_id', itemId);
+  const { data } = await q.order('created_at', { ascending: false });
+  return (data || []).map((r: any) => r.card_data || r);
+}
+
+export async function writeProductCardGalleryEntry(entry: any): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return;
+  await sb.from('product_card_gallery').upsert({
+    id: entry.id,
+    user_id: user.id,
+    item_id: entry.itemId || null,
+    card_data: entry,
+    created_at: entry.createdAt || new Date().toISOString(),
+  });
+}
+
+export async function deleteProductCardGalleryEntry(id: string): Promise<void> {
+  const sb = getSupabase();
+  if (!sb || !id) return;
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return;
+  await sb.from('product_card_gallery').delete().eq('id', id).eq('user_id', user.id);
+}
+
+export async function uploadBackupSnapshot(fileName: string, blob: Blob): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return;
+  const path = `${user.id}/backups/${fileName}`;
+  await sb.storage.from('inventory-images').upload(path, blob, { upsert: true });
+}
+
+export async function listBackupSnapshotNames(): Promise<string[]> {
+  const sb = getSupabase();
+  if (!sb) return [];
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return [];
+  const { data } = await sb.storage.from('inventory-images').list(`${user.id}/backups`);
+  return (data || []).map((i) => i.name).sort();
+}
+
+export async function deleteBackupSnapshot(fileName: string): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return;
+  await sb.storage.from('inventory-images').remove([`${user.id}/backups/${fileName}`]);
+}
+
+export async function getBackupSnapshotUrl(fileName: string): Promise<string | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return null;
+  const { data: { publicUrl } } = sb.storage.from('inventory-images').getPublicUrl(`${user.id}/backups/${fileName}`);
+  return publicUrl;
+}
+
+
+export interface EbayOrderCloudMeta {
+  updatedAt?: string;
+  count?: number;
+  lastSyncedAt?: string;
+}
+
+export interface EbayActiveListingsCloudMeta {
+  updatedAt?: string;
+  count?: number;
+  lastFetchedAt?: string;
+  sellerUsername?: string;
+}
+
+export interface EbayPurchaseCloudMeta {
+  updatedAt?: string;
+  count?: number;
+  lastFetchedAt?: string;
+}
+
+export interface EbayTxCloudState {
+  reports: any[];
+  meta: any;
+}
+
+export async function waitForAuthReady(): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) return;
+}
+
+export async function fetchEbayOrdersFromCloud(): Promise<{ orders: any[]; meta: EbayOrderCloudMeta | null } | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return null;
+  try {
+    const { data, error } = await sb.from('ebay_orders').select('order_data').eq('user_id', user.id);
+    if (error) return null;
+    return {
+      orders: (data || []).map((r: any) => r.order_data),
+      meta: { count: data?.length || 0, updatedAt: new Date().toISOString() },
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function writeEbayOrdersToCloud(orders: any[], metaPatch?: any): Promise<void> {
+  const sb = getSupabase();
+  if (!sb || !orders.length) return;
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return;
+  const rows = orders.map((o) => ({
+    id: o.orderId || o.id,
+    user_id: user.id,
+    order_data: o,
+    updated_at: new Date().toISOString(),
+  }));
+  const BATCH_SIZE = 200;
+  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+    const chunk = rows.slice(i, i + BATCH_SIZE);
+    await sb.from('ebay_orders').upsert(chunk, { onConflict: 'id' });
+  }
+}
+
+export async function clearEbayOrdersCloud(): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return;
+  await sb.from('ebay_orders').delete().eq('user_id', user.id);
+}
+
+export async function fetchEbayActiveListingsFromCloud(): Promise<{ listings: any[]; meta: EbayActiveListingsCloudMeta | null } | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return null;
+  try {
+    const { data, error } = await sb.from('ebay_listings').select('listing_data').eq('user_id', user.id);
+    if (error) return null;
+    return {
+      listings: (data || []).map((r: any) => r.listing_data),
+      meta: { count: data?.length || 0, updatedAt: new Date().toISOString() },
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function writeEbayActiveListingsToCloud(listings: any[], metaPatch?: any): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return;
+  const rows = listings.map((l) => ({
+    id: String(l.listingId || l.id),
+    user_id: user.id,
+    listing_data: l,
+    updated_at: new Date().toISOString(),
+  }));
+  const BATCH_SIZE = 200;
+  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+    const chunk = rows.slice(i, i + BATCH_SIZE);
+    await sb.from('ebay_listings').upsert(chunk, { onConflict: 'id' });
+  }
+}
+
+export async function clearEbayActiveListingsCloud(): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return;
+  await sb.from('ebay_listings').delete().eq('user_id', user.id);
+}
+
+export async function fetchEbayPurchasesFromCloud(): Promise<{ purchases: any[]; meta: EbayPurchaseCloudMeta | null } | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return null;
+  try {
+    const { data, error } = await sb.from('ebay_purchases').select('purchase_data').eq('user_id', user.id);
+    if (error) return null;
+    return {
+      purchases: (data || []).map((r: any) => r.purchase_data),
+      meta: { count: data?.length || 0, updatedAt: new Date().toISOString() },
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function writeEbayPurchasesToCloud(purchases: any[], metaPatch?: any): Promise<void> {
+  const sb = getSupabase();
+  if (!sb || !purchases.length) return;
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return;
+  const rows = purchases.map((p) => ({
+    id: String(p.orderId || p.id),
+    user_id: user.id,
+    purchase_data: p,
+    updated_at: new Date().toISOString(),
+  }));
+  const BATCH_SIZE = 200;
+  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+    const chunk = rows.slice(i, i + BATCH_SIZE);
+    await sb.from('ebay_purchases').upsert(chunk, { onConflict: 'id' });
+  }
+}
+
+export async function clearEbayPurchasesCloud(): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return;
+  await sb.from('ebay_purchases').delete().eq('user_id', user.id);
+}
+
+export async function fetchEbayTxReportsFromCloud(): Promise<{ reports: any[]; meta: any } | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return null;
+  try {
+    const { data, error } = await sb.from('ebay_tx_reports').select('report_data').eq('user_id', user.id);
+    if (error) return null;
+    return {
+      reports: (data || []).map((r: any) => r.report_data),
+      meta: { count: data?.length || 0 },
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchEbayTxReportRowsFromCloud(): Promise<any[] | null> {
+  const res = await fetchEbayTxReportsFromCloud();
+  return res?.reports || null;
+}
+
+export async function writeEbayTxReportsToCloud(reports: any[], metaPatch?: any): Promise<void> {
+  const sb = getSupabase();
+  if (!sb || !reports.length) return;
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return;
+  const rows = reports.map((r, idx) => ({
+    id: String(r.id || r.reportId || idx),
+    user_id: user.id,
+    report_data: r,
+    updated_at: new Date().toISOString(),
+  }));
+  const BATCH_SIZE = 200;
+  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+    const chunk = rows.slice(i, i + BATCH_SIZE);
+    await sb.from('ebay_tx_reports').upsert(chunk, { onConflict: 'id' });
+  }
+}
+
+export async function writeEbayTxReportRowsToCloud(reports: any[]): Promise<void> {
+  return writeEbayTxReportsToCloud(reports);
+}
+
+export async function clearEbayTxReportsCloud(): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return;
+  await sb.from('ebay_tx_reports').delete().eq('user_id', user.id);
+}
+
+
+export type StorefrontBlockId = 'hero' | 'categoryGrid' | 'promoAds' | 'bestSellers' | 'trustRow';
+
+export interface StorefrontPromoAd {
+  id: string;
+  title: string;
+  subtitle?: string;
+  badge?: string;
+  imageUrl?: string;
+  linkUrl?: string;
+  price?: number;
+  active?: boolean;
+}
+
+export interface StorefrontTrustItem {
+  id: string;
+  title: string;
+  description?: string;
+  iconName?: string;
+  active?: boolean;
+}
+
+export interface StorefrontConfig {
+  storeName?: string;
+  heroHeadline?: string;
+  heroTagline?: string;
+  heroCtaText?: string;
+  heroBackgroundUrl?: string;
+  blocksOrder?: StorefrontBlockId[];
+  promoAds?: StorefrontPromoAd[];
+  trustItems?: StorefrontTrustItem[];
+  themeColor?: string;
+}
+
+export interface StoreCatalogPayload {
+  items: any[];
+  categories: Record<string, string[]>;
+  updatedAt?: string;
+}
+
+export const DEFAULT_STOREFRONT_CONFIG: StorefrontConfig = {
+  storeName: 'ArmikTech Store',
+  heroHeadline: 'Premium Hardware & Custom Gaming PCs',
+  heroTagline: 'Hand-tested components, custom builds, fast delivery.',
+  heroCtaText: 'Shop Inventory',
+  blocksOrder: ['hero', 'categoryGrid', 'promoAds', 'bestSellers', 'trustRow'],
+  promoAds: [],
+  trustItems: [],
+  themeColor: '#0a84ff',
+};
+
+export function subscribeToStoreCatalog(
+  callback: (catalog: StoreCatalogPayload | null) => void
+): () => void {
+  const sb = getSupabase();
+  if (!sb) {
+    callback(null);
+    return () => {};
+  }
+
+  const load = async () => {
+    try {
+      const { data } = await sb.from('storefront_catalog').select('*').order('updated_at', { ascending: false }).limit(1).maybeSingle();
+      callback(data?.catalog_data || null);
+    } catch {
+      callback(null);
+    }
+  };
+
+  void load();
+
+  const channel = sb
+    .channel('public:storefront_catalog_sub')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'storefront_catalog' }, () => {
+      void load();
+    })
+    .subscribe();
+
+  return () => {
+    void sb.removeChannel(channel);
+  };
+}
+
+export function subscribeToStorefrontConfig(
+  callback: (config: StorefrontConfig) => void
+): () => void {
+  const sb = getSupabase();
+  if (!sb) {
+    callback(DEFAULT_STOREFRONT_CONFIG);
+    return () => {};
+  }
+
+  const load = async () => {
+    try {
+      const { data } = await sb.from('storefront_config').select('config_data').limit(1).maybeSingle();
+      callback({ ...DEFAULT_STOREFRONT_CONFIG, ...(data?.config_data || {}) });
+    } catch {
+      callback(DEFAULT_STOREFRONT_CONFIG);
+    }
+  };
+
+  void load();
+
+  const channel = sb
+    .channel('public:storefront_config_sub')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'storefront_config' }, () => {
+      void load();
+    })
+    .subscribe();
+
+  return () => {
+    void sb.removeChannel(channel);
+  };
+}
+
+export async function writeStorefrontConfig(config: StorefrontConfig): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return;
+  await sb.from('storefront_config').upsert({
+    user_id: user.id,
+    config_data: config,
+    updated_at: new Date().toISOString(),
+  });
+}
+
+export async function uploadStorefrontAsset(file: File): Promise<string> {
+  const sb = getSupabase();
+  if (!sb) throw new Error('Supabase is not configured');
+  const ext = file.name.split('.').pop() || 'jpg';
+  const path = `storefront-assets/${Date.now()}.${ext}`;
+  const { error } = await sb.storage.from('inventory-images').upload(path, file, { upsert: true });
+  if (error) throw error;
+  const { data: { publicUrl } } = sb.storage.from('inventory-images').getPublicUrl(path);
+  return publicUrl;
+}
+
+export async function createStoreInquiry(inquiry: any): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  await sb.from('store_inquiries').insert({
+    id: `inq-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    item_id: inquiry.itemId || null,
+    item_name: inquiry.itemName || null,
+    customer_name: inquiry.customerName || '',
+    customer_email: inquiry.customerEmail || '',
+    customer_phone: inquiry.customerPhone || null,
+    message: inquiry.message || '',
+    status: 'new',
+    created_at: new Date().toISOString(),
+    read: false,
+  });
+}
+
+
+export async function uploadProductCardBlob(
+  blob: Blob,
+  itemId: string,
+  fileName?: string
+): Promise<string> {
+  const sb = getSupabase();
+  if (!sb) throw new Error('Supabase is not configured');
+  const user = await getCurrentUser();
+  if (!user) throw new Error('Not signed in');
+  const ext = fileName?.split('.').pop() || 'png';
+  const path = `${user.id}/${itemId || 'gallery'}/product-cards/${Date.now()}-${fileName || 'card'}.${ext}`;
+  const { error } = await sb.storage.from('inventory-images').upload(path, blob, {
+    upsert: true,
+    contentType: blob.type || 'image/png',
+  });
+  if (error) throw error;
+  const { data: { publicUrl } } = sb.storage.from('inventory-images').getPublicUrl(path);
+  return publicUrl;
+}

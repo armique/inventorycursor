@@ -12,7 +12,7 @@ import {
   isCloudEnabled,
   writeEbayActiveListingsToCloud,
   type EbayActiveListingsCloudMeta,
-} from './firebaseService';
+} from './supabaseService';
 
 const STORAGE_KEY = 'ebay_active_listings_v1';
 

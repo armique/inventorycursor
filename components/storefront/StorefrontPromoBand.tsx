@@ -2,7 +2,7 @@ import React from 'react';
 import { MessageCircle } from 'lucide-react';
 import { formatEUR } from '../../utils/formatMoney';
 import type { StorefrontTexts } from './storefrontTexts';
-import type { StorefrontPromoAd } from '../../services/firebaseService';
+import type { StorefrontPromoAd } from '../../services/supabaseService';
 
 const TowerArt: React.FC = () => (
   <svg width="180" height="280" viewBox="0 0 180 280" aria-hidden="true">

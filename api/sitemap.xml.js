@@ -1,35 +1,32 @@
 /**
  * Vercel serverless: GET /api/sitemap.xml
  * Returns sitemap XML for the store (home, legal pages, categories, item URLs).
- * Reads store catalog from Firestore via REST API (public document).
+ * Reads store catalog from Supabase via REST API.
  */
 
-const PROJECT_ID = process.env.VERCEL_FIREBASE_PROJECT_ID || 'inventorycursor-e9000';
-const API_KEY = process.env.FIREBASE_API_KEY || process.env.VERCEL_FIREBASE_API_KEY || 'AIzaSyA1KbcJ1oI0g7WBqplaiRoLttr4TkgR9XY';
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
+const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
 
 async function fetchStoreCatalog() {
-  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/storeCatalog/public?key=${API_KEY}`;
-  const res = await fetch(url);
-  if (!res.ok) return null;
-  const data = await res.json();
-  if (!data.fields) return null;
-  const raw = data.fields?.items?.arrayValue?.values;
-  if (!Array.isArray(raw)) return [];
-  const items = raw.map((v) => {
-    const map = v.mapValue?.fields || {};
-    const get = (key) => {
-      const f = map[key];
-      if (!f) return undefined;
-      if (f.stringValue !== undefined) return f.stringValue;
-      if (f.integerValue !== undefined) return Number(f.integerValue);
-      if (f.doubleValue !== undefined) return f.doubleValue;
-      if (f.booleanValue !== undefined) return f.booleanValue;
-      if (f.nullValue !== undefined) return null;
-      return undefined;
-    };
-    return { id: get('id'), name: get('name'), category: get('category'), subCategory: get('subCategory') };
-  });
-  return items.filter((i) => i && i.id);
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return [];
+  try {
+    const url = `${SUPABASE_URL.replace(/\/+$/, '')}/rest/v1/storefront_catalog?select=catalog_data&order=updated_at.desc&limit=1`;
+    const res = await fetch(url, {
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    if (!Array.isArray(data) || !data[0]?.catalog_data) return [];
+    const catalog = data[0].catalog_data;
+    const items = catalog.items || [];
+    return items.filter((i) => i && i.id);
+  } catch (err) {
+    console.warn('[sitemap] Failed to fetch catalog from Supabase:', err);
+    return [];
+  }
 }
 
 function escapeXml(s) {
@@ -56,10 +53,8 @@ export default async function handler(req, res) {
     { loc: base + '/agb', changefreq: 'monthly', priority: '0.3' },
   ];
 
-  const categories = new Set();
   if (Array.isArray(items)) {
     items.forEach((i) => {
-      if (i.category) categories.add(i.category);
       urls.push({ loc: `${base}/item/${encodeURIComponent(i.id)}`, changefreq: 'weekly', priority: '0.8' });
     });
   }

@@ -10,7 +10,7 @@
  *
  * Two storage layers:
  *  - localStorage: instant reads for the Flags-column lookup, no network round trip.
- *  - Firestore (if signed in / cloud enabled): durable mirror so the cache survives a
+ *  - Supabase (if signed in / cloud enabled): durable mirror so the cache survives a
  *    cleared browser or a brand-new PC — pullOrderIndexFromCloud() re-hydrates localStorage
  *    from it, pushOrderIndexToCloud() uploads only what actually changed on this device.
  */
@@ -21,7 +21,7 @@ import {
   writeEbayOrdersToCloud,
   clearEbayOrdersCloud,
   type EbayOrderCloudMeta,
-} from './firebaseService';
+} from './supabaseService';
 import {
   mergeFinancialEvents,
   sumFinancialEventNet,
@@ -239,7 +239,7 @@ export interface UpsertEbayOrdersResult {
   changed: EbayOrderRecord[];
 }
 
-/** Merge new order records into the local cache, deduped/merged by orderId. Local-only — does not touch Firestore. */
+/** Merge new order records into the local cache, deduped/merged by orderId. Local-only — does not touch Supabase. */
 export function upsertEbayOrders(newOrders: EbayOrderRecord[]): UpsertEbayOrdersResult {
   const { orders, meta } = loadRaw();
   const byId = new Map(orders.map((o) => [o.orderId, o]));
@@ -351,7 +351,7 @@ export interface CloudPullResult {
 }
 
 /**
- * Pull every order cached in Firestore down into the local cache (merged, not replaced).
+ * Pull every order cached in Supabase down into the local cache (merged, not replaced).
  * Safe to call repeatedly — orders are deduped by orderId. No-op if signed out / cloud disabled.
  * Pass `{ force: true }` to pull even when the local cache already has data.
  */
@@ -397,7 +397,7 @@ export async function pullOrderIndexFromCloud(options?: { force?: boolean }): Pr
   }
 }
 
-/** Upload the given (already locally-merged) order records to Firestore, plus the current meta. Fire-and-forget friendly — swallows errors. */
+/** Upload the given (already locally-merged) order records to Supabase, plus the current meta. Fire-and-forget friendly — swallows errors. */
 export async function pushOrderIndexToCloud(records: EbayOrderRecord[]): Promise<void> {
   if (!isCloudEnabled()) return;
   try {
@@ -411,7 +411,7 @@ export async function pushOrderIndexToCloud(records: EbayOrderRecord[]): Promise
   }
 }
 
-/** Clear both the local cache and the Firestore mirror. */
+/** Clear both the local cache and the Supabase mirror. */
 export async function clearEbayOrderIndexEverywhere(): Promise<void> {
   clearEbayOrderIndex();
   if (!isCloudEnabled()) return;

@@ -6,7 +6,7 @@ import {
   writeEbayTxReportRowsToCloud,
   writeEbayTxReportsToCloud,
   type EbayTxCloudState,
-} from './firebaseService';
+} from './supabaseService';
 import {
   clearEbayTransactionReport,
   loadEbayTransactionLibrary,
@@ -253,7 +253,7 @@ export async function syncEbayTxReportsWithCloud(): Promise<void> {
   let remote = await fetchEbayTxReportsFromCloud();
   // fetchEbayTxReportsFromCloud() returns null both when the cloud genuinely has nothing
   // AND when the read itself failed (auth token not fully warmed up right after a fresh
-  // sign-in, a cold Firestore connection, a transient network blip) — those two cases are
+  // sign-in, a cold Supabase connection, a transient network blip) — those two cases are
   // indistinguishable from here, but only one of them is safe to treat as final. This
   // wrapper is memoized per page load (see runEbayTxCloudSyncOnce below), so getting this
   // wrong on the first try meant a device could show a permanently empty Abrechnung page
@@ -316,14 +316,14 @@ let inFlightCloudSync: Promise<void> | null = null;
 
 /**
  * Memoized wrapper around syncEbayTxReportsWithCloud() — the first caller (normally App.tsx,
- * on auth) kicks off the real Firestore pull; anyone else (the Abrechnung page's own auto-sync)
+ * on auth) kicks off the real Supabase pull; anyone else (the Abrechnung page's own auto-sync)
  * just awaits the same in-flight promise instead of racing it. That race was the actual cause
  * of orders doubling on a fresh device/browser: the page's own `loading` flag only reflects an
  * (empty, near-instant) local IndexedDB read, while this pull is deliberately deferred via
  * requestIdleCallback and can take seconds — plenty of time for the API auto-sync to run first,
  * see zero CSV-covered orders, and dump the entire order history in as "new".
  *
- * Also waits for Firebase's own auth-ready signal first (see waitForAuthReady) — the Abrechnung
+ * Also waits for Supabase's own auth-ready signal first (see waitForAuthReady) — the Abrechnung
  * page can call this before App.tsx's own authUser-gated effect ever runs, and
  * fetchEbayTxReportsFromCloud() reads auth.currentUser directly, which is still null during
  * that window even on a device that IS signed in. Without this wait, the very first call could

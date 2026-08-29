@@ -44,7 +44,7 @@ export function assertStorageUploadBudget(uploads = 1): void {
   if (current.uploads + requested <= STORAGE_CLIENT_MONTHLY_UPLOAD_BUDGET) return;
 
   const error = new Error(
-    'Firebase Storage free-tier safety limit reached on this device. ' +
+    'Cloud Storage safety limit reached on this device. ' +
       'New uploads are paused until the monthly quota resets.'
   ) as Error & { code?: string };
   error.code = 'storage/client-free-tier-budget';

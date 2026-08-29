@@ -48,8 +48,15 @@ import {
   snapshotThreeDPrintCloudNow,
   type ThreeDPrintCloudState,
 } from './services/threeDPrintCloud';
-import { isCloudEnabled, onAuthChange, subscribeToData, writeToCloud, writeStoreCatalog, getSyncErrorMessage, CLOUD_OMITTED_PLACEHOLDER, completeGoogleRedirectSignIn, consumeAuthReturnPath, consumeRedirectPending, getAuthErrorMessage } from './services/firebaseService';
 import {
+  isCloudEnabled,
+  onAuthChange,
+  getSyncErrorMessage,
+  CLOUD_OMITTED_PLACEHOLDER,
+  completeGoogleRedirectSignIn,
+  consumeAuthReturnPath,
+  consumeRedirectPending,
+  getAuthErrorMessage,
   saveItemChangesToSupabase,
   isSupabaseConfigured,
   fetchSupabaseSnapshotDirect,
@@ -393,7 +400,7 @@ function GoogleAuthRedirectBootstrap() {
           console.error('[auth] Redirect returned without a session', { origin });
           alert(
             `Google sign-in did not complete on this device.\n\n` +
-              `Confirm Firebase Authorized domains includes ${window.location.hostname}, then try again.`
+              `Confirm Supabase Authorized domains includes ${window.location.hostname}, then try again.`
           );
         }
       } catch (err) {
@@ -700,7 +707,7 @@ const App: React.FC = () => {
   const healthInsuranceLedgerDoneRef = useRef(false);
   
   const [authUser, setAuthUser] = useState<any>(null);
-  // Tracks when Firebase auth has completed its initial check (so we don't flash the login screen before session restore).
+  // Tracks when Supabase auth has completed its initial check (so we don't flash the login screen before session restore).
   const [authReady, setAuthReady] = useState<boolean>(!isCloudEnabled());
   const isRemoteUpdate = useRef(false);
   const hasUnsavedChanges = useRef(false);
@@ -743,7 +750,7 @@ const App: React.FC = () => {
   const catalogPublishDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cloudSyncInFlightRef = useRef(false);
   const suppressRemoteApplyUntilRef = useRef(0);
-  /** Timestamp (ms) of our last successful Firestore push — used to accept newer remote snapshots. */
+  /** Timestamp (ms) of our last successful Supabase push — used to accept newer remote snapshots. */
   const lastLocalPushAtRef = useRef(0);
   const remoteSnapshotSeenRef = useRef(false);
   const itemsRef = useRef(items);
@@ -1249,7 +1256,7 @@ const App: React.FC = () => {
 
   // Another tab/window (same browser) saved newer local inventory data than this tab has —
   // this is a narrow race between two tabs' local IndexedDB writes, not a real conflict; the
-  // Firestore live listener above already keeps `items` current across devices/tabs on its
+  // Supabase live listener above already keeps `items` current across devices/tabs on its
   // own. Reload automatically to pick up that newer local save, exactly as if this tab had
   // just now caught up live — but only when nothing here is unsaved yet, so a silent reload
   // can never discard an in-flight edit. If something IS unsaved, fall back to the banner
@@ -1265,7 +1272,7 @@ const App: React.FC = () => {
     return () => setInventoryItemsStaleListener(null);
   }, []);
 
-  // 1. BOOT: load local data and show app immediately; sync with Firestore in background
+  // 1. BOOT: load local data and show app immediately; sync with Supabase in background
   useEffect(() => {
     try {
       if (localStorage.getItem('deinventory_local_only') !== '0') {
@@ -1357,69 +1364,6 @@ const App: React.FC = () => {
             }
           })();
         });
-      } else {
-        unsubSnapshot = subscribeToData(user.uid, (data) => {
-        scheduleBackgroundWork(async () => {
-          await yieldToMain();
-          if (data && shouldApplyRemoteSnapshot(data)) {
-            const remoteTs = data.updatedAt ? Date.parse(data.updatedAt) : NaN;
-            if (
-              Number.isFinite(remoteTs) &&
-              remoteTs > lastLocalPushAtRef.current + REMOTE_ECHO_TOLERANCE_MS
-            ) {
-              hasUnsavedChanges.current = false;
-            }
-            applyRemoteData(data);
-          }
-          if (data) {
-            markCloudHydrated();
-            pendingCloudFlushRef.current = false;
-            initialWriteDoneRef.current = true;
-          } else if (!initialWriteDoneRef.current) {
-            initialWriteDoneRef.current = true;
-            const localHasData =
-              itemsRef.current.length > 0 ||
-              trashRef.current.length > 0 ||
-              expensesRef.current.length > 0;
-            if (!localHasData) {
-              markCloudHydrated();
-              pendingCloudFlushRef.current = false;
-            } else {
-              try {
-                const snap = getSyncSnapshot();
-                await writeToCloud({
-                  inventory: snap.items,
-                  trash: snap.trash,
-                  expenses: snap.expenses,
-                  recurringExpenses: snap.recurringExpenses,
-                  categories: snap.categories,
-                  categoryFields: snap.categoryFields,
-                  settings: snap.businessSettings,
-                  goals: { monthly: snap.monthlyGoal },
-                  dashboard: snap.dashboardPrefs,
-                  actionHistory: snap.actionHistory.slice(-ACTION_HISTORY_LIMIT),
-                  bulkImports: snap.bulkImports.slice(0, BULK_IMPORTS_LIMIT),
-                });
-                hasUnsavedChanges.current = false;
-                lastLocalPushAtRef.current = Date.now();
-                markCloudHydrated();
-                pendingCloudFlushRef.current = false;
-                suppressRemoteApplyUntilRef.current = Date.now() + REMOTE_APPLY_SUPPRESS_MS;
-              } catch (err) {
-                initialWriteDoneRef.current = false;
-                cloudHydratedRef.current = false;
-                setSyncState((prev) => ({ ...prev, status: 'error', message: getSyncErrorMessage(err) }));
-                return;
-              }
-            }
-          }
-          remoteSnapshotSeenRef.current = true;
-          setSyncState((prev) => {
-            if (prev.status === 'success' && prev.message === SYNC_MSG_SYNCED) return prev;
-            return { status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED };
-          });
-        });
-      });
       }
     });
     return () => {
@@ -1671,7 +1615,7 @@ const App: React.FC = () => {
     localStorage.setItem(GPU_SUBCATEGORY_MIGRATION_KEY, '1');
   }, [appState, items, categories, categoryFields]);
 
-  // First Firestore snapshot (from subscribeToData) hydrates or seeds cloud.
+  // First Supabase snapshot (from subscribeToData) hydrates or seeds cloud.
   // A second getDocs pull used to download the same ~1.5MiB pack and freeze the tab.
 
   // Re-hydrate eBay caches after the UI is quiet so this never freezes scrolling.
@@ -1772,8 +1716,8 @@ const App: React.FC = () => {
     return () => clearTimeout(t);
   }, [appState]);
 
-  // Daily off-site snapshot to Firebase Storage. Runs once per local calendar day, built from
-  // the already-loaded app state (zero extra Firestore reads) and deferred well past first paint
+  // Daily off-site snapshot to Supabase Storage. Runs once per local calendar day, built from
+  // the already-loaded app state (zero extra Supabase reads) and deferred well past first paint
   // so it never competes with boot or the initial cloud sync.
   useEffect(() => {
     if (!isCloudEnabled() || !authUser || appState !== 'READY') return;
@@ -1857,7 +1801,7 @@ const App: React.FC = () => {
     }
   }, [getSyncSnapshot]);
 
-  // Daily GitHub snapshot on open — independent of Firestore/cloud sync, works from any
+  // Daily GitHub snapshot on open — independent of Supabase/cloud sync, works from any
   // device (phone, PC, deployed site, local dev) as long as this browser has a saved
   // repo/token (Settings > Backup). Each push is its own commit, so git history is the
   // retention. Belt-and-suspenders alongside the close/hide trigger below — most days,
@@ -2168,7 +2112,7 @@ const App: React.FC = () => {
     );
   }, [authUser, getSyncSnapshot]);
 
-  // 2. Local persistence (debounced, chunked) + silent background Firestore write
+  // 2. Local persistence (debounced, chunked) + silent background Supabase write
   useEffect(() => {
     if (appState !== 'READY') return;
     const remoteApply = isRemoteUpdate.current;
@@ -3099,7 +3043,7 @@ const App: React.FC = () => {
            </div>
            <div className="text-center space-y-2">
               <h2 className="text-2xl font-black tracking-tight">DeInventory</h2>
-              <p className="text-slate-400 font-medium">Connecting to Firestore…</p>
+              <p className="text-slate-400 font-medium">Connecting to Supabase…</p>
            </div>
         </div>
      );

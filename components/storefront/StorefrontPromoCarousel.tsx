@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { StorefrontTexts } from './storefrontTexts';
-import type { StorefrontPromoAd } from '../../services/firebaseService';
+import type { StorefrontPromoAd } from '../../services/supabaseService';
 import StorefrontPromoBand from './StorefrontPromoBand';
 
 interface Props {

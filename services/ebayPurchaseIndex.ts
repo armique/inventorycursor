@@ -1,6 +1,6 @@
 /**
  * Cache of eBay **buyer** purchases (Trading API GetOrders OrderRole=Buyer).
- * Local library + Firestore mirror so history survives eBay’s ~90-day API window.
+ * Local library + Supabase mirror so history survives eBay’s ~90-day API window.
  */
 
 import {
@@ -9,7 +9,7 @@ import {
   isCloudEnabled,
   writeEbayPurchasesToCloud,
   type EbayPurchaseCloudMeta,
-} from './firebaseService';
+} from './supabaseService';
 import { guessPurchaseType, type EbayPurchaseType } from '../utils/purchaseTypeDetect';
 
 const STORAGE_KEY = 'ebay_purchase_index_v1';
@@ -396,7 +396,7 @@ export interface CloudPullResult {
   error?: string;
 }
 
-/** Merge Firestore purchase archive into local library. */
+/** Merge Supabase purchase archive into local library. */
 export async function pullPurchaseIndexFromCloud(options?: { force?: boolean }): Promise<CloudPullResult> {
   if (!isCloudEnabled()) return { pulled: 0, skipped: true };
   try {
@@ -495,7 +495,7 @@ export async function pullPurchaseIndexFromCloud(options?: { force?: boolean }):
   }
 }
 
-/** Upload touched purchase records + current meta to Firestore. */
+/** Upload touched purchase records + current meta to Supabase. */
 export async function pushPurchaseIndexToCloud(records: EbayPurchaseRecord[]): Promise<void> {
   if (!isCloudEnabled() || !records.length) return;
   try {

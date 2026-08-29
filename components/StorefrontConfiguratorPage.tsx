@@ -16,7 +16,7 @@ import {
   type StorefrontBlockId,
   type StorefrontPromoAd,
   type StorefrontTrustItem,
-} from '../services/firebaseService';
+} from '../services/supabaseService';
 
 const BLOCK_LABELS: Record<StorefrontBlockId, string> = {
   hero: 'Hero (headline & search)',
@@ -74,7 +74,7 @@ const StorefrontConfiguratorPage: React.FC = () => {
       setSavedConfig(cloneConfig(resolved));
       setLoadError(
         error
-          ? 'Could not load the live config (permission error) — showing defaults. Make sure the Firestore rules have been deployed (firebase deploy --only firestore:rules).'
+          ? 'Could not load the live config (permission error) — showing defaults. Make sure the Supabase rules have been deployed (firebase deploy --only firestore:rules).'
           : null
       );
       setLoading(false);

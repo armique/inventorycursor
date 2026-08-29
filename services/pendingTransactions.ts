@@ -6,7 +6,7 @@
  * stores at the view layer (see utils/inboxEntries.ts), so the existing parse / confirm /
  * ignore flow keeps working with no data migration.
  *
- * Local store `pending_transactions_v1` with a Firestore mirror at
+ * Local store `pending_transactions_v1` with a Supabase mirror at
  * users/{uid}/pendingTransactions, same pattern as the eBay caches.
  */
 
@@ -16,7 +16,7 @@ import {
   fetchPendingTransactionsFromCloud,
   isCloudEnabled,
   writePendingTransactionsToCloud,
-} from './firebaseService';
+} from './supabaseService';
 
 const STORAGE_KEY = 'pending_transactions_v1';
 
@@ -288,7 +288,7 @@ export interface PendingTxPullResult {
   error?: string;
 }
 
-/** Merge the Firestore copy into the local store (newest `updatedAt` wins). */
+/** Merge the Supabase copy into the local store (newest `updatedAt` wins). */
 export async function pullPendingTransactionsFromCloud(): Promise<PendingTxPullResult> {
   if (!isCloudEnabled()) return { pulled: 0, skipped: true };
   try {

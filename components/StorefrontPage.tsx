@@ -11,7 +11,7 @@ import {
   type StoreCatalogPayload,
   type StorefrontConfig,
   type StorefrontBlockId,
-} from '../services/firebaseService';
+} from '../services/supabaseService';
 import LegalModal, { type LegalModalType } from './LegalModal';
 import AboutContactModal from './AboutContactModal';
 import CookieConsent, { getCookieConsentAccepted } from './CookieConsent';

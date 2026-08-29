@@ -34,7 +34,7 @@ import {
   type EbayPurchaseRecord,
   type EbayPurchaseType,
 } from '../services/ebayPurchaseIndex';
-import { isCloudEnabled } from '../services/firebaseService';
+import { isCloudEnabled } from '../services/supabaseService';
 import {
   addFilamentSpool,
   findSpoolByEbayLineKey,

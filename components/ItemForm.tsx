@@ -50,7 +50,7 @@ import PhotoCleanupReview from './PhotoCleanupReview';
 import EbayBuyOrderParse from './EbayBuyOrderParse';
 import ReorderablePhotoThumbs from './ReorderablePhotoThumbs';
 import { searchProductPhotos, getImageSearchProviders, ImageSearchResult, ImageSearchProvider } from '../services/imageSearchService';
-import { getCachedProductPhoto, setCachedProductPhoto } from '../services/firebaseService';
+import { getCachedProductPhoto, setCachedProductPhoto } from '../services/supabaseService';
 import { getEbayUsername, ebayListingToPriceMatch, type EbayMyListing, type EbayListingPriceMatch } from '../services/ebayService';
 import { ensureEbayListings } from '../services/ebayListingIndex';
 import { matchEbayListingsForItem } from '../utils/ebayListingMatch';

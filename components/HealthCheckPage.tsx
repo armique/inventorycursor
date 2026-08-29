@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Activity, CheckCircle2, AlertTriangle, RefreshCw, Key, Cloud, ShoppingBag } from 'lucide-react';
 import { hasClientGeminiKey } from '../services/geminiService';
-import { isCloudEnabled } from '../services/firebaseService';
+import { isCloudEnabled } from '../services/supabaseService';
 import { loadAISettings, type AISettings } from '../services/aiSettings';
 
 interface Check {
@@ -38,7 +38,7 @@ const HealthCheckPage: React.FC = () => {
 
     list.push({
       id: 'cloud',
-      label: 'Firebase cloud sync',
+      label: 'Supabase cloud sync',
       status: isCloudEnabled() ? 'ok' : 'warn',
       detail: isCloudEnabled() ? 'Cloud sync enabled.' : 'Local-only mode — cloud is unavailable in this build.',
     });

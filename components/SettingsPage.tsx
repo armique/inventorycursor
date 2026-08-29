@@ -10,7 +10,7 @@ import { buildElsterChecklist } from '../services/elsterChecklist';
 import { buildSteuerberaterBundle, downloadSteuerberaterBundle } from '../services/steuerberaterExport';
 import { buildGdprExportBlob, downloadGdprExport } from '../services/gdprExport';
 import { encryptBackupJson } from '../services/encryptedBackup';
-import { isCloudEnabled, getFirebaseConfig, signInWithGoogle, logOut, onAuthChange, getAuthErrorMessage, setLocalDataOnlyMode, prewarmGoogleSignIn } from '../services/firebaseService';
+import { isCloudEnabled, getSupabaseConfig, signInWithGoogle, logOut, onAuthChange, getAuthErrorMessage, setLocalDataOnlyMode, prewarmGoogleSignIn } from '../services/supabaseService';
 import {
   analyzeInventoryPhotoArchive,
   archiveSinglePhotoUrl,
@@ -453,12 +453,12 @@ const SettingsPage: React.FC<Props> = ({
       return;
     }
     if (photoArchiveAnalysis.uniquePhotosToArchive === 0) {
-      showToast('No remote photos to archive — everything is already on Firebase Storage.', 'success');
+      showToast('No remote photos to archive — everything is already on Supabase Storage.', 'success');
       return;
     }
     const ok = window.confirm(
       `Archive ${photoArchiveAnalysis.uniquePhotosToArchive} unique photo${photoArchiveAnalysis.uniquePhotosToArchive === 1 ? '' : 's'} ` +
-        `from ${photoArchiveAnalysis.itemsAffected} item${photoArchiveAnalysis.itemsAffected === 1 ? '' : 's'} to Firebase Storage?\n\n` +
+        `from ${photoArchiveAnalysis.itemsAffected} item${photoArchiveAnalysis.itemsAffected === 1 ? '' : 's'} to Supabase Storage?\n\n` +
         'This downloads each linked image once, compresses it, and saves your own copy. Original eBay/search links will be replaced.'
     );
     if (!ok) return;
@@ -475,7 +475,7 @@ const SettingsPage: React.FC<Props> = ({
       setPhotoArchiveResult(result);
       setPhotoArchiveFailures(result.failures || []);
       showToast(
-        `Archived ${result.photosArchived} photo${result.photosArchived === 1 ? '' : 's'} to Firebase Storage` +
+        `Archived ${result.photosArchived} photo${result.photosArchived === 1 ? '' : 's'} to Supabase Storage` +
           (result.photosFailed ? ` (${result.photosFailed} failed)` : ''),
         result.photosArchived > 0 ? 'success' : 'error'
       );
@@ -585,7 +585,7 @@ const SettingsPage: React.FC<Props> = ({
     try {
       if (onForcePush) {
         // A broken network transport can leave the underlying write promise hanging forever
-        // with no error (seen live: Firestore's streaming channel silently torn down) — cap
+        // with no error (seen live: Supabase's streaming channel silently torn down) — cap
         // it so the button always ends up telling you something instead of spinning forever.
         const timeout = new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error('timeout')), 20000)
@@ -1680,7 +1680,7 @@ const SettingsPage: React.FC<Props> = ({
                             <AlertTriangle size={18} className="text-amber-700 shrink-0 mt-0.5" />
                             <div>
                                <p className="text-sm font-black text-amber-900">
-                                  {unarchivedPhotoEntries.length} photo{unarchivedPhotoEntries.length === 1 ? '' : 's'} still not on Firebase Storage
+                                  {unarchivedPhotoEntries.length} photo{unarchivedPhotoEntries.length === 1 ? '' : 's'} still not on Supabase Storage
                                </p>
                                <p className="text-xs text-amber-800 mt-1">
                                   These items still use eBay/search links or local data URLs. Retry below, or edit the item and re-import from eBay.
@@ -1760,15 +1760,13 @@ const SettingsPage: React.FC<Props> = ({
 
                    <details className="bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm text-slate-600">
                       <summary className="font-black text-slate-800 cursor-pointer text-xs uppercase tracking-wider">
-                         How to check if Firebase Storage is enabled
+                         How to check if Supabase Storage is enabled
                       </summary>
                       <ol className="mt-3 space-y-2 list-decimal list-inside text-xs leading-relaxed">
-                         <li>Open <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-blue-600 font-bold hover:underline">Firebase Console</a> → your project (<code className="bg-slate-200 px-1 rounded">{getFirebaseConfig()?.projectId || 'project-id'}</code>).</li>
-                         <li>Go to <strong>Build → Storage</strong> in the left menu.</li>
-                         <li>If you see <strong>Get started</strong>, click it and choose a bucket location (EU if you are in Germany). That enables Storage.</li>
-                         <li>Under <strong>Rules</strong>, allow signed-in uploads, e.g. <code className="bg-slate-200 px-1 rounded text-[10px]">allow read, write: if request.auth != null;</code> for paths under <code className="bg-slate-200 px-1 rounded text-[10px]">items/&#123;userId&#125;/</code>. Deploy rules with <code className="bg-slate-200 px-1 rounded text-[10px]">firebase deploy --only storage</code> if you use the CLI.</li>
-                         <li>Back in this app: sign in, then import or archive one photo. If it works, thumbnails switch to <code className="bg-slate-200 px-1 rounded text-[10px]">firebasestorage.googleapis.com</code> URLs.</li>
-                         <li>In Firebase Console → Storage → <strong>Files</strong>, you should see folders like <code className="bg-slate-200 px-1 rounded text-[10px]">items/your-uid/…</code>.</li>
+                         <li>Open <a href="https://supabase.com/dashboard" target="_blank" rel="noopener noreferrer" className="text-blue-600 font-bold hover:underline">Supabase Dashboard</a> → your project.</li>
+                         <li>Go to <strong>Storage</strong> in the left menu.</li>
+                         <li>Ensure the bucket <code className="bg-slate-200 px-1 rounded text-[10px]">inventory-images</code> exists and is marked <strong>Public</strong>.</li>
+                         <li>In Supabase Storage → <strong>inventory-images</strong>, you will see folders like <code className="bg-slate-200 px-1 rounded text-[10px]">items/your-uid/…</code>.</li>
                       </ol>
                    </details>
                 </div>
