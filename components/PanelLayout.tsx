@@ -14,6 +14,7 @@ import {
   signInWithGoogle,
   signInWithEmailOtp,
   signInWithDevAdmin,
+  verifyAndSignInWithPin,
   logOut,
   getAuthErrorMessage,
   prefersRedirectSignIn,
@@ -61,6 +62,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   const [authTab, setAuthTab] = React.useState<'google' | 'email' | 'dev'>('google');
   const [emailInput, setEmailInput] = React.useState(OWNER_ADMIN_EMAIL);
   const [emailOtpSent, setEmailOtpSent] = React.useState(false);
+  const [devPinInput, setDevPinInput] = React.useState('');
   const [moreNavOpen, setMoreNavOpen] = React.useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = React.useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(() => {
@@ -287,21 +289,40 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
           )}
 
           {authTab === 'dev' && (
-            <div className="space-y-3 text-left">
-              <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-xs text-slate-600 space-y-1">
-                <p className="font-bold text-slate-900">Direct Owner / Dev Session</p>
-                <p>Instantly authorizes this browser session as <strong className="text-slate-900">{OWNER_ADMIN_EMAIL}</strong> for debugging, local testing, and agent verification without external popups.</p>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                setSignInError(null);
+                const res = verifyAndSignInWithPin(devPinInput, OWNER_ADMIN_EMAIL);
+                if (!res.success) {
+                  setSignInError(res.error || 'Invalid Developer Passcode');
+                }
+              }}
+              className="space-y-3 text-left"
+            >
+              <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl text-xs text-slate-600 space-y-1">
+                <p className="font-bold text-slate-900">Protected Developer Access</p>
+                <p>Enter your secret master passcode to authorize this session as <strong className="text-slate-900">{OWNER_ADMIN_EMAIL}</strong>.</p>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Developer Passcode / PIN</label>
+                <input
+                  type="password"
+                  required
+                  autoFocus
+                  value={devPinInput}
+                  onChange={(e) => setDevPinInput(e.target.value)}
+                  placeholder="Enter secret PIN"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900"
+                />
               </div>
               <button
-                type="button"
-                onClick={() => {
-                  signInWithDevAdmin(OWNER_ADMIN_EMAIL);
-                }}
-                className="w-full py-3 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-sm"
+                type="submit"
+                className="w-full py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-sm active:scale-[0.99]"
               >
-                <Zap size={16} /> Enter Dashboard as Owner
+                <Zap size={16} /> Unlock Dashboard
               </button>
-            </div>
+            </form>
           )}
 
           {signInError && (
