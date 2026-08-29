@@ -379,34 +379,60 @@ function mapRowToItem(row: Record<string, unknown>): InventoryItem {
 }
 
 // ------------------------------------------------------------------------------
-// 5. READ FULL STATE FROM SUPABASE
+// 5. READ FULL STATE FROM SUPABASE (WITH PAGINATION BEYOND 1000 ROWS)
 // ------------------------------------------------------------------------------
+
+async function fetchPaginatedTable<T = any>(
+  tableName: string,
+  userId: string,
+  orderByCol = 'id'
+): Promise<T[]> {
+  const sb = getSupabase();
+  if (!sb) return [];
+  const PAGE_SIZE = 1000;
+  let all: T[] = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await sb
+      .from(tableName)
+      .select('*')
+      .eq('user_id', userId)
+      .order(orderByCol, { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+
+    if (error) {
+      console.error(`[supabase] Fetch error on ${tableName}:`, error);
+      break;
+    }
+    if (!data || data.length === 0) break;
+    all.push(...(data as T[]));
+    if (data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+  return all;
+}
 
 export async function fetchSupabaseSnapshotDirect(userId: string): Promise<SupabaseSyncSnapshot | null> {
   const sb = getSupabase();
   if (!sb) return null;
 
-  const [invRes, expRes, recExpRes, profRes, ordersRes, reportsRes, actRes, bulkRes] = await Promise.all([
-    sb.from('inventory_items').select('*').eq('user_id', userId),
-    sb.from('expenses').select('*').eq('user_id', userId).order('date', { ascending: false }),
-    sb.from('recurring_expenses').select('*').eq('user_id', userId),
+  const [invRows, expRows, recExpRows, profRes, ordersRows, reportsRows, actRes, bulkRes] = await Promise.all([
+    fetchPaginatedTable('inventory_items', userId),
+    fetchPaginatedTable('expenses', userId, 'date'),
+    fetchPaginatedTable('recurring_expenses', userId),
     sb.from('user_profiles').select('*').eq('id', userId).maybeSingle(),
-    sb.from('ebay_orders').select('*').eq('user_id', userId),
-    sb.from('ebay_tx_reports').select('*').eq('user_id', userId),
+    fetchPaginatedTable('ebay_orders', userId),
+    fetchPaginatedTable('ebay_tx_reports', userId),
     sb.from('action_history').select('*').eq('user_id', userId).order('timestamp', { ascending: false }).limit(200),
     sb.from('bulk_imports').select('*').eq('user_id', userId).order('imported_at', { ascending: false }).limit(50),
   ]);
 
-  if (invRes.error) {
-    console.error('[supabase] Inventory fetch error:', invRes.error);
-    return null;
-  }
+  const allItems = invRows.map(mapRowToItem);
+  const items = allItems.filter((_, idx) => !invRows[idx].is_trash);
+  const trash = allItems.filter((_, idx) => !!invRows[idx].is_trash);
 
-  const allItems = (invRes.data || []).map(mapRowToItem);
-  const items = allItems.filter((_, idx) => !invRes.data[idx].is_trash);
-  const trash = allItems.filter((_, idx) => !!invRes.data[idx].is_trash);
-
-  const expenses: Expense[] = (expRes.data || []).map((r) => ({
+  const expenses: Expense[] = expRows.map((r: any) => ({
     id: String(r.id),
     description: String(r.description),
     amount: Number(r.amount),
@@ -417,7 +443,7 @@ export async function fetchSupabaseSnapshotDirect(userId: string): Promise<Supab
     attachmentName: r.attachment_name ? String(r.attachment_name) : undefined,
   }));
 
-  const recurringExpenses: RecurringExpense[] = (recExpRes.data || []).map((r) => ({
+  const recurringExpenses: RecurringExpense[] = recExpRows.map((r: any) => ({
     id: String(r.id),
     description: String(r.description),
     monthlyAmount: Number(r.monthly_amount),
@@ -493,25 +519,22 @@ export async function fetchFullAppStateFromSupabase(): Promise<SupabaseSyncSnaps
   const { data: { user } } = await sb.auth.getUser();
   if (!user) return null;
 
-  const [invRes, expRes, recExpRes, profRes, ordersRes, reportsRes, actRes, bulkRes] = await Promise.all([
-    sb.from('inventory_items').select('*').eq('user_id', user.id),
-    sb.from('expenses').select('*').eq('user_id', user.id).order('date', { ascending: false }),
-    sb.from('recurring_expenses').select('*').eq('user_id', user.id),
+  const [invRows, expRows, recExpRows, profRes, ordersRows, reportsRows, actRes, bulkRes] = await Promise.all([
+    fetchPaginatedTable('inventory_items', user.id),
+    fetchPaginatedTable('expenses', user.id, 'date'),
+    fetchPaginatedTable('recurring_expenses', user.id),
     sb.from('user_profiles').select('*').eq('id', user.id).maybeSingle(),
-    sb.from('ebay_orders').select('*').eq('user_id', user.id),
-    sb.from('ebay_tx_reports').select('*').eq('user_id', user.id),
+    fetchPaginatedTable('ebay_orders', user.id),
+    fetchPaginatedTable('ebay_tx_reports', user.id),
     sb.from('action_history').select('*').eq('user_id', user.id).order('timestamp', { ascending: false }).limit(200),
     sb.from('bulk_imports').select('*').eq('user_id', user.id).order('imported_at', { ascending: false }).limit(50),
   ]);
 
-  if (invRes.error) throw invRes.error;
-  if (expRes.error) throw expRes.error;
+  const allItems = invRows.map(mapRowToItem);
+  const items = allItems.filter((_, idx) => !invRows[idx].is_trash);
+  const trash = allItems.filter((_, idx) => !!invRows[idx].is_trash);
 
-  const allItems = (invRes.data || []).map(mapRowToItem);
-  const items = allItems.filter((_, idx) => !invRes.data[idx].is_trash);
-  const trash = allItems.filter((_, idx) => !!invRes.data[idx].is_trash);
-
-  const expenses: Expense[] = (expRes.data || []).map((r) => ({
+  const expenses: Expense[] = expRows.map((r: any) => ({
     id: String(r.id),
     description: String(r.description),
     amount: Number(r.amount),
