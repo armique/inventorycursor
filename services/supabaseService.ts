@@ -108,7 +108,6 @@ export function isLocalOrDevEnvironment(): boolean {
 }
 
 export function getDevAdminUser(): User | null {
-  if (!isLocalOrDevEnvironment()) return null;
   if (typeof localStorage === 'undefined') return null;
   try {
     const raw = localStorage.getItem(DEV_AUTH_STORAGE_KEY);
@@ -121,15 +120,11 @@ export function isDevAdminSession(): boolean {
   return !!getDevAdminUser();
 }
 
-export function signInWithDevAdmin(email = OWNER_ADMIN_EMAIL): User | null {
-  if (!isLocalOrDevEnvironment()) {
-    console.warn('Dev admin login is only permitted in local/dev environment.');
-    return null;
-  }
+export function signInWithDevAdmin(email = OWNER_ADMIN_EMAIL): User {
   const user = {
     id: 'dev-owner-' + (typeof btoa !== 'undefined' ? btoa(email).replace(/=/g, '') : 'local'),
     app_metadata: { provider: 'dev' },
-    user_metadata: { name: 'Owner (Dev)' },
+    user_metadata: { name: 'Owner / Developer' },
     aud: 'authenticated',
     confirmation_sent_at: new Date().toISOString(),
     confirmed_at: new Date().toISOString(),

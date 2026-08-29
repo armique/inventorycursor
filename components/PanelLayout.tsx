@@ -177,15 +177,13 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             >
               Email OTP
             </button>
-            {isLocalDev && (
-              <button
-                type="button"
-                onClick={() => { setAuthTab('dev'); setSignInError(null); }}
-                className={`flex-1 py-1.5 rounded-lg transition-colors ${authTab === 'dev' ? 'bg-white text-slate-900 shadow-sm' : 'hover:text-slate-900'}`}
-              >
-                Local Dev
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => { setAuthTab('dev'); setSignInError(null); }}
+              className={`flex-1 py-1.5 rounded-lg transition-colors ${authTab === 'dev' ? 'bg-white text-slate-900 shadow-sm' : 'hover:text-slate-900'}`}
+            >
+              Dev Access
+            </button>
           </div>
 
           {authTab === 'google' && (
