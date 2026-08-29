@@ -50,7 +50,13 @@ import {
   type ThreeDPrintCloudState,
 } from './services/threeDPrintCloud';
 import { isCloudEnabled, onAuthChange, subscribeToData, writeToCloud, writeStoreCatalog, getSyncErrorMessage, CLOUD_OMITTED_PLACEHOLDER, fetchGamificationState, writeGamificationState, completeGoogleRedirectSignIn, consumeAuthReturnPath, consumeRedirectPending, getAuthErrorMessage } from './services/firebaseService';
-import { saveItemChangesToSupabase, isSupabaseConfigured } from './services/supabaseService';
+import {
+  saveItemChangesToSupabase,
+  isSupabaseConfigured,
+  fetchSupabaseSnapshotDirect,
+  subscribeToSupabaseRealtime,
+  writeFullAppStateToSupabase
+} from './services/supabaseService';
 import { withTimeout } from './utils/withTimeout';
 import {
   defaultGamificationState,
@@ -1295,9 +1301,69 @@ const App: React.FC = () => {
         setSyncState(prev => ({ ...prev, status: 'idle', message: undefined }));
         return;
       }
-      setSyncState({ status: 'syncing', lastSynced: null, message: 'Downloading from cloud…' });
+      setSyncState({ status: 'syncing', lastSynced: null, message: 'Downloading from Supabase…' });
       cloudHydratedRef.current = false;
-      unsubSnapshot = subscribeToData(user.uid, (data) => {
+
+      if (isSupabaseConfigured()) {
+        void (async () => {
+          try {
+            const sbSnapshot = await fetchSupabaseSnapshotDirect(user.uid);
+            if (sbSnapshot) {
+              const payload = {
+                inventory: sbSnapshot.items,
+                trash: sbSnapshot.trash,
+                expenses: sbSnapshot.expenses,
+                recurringExpenses: sbSnapshot.recurringExpenses,
+                categories: sbSnapshot.categories,
+                categoryFields: sbSnapshot.categoryFields,
+                settings: sbSnapshot.businessSettings,
+                goals: { monthly: sbSnapshot.monthlyGoal },
+                dashboard: sbSnapshot.dashboardPrefs,
+                actionHistory: sbSnapshot.actionHistory,
+                bulkImports: sbSnapshot.bulkImports,
+                updatedAt: new Date().toISOString()
+              };
+              applyRemoteData(payload as any);
+              markCloudHydrated();
+              pendingCloudFlushRef.current = false;
+              initialWriteDoneRef.current = true;
+              setSyncState({ status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED });
+            } else {
+              markCloudHydrated();
+              pendingCloudFlushRef.current = false;
+              initialWriteDoneRef.current = true;
+              setSyncState({ status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED });
+            }
+          } catch (err) {
+            console.error('[supabase] Initial fetch failed:', err);
+            markCloudHydrated();
+            setSyncState({ status: 'error', message: 'Supabase sync error' });
+          }
+        })();
+
+        unsubSnapshot = subscribeToSupabaseRealtime(() => {
+          void (async () => {
+            const updated = await fetchSupabaseSnapshotDirect(user.uid);
+            if (updated) {
+              applyRemoteData({
+                inventory: updated.items,
+                trash: updated.trash,
+                expenses: updated.expenses,
+                recurringExpenses: updated.recurringExpenses,
+                categories: updated.categories,
+                categoryFields: updated.categoryFields,
+                settings: updated.businessSettings,
+                goals: { monthly: updated.monthlyGoal },
+                dashboard: updated.dashboardPrefs,
+                actionHistory: updated.actionHistory,
+                bulkImports: updated.bulkImports,
+                updatedAt: new Date().toISOString()
+              } as any);
+            }
+          })();
+        });
+      } else {
+        unsubSnapshot = subscribeToData(user.uid, (data) => {
         scheduleBackgroundWork(async () => {
           await yieldToMain();
           if (data && shouldApplyRemoteSnapshot(data)) {
@@ -1359,6 +1425,7 @@ const App: React.FC = () => {
           });
         });
       });
+      }
     });
     return () => {
       if (unsubSnapshot) unsubSnapshot();
@@ -2016,29 +2083,28 @@ const App: React.FC = () => {
       threeDPrint: snap.threeDPrint,
     };
     try {
-      // A broken network transport (Firestore's streaming channel torn down, seen live
-      // repeatedly today) can leave this pending forever with no error at all — and since
-      // cloudSyncInFlightRef only clears in `finally`, a hang here blocks every subsequent
-      // auto-sync too, which is why every click looked like it "started a new sync" that
-      // never finished. Capped so this always eventually resolves one way or the other.
-      //
-      // The cap itself needs to scale with inventory size: every sync rewrites the FULL
-      // sharded pack (every item, every chunk), not just what changed, and any action that
-      // requests an immediate flush (delete included — see FAST_CLOUD_FLUSH_MS) fires that
-      // full rewrite right away. On a large, real account (2000+ items) that rewrite can
-      // legitimately take longer than 20s even on a good connection — confirmed live: a
-      // single delete kept hitting "Cloud sync timed out" on a stable connection, purely
-      // because the account had grown past what 20s covers. A flat cap there doesn't mean
-      // the write failed, just that the UI gave up watching too early.
-      const cloudSyncTimeoutMs = Math.min(60000, Math.max(20000, snap.items.length * 20));
-      await withTimeout(writeToCloud(payload), cloudSyncTimeoutMs, 'Cloud sync');
+      if (isSupabaseConfigured()) {
+        await writeFullAppStateToSupabase({
+          items: snap.items,
+          trash: snap.trash,
+          expenses: snap.expenses,
+          recurringExpenses: snap.recurringExpenses,
+          categories: snap.categories,
+          categoryFields: snap.categoryFields,
+          businessSettings: snap.businessSettings,
+          monthlyGoal: snap.monthlyGoal,
+          dashboardPrefs: snap.dashboardPrefs,
+          actionHistory: snap.actionHistory,
+          bulkImports: snap.bulkImports,
+        });
+      } else {
+        const cloudSyncTimeoutMs = Math.min(60000, Math.max(20000, snap.items.length * 20));
+        await withTimeout(writeToCloud(payload), cloudSyncTimeoutMs, 'Cloud sync');
+      }
       hasUnsavedChanges.current = false;
       lastLocalPushAtRef.current = Date.now();
       suppressRemoteApplyUntilRef.current = Date.now() + REMOTE_APPLY_SUPPRESS_MS;
       setSyncState({ status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED });
-      // Storefront catalog is published by the debounced "soon after real local
-      // edits" effect (STORE_CATALOG_DEBOUNCE_MS) — publishing it again here on
-      // every successful sync duplicated that write on every ordinary edit.
     } catch (err) {
       setSyncState((prev) => ({ ...prev, status: 'error', message: getSyncErrorMessage(err) }));
     } finally {

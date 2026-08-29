@@ -382,6 +382,110 @@ function mapRowToItem(row: Record<string, unknown>): InventoryItem {
 // 5. READ FULL STATE FROM SUPABASE
 // ------------------------------------------------------------------------------
 
+export async function fetchSupabaseSnapshotDirect(userId: string): Promise<SupabaseSyncSnapshot | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+
+  const [invRes, expRes, recExpRes, profRes, ordersRes, reportsRes, actRes, bulkRes] = await Promise.all([
+    sb.from('inventory_items').select('*').eq('user_id', userId),
+    sb.from('expenses').select('*').eq('user_id', userId).order('date', { ascending: false }),
+    sb.from('recurring_expenses').select('*').eq('user_id', userId),
+    sb.from('user_profiles').select('*').eq('id', userId).maybeSingle(),
+    sb.from('ebay_orders').select('*').eq('user_id', userId),
+    sb.from('ebay_tx_reports').select('*').eq('user_id', userId),
+    sb.from('action_history').select('*').eq('user_id', userId).order('timestamp', { ascending: false }).limit(200),
+    sb.from('bulk_imports').select('*').eq('user_id', userId).order('imported_at', { ascending: false }).limit(50),
+  ]);
+
+  if (invRes.error) {
+    console.error('[supabase] Inventory fetch error:', invRes.error);
+    return null;
+  }
+
+  const allItems = (invRes.data || []).map(mapRowToItem);
+  const items = allItems.filter((_, idx) => !invRes.data[idx].is_trash);
+  const trash = allItems.filter((_, idx) => !!invRes.data[idx].is_trash);
+
+  const expenses: Expense[] = (expRes.data || []).map((r) => ({
+    id: String(r.id),
+    description: String(r.description),
+    amount: Number(r.amount),
+    date: String(r.date),
+    category: String(r.category),
+    recurringExpenseId: r.recurring_expense_id ? String(r.recurring_expense_id) : undefined,
+    attachmentUrl: r.attachment_url ? String(r.attachment_url) : undefined,
+    attachmentName: r.attachment_name ? String(r.attachment_name) : undefined,
+  }));
+
+  const recurringExpenses: RecurringExpense[] = (recExpRes.data || []).map((r) => ({
+    id: String(r.id),
+    description: String(r.description),
+    monthlyAmount: Number(r.monthly_amount),
+    startDate: String(r.start_date),
+    category: String(r.category),
+    lastGeneratedDate: r.last_generated_date ? String(r.last_generated_date) : undefined,
+  }));
+
+  const prof = profRes.data || {};
+  const businessSettings: BusinessSettings = {
+    companyName: prof.company_name || '',
+    ownerName: prof.owner_name || '',
+    address: prof.address || '',
+    phone: prof.phone || '',
+    taxId: prof.tax_id || '',
+    vatId: prof.vat_id || undefined,
+    iban: prof.iban || '',
+    bic: prof.bic || '',
+    bankName: prof.bank_name || '',
+    taxMode: prof.tax_mode || 'SmallBusiness',
+    ebayPostalCode: prof.ebay_postal_code || undefined,
+    ebayPaypalEmail: prof.ebay_paypal_email || undefined,
+    ebayDispatchTime: prof.ebay_dispatch_time ?? 1,
+    ebayReturnPolicy: prof.ebay_return_policy || 'ReturnsAccepted',
+    ebaySellerUsername: prof.ebay_seller_username || undefined,
+    ebayOAuthToken: prof.ebay_oauth_token || undefined,
+    ebayOAuthRefreshToken: prof.ebay_oauth_refresh_token || undefined,
+    ebayOAuthExpiresAt: prof.ebay_oauth_expires_at ?? undefined,
+    ebayOAuthRefreshExpiresAt: prof.ebay_oauth_refresh_expires_at ?? undefined,
+    kleinanzeigenProfileUrl: prof.kleinanzeigen_profile_url || undefined,
+  };
+
+  const categories = (prof.categories as Record<string, string[]>) || {};
+  const categoryFields = (prof.category_fields as Record<string, string[]>) || {};
+  const monthlyGoal = Number(prof.monthly_goal) || 0;
+  const dashboardPrefs = (prof.dashboard_prefs as DashboardPreferences) || undefined;
+
+  const ebayOrders: EbayOrderRecord[] = (ordersRes.data || []).map((r) => r.order_data as EbayOrderRecord);
+  const ebayTxReports: EbayTxReport[] = (reportsRes.data || []).map((r) => r.report_data as EbayTxReport);
+
+  const actionHistory: ActionHistoryEntry[] = (actRes.data || []).map((r) => ({
+    id: String(r.id),
+    action: String(r.action),
+    timestamp: String(r.timestamp),
+    itemId: r.item_id ? String(r.item_id) : undefined,
+    itemName: r.item_name ? String(r.item_name) : undefined,
+    details: r.details ? String(r.details) : undefined,
+  }));
+
+  const bulkImports: BulkImportRecord[] = (bulkRes.data || []).map((r) => r.import_data as BulkImportRecord);
+
+  return {
+    items,
+    trash,
+    expenses,
+    recurringExpenses,
+    categories,
+    categoryFields,
+    businessSettings,
+    monthlyGoal,
+    dashboardPrefs,
+    actionHistory,
+    bulkImports,
+    ebayOrders,
+    ebayTxReports,
+  };
+}
+
 export async function fetchFullAppStateFromSupabase(): Promise<SupabaseSyncSnapshot | null> {
   const sb = getSupabase();
   if (!sb) return null;
