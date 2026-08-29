@@ -426,8 +426,8 @@ export async function fetchSupabaseSnapshotDirect(userId: string): Promise<Supab
     sb.from('user_profiles').select('*').eq('id', userId).maybeSingle(),
     fetchPaginatedTable('ebay_orders', userId),
     fetchPaginatedTable('ebay_tx_reports', userId),
-    sb.from('action_history').select('*').eq('user_id', userId).order('timestamp', { ascending: false }).limit(200),
-    sb.from('bulk_imports').select('*').eq('user_id', userId).order('imported_at', { ascending: false }).limit(50),
+    fetchPaginatedTable('action_history', userId, 'timestamp'),
+    fetchPaginatedTable('bulk_imports', userId, 'imported_at'),
   ]);
 
   const allItems = invRows.map(mapRowToItem);
@@ -528,8 +528,8 @@ export async function fetchFullAppStateFromSupabase(): Promise<SupabaseSyncSnaps
     sb.from('user_profiles').select('*').eq('id', user.id).maybeSingle(),
     fetchPaginatedTable('ebay_orders', user.id),
     fetchPaginatedTable('ebay_tx_reports', user.id),
-    sb.from('action_history').select('*').eq('user_id', user.id).order('timestamp', { ascending: false }).limit(200),
-    sb.from('bulk_imports').select('*').eq('user_id', user.id).order('imported_at', { ascending: false }).limit(50),
+    fetchPaginatedTable('action_history', user.id, 'timestamp'),
+    fetchPaginatedTable('bulk_imports', user.id, 'imported_at'),
   ]);
 
   const allItems = invRows.map(mapRowToItem);

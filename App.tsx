@@ -183,7 +183,7 @@ import {
   SYNC_MSG_RETRYING,
 } from './utils/cloudSyncStatus';
 
-const ACTION_HISTORY_LIMIT = 400;
+const ACTION_HISTORY_LIMIT = 100000; // No artificial truncation with Supabase PostgreSQL
 
 const ALL_INVENTORY_STATUSES = [
   ItemStatus.IN_STOCK,
