@@ -18,6 +18,7 @@ import type {
 } from '../types';
 import type { EbayOrderRecord } from './ebayOrderIndex';
 import type { EbayTxReport } from '../utils/ebayTransactionReport';
+import { canonicalizeInventoryItems } from '../utils/canonicalItemOrders';
 
 // ------------------------------------------------------------------------------
 // 1. CONFIGURATION & CLIENT INITIALIZATION
@@ -497,8 +498,11 @@ export async function fetchSupabaseSnapshotDirect(userId: string): Promise<Supab
 
   const bulkImports: BulkImportRecord[] = (bulkRes.data || []).map((r) => r.import_data as BulkImportRecord);
 
+  const canonical = canonicalizeInventoryItems(items, businessSettings.taxMode);
+  const finalItems = canonical.items;
+
   return {
-    items,
+    items: finalItems,
     trash,
     expenses,
     recurringExpenses,

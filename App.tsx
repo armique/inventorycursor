@@ -154,6 +154,7 @@ import { restoreIntegralRamKit, INTEGRAL_RAM_KIT_ID } from './utils/restoreInteg
 import { restoreAsusA320mPcSale } from './utils/restoreAsusA320mPcSale';
 import { applySamsungEvo840RefundResale } from './utils/applySamsungEvo840RefundResale';
 import { healActiveContainerPartMembership } from './utils/healActiveContainerPartMembership';
+import { canonicalizeInventoryItems } from './utils/canonicalItemOrders';
 import { localInventoryAheadOfRemote, inventoryLooksUnchanged, expenseListLooksUnchanged, mergeItemsPreservingReferences } from './utils/inventoryCloudPush';
 import { addRecentItemId } from './services/recentItemsService';
 import { mergeBusinessSettings } from './utils/mergeBusinessSettings';
@@ -1474,9 +1475,14 @@ const App: React.FC = () => {
       }
     }
     const migrated = effectiveItems.map(migrateContainerItem);
+    const taxMode = businessSettingsRef.current.taxMode;
+    const canonical = canonicalizeInventoryItems(migrated, taxMode);
+    if (canonical.changed) {
+      hasUnsavedChanges.current = true;
+    }
     // Preserve object identity for rows nothing actually changed — see
     // mergeItemsPreservingReferences for why a wholesale replace here is expensive.
-    setItems(mergeItemsPreservingReferences(itemsRef.current, migrated));
+    setItems(mergeItemsPreservingReferences(itemsRef.current, canonical.items));
     const localTrash = JSON.parse(localStorage.getItem('inventory_trash') || '[]') as InventoryItem[];
     setTrash(localTrash.map(migrateContainerItem));
     setExpenses(JSON.parse(localStorage.getItem('inventory_expenses') || '[]'));
