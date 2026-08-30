@@ -1199,8 +1199,7 @@ const App: React.FC = () => {
       setItems(mergeItemsPreservingReferences(localItems, canonical.items));
       setTrash(nextTrash);
     });
-    clearUndoStackRef.current = true;
-    const persistItems = healedParts.items;
+    const persistItems = canonical.items;
     scheduleBackgroundWork(async () => {
       await persistSnapshotToLocalStorage({
         items: persistItems,
