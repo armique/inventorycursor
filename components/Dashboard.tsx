@@ -48,6 +48,10 @@ interface Props {
   onDashboardPreferencesChange: (next: DashboardPreferences) => void;
   onUpdateItems?: (items: InventoryItem[]) => void;
   onBusinessSettingsChange?: (next: BusinessSettings) => void;
+  isSyncing?: boolean;
+  syncProgress?: number;
+  syncStepLabel?: string;
+  onRefreshCloud?: () => Promise<void>;
 }
 
 const PIE_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#6366F1', '#64748B'];
@@ -140,6 +144,10 @@ const Dashboard: React.FC<Props> = ({
   onDashboardPreferencesChange,
   onUpdateItems,
   onBusinessSettingsChange,
+  isSyncing = false,
+  syncProgress = 100,
+  syncStepLabel = '',
+  onRefreshCloud,
 }) => {
   const navigate = useNavigate();
   const timeFilter = dashboardPreferences.timeFilter;
@@ -951,10 +959,38 @@ const Dashboard: React.FC<Props> = ({
           ? 'flex flex-col overflow-hidden pb-2'
           : 'overflow-y-auto space-y-3 sm:space-y-4 lg:space-y-6 xl:space-y-7 pb-8 lg:pb-10 xl:px-1'
       }`}>
+      {/* Visual Cloud Sync Progress Bar */}
+      {isSyncing && (
+        <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden mb-4 relative shadow-inner">
+          <div
+            className="bg-gradient-to-r from-blue-600 via-indigo-500 to-emerald-500 h-full transition-all duration-300 ease-out animate-pulse"
+            style={{ width: `${Math.max(8, Math.min(100, syncProgress))}%` }}
+          />
+        </div>
+      )}
+
       {/* Header + period filters */}
       <header className={`flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between ${isEmbeddedWorkspaceTab ? 'shrink-0 mb-3' : ''}`}>
         <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl lg:text-3xl xl:text-4xl font-black text-slate-900 tracking-tight">Dashboard</h1>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-xl sm:text-2xl lg:text-3xl xl:text-4xl font-black text-slate-900 tracking-tight">Dashboard</h1>
+            {isSyncing ? (
+              <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 animate-pulse shadow-sm">
+                <span className="w-2 h-2 rounded-full bg-blue-600 animate-ping" />
+                {syncStepLabel || 'Syncing Supabase…'} ({syncProgress}%)
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onRefreshCloud && onRefreshCloud()}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors shadow-sm cursor-pointer"
+                title="Click to force refresh data from Supabase"
+              >
+                <CheckCircle2 size={13} className="text-emerald-600" />
+                <span>Supabase Live ({items.length} items)</span>
+              </button>
+            )}
+          </div>
           <p className="text-xs sm:text-sm lg:text-base text-slate-500 truncate mt-0.5">
             {items.length} items · {expenses.length} expenses · {periodLabel}
           </p>

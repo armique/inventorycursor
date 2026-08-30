@@ -145,14 +145,6 @@ import {
   countBlankContainerBuyDates,
   preferFilledContainerBuyDate,
 } from './utils/backfillContainerBuyDates';
-import { applyHealthInsuranceLedger } from './utils/healthInsuranceLedger';
-import { applyCrucialRamInvoiceSaleFix } from './utils/crucialRamInvoiceSaleFix';
-import { applyAsusGtx1080RogStrixHubSaleFix } from './utils/asusGtx1080RogStrixHubSaleFix';
-import { applyRx6500XtHubSellSync } from './utils/rx6500XtHubSellSync';
-import { restoreIntegralRamKit, INTEGRAL_RAM_KIT_ID } from './utils/restoreIntegralRamKit';
-import { restoreAsusA320mPcSale } from './utils/restoreAsusA320mPcSale';
-import { applySamsungEvo840RefundResale } from './utils/applySamsungEvo840RefundResale';
-import { healActiveContainerPartMembership } from './utils/healActiveContainerPartMembership';
 import { canonicalizeInventoryItems } from './utils/canonicalItemOrders';
 import { localInventoryAheadOfRemote, inventoryLooksUnchanged, expenseListLooksUnchanged, mergeItemsPreservingReferences } from './utils/inventoryCloudPush';
 import { addRecentItemId } from './services/recentItemsService';
@@ -734,6 +726,9 @@ const App: React.FC = () => {
   /** Blocks cloud uploads until the first pull finishes (prevents empty-phone wipe). */
   const cloudHydratedRef = useRef(!isCloudEnabled());
   const [cloudHydrated, setCloudHydrated] = useState(!isCloudEnabled());
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [syncProgress, setSyncProgress] = useState<number>(100);
+  const [syncStepLabel, setSyncStepLabel] = useState<string>('Ready');
   const markCloudHydrated = useCallback(() => {
     cloudHydratedRef.current = true;
     setCloudHydrated(true);
@@ -1274,7 +1269,14 @@ const App: React.FC = () => {
         if (uid) {
           void (async () => {
             try {
+              setIsSyncing(true);
+              setSyncProgress(25);
+              setSyncStepLabel('Connecting to Supabase…');
+              setSyncProgress(55);
+              setSyncStepLabel('Fetching inventory & sales history…');
               const sbSnapshot = await fetchSupabaseSnapshotDirect(uid);
+              setSyncProgress(85);
+              setSyncStepLabel(`Processing ${sbSnapshot?.items?.length || 0} items…`);
               if (sbSnapshot) {
                 const payload = {
                   inventory: sbSnapshot.items,
@@ -1301,10 +1303,14 @@ const App: React.FC = () => {
                 initialWriteDoneRef.current = true;
                 setSyncState({ status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED });
               }
+              setSyncProgress(100);
+              setSyncStepLabel('Synced');
             } catch (err) {
               console.error('[supabase] Initial fetch failed:', err);
               markCloudHydrated();
               setSyncState({ status: 'error', message: 'Supabase sync error' });
+            } finally {
+              setTimeout(() => setIsSyncing(false), 900);
             }
           })();
 
@@ -1414,18 +1420,7 @@ const App: React.FC = () => {
     }
   }, [appState, items.length]);
 
-  // Replace DAK Gesundheit history with bank-accurate rows + start AOK Bayern on the 17th.
-  useEffect(() => {
-    if (appState !== 'READY') return;
-    if (healthInsuranceLedgerDoneRef.current) return;
-    const next = applyHealthInsuranceLedger(expenses, recurringExpenses);
-    healthInsuranceLedgerDoneRef.current = true;
-    if (!next.changed) return;
-    setExpenses(next.expenses);
-    setRecurringExpenses(next.recurring);
-    hasUnsavedChanges.current = true;
-    requestFastCloudFlush();
-  }, [appState, expenses, recurringExpenses, requestFastCloudFlush]);
+
 
   // Bulk-import chat proof + bulkImportId stamp — once after hydrate (not on every item edit).
   useEffect(() => {
@@ -2840,6 +2835,47 @@ const App: React.FC = () => {
     [items, handleUpdate, requestFastCloudFlush]
   );
 
+  const handleRefreshCloud = useCallback(async () => {
+    if (!authUser) return;
+    const uid = authUser.id || (authUser as any).uid;
+    if (!uid) return;
+    setIsSyncing(true);
+    setSyncProgress(25);
+    setSyncStepLabel('Connecting to Supabase…');
+    try {
+      setSyncProgress(50);
+      setSyncStepLabel('Fetching inventory & sales history…');
+      const sbSnapshot = await fetchSupabaseSnapshotDirect(uid);
+      setSyncProgress(85);
+      setSyncStepLabel(`Processing ${sbSnapshot?.items?.length || 0} items…`);
+      if (sbSnapshot) {
+        applyRemoteData({
+          inventory: sbSnapshot.items,
+          trash: sbSnapshot.trash,
+          expenses: sbSnapshot.expenses,
+          recurringExpenses: sbSnapshot.recurringExpenses,
+          categories: sbSnapshot.categories,
+          categoryFields: sbSnapshot.categoryFields,
+          settings: sbSnapshot.businessSettings,
+          goals: { monthly: sbSnapshot.monthlyGoal },
+          dashboard: sbSnapshot.dashboardPrefs,
+          actionHistory: sbSnapshot.actionHistory,
+          bulkImports: sbSnapshot.bulkImports,
+          updatedAt: new Date().toISOString()
+        } as any);
+        markCloudHydrated();
+        setSyncState({ status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED });
+      }
+      setSyncProgress(100);
+      setSyncStepLabel('Synced');
+    } catch (e) {
+      console.error('[supabase] Manual refresh error:', e);
+      setSyncState({ status: 'error', message: 'Failed to refresh from cloud' });
+    } finally {
+      setTimeout(() => setIsSyncing(false), 900);
+    }
+  }, [authUser, applyRemoteData, markCloudHydrated]);
+
   const handleRevertSale = useCallback(
     (entry: ActionHistoryEntry) => {
       if (!entry.itemId || !entry.action.includes('Sold')) return;
@@ -3064,6 +3100,10 @@ const App: React.FC = () => {
                 onDashboardPreferencesChange={handleDashboardPreferencesChange}
                 onUpdateItems={handleUpdate}
                 onBusinessSettingsChange={handleBusinessSettingsChange}
+                isSyncing={isSyncing}
+                syncProgress={syncProgress}
+                syncStepLabel={syncStepLabel}
+                onRefreshCloud={handleRefreshCloud}
               />
             }
           />

@@ -95,13 +95,7 @@ export function canonicalizeInventoryItems(
   const evoFix = applySamsungEvo840RefundResale(rxFix.items, taxMode);
   if (evoFix.changed) changedOverall = true;
 
-  const asusSale = restoreAsusA320mPcSale(evoFix.items);
-  if (asusSale.changed) changedOverall = true;
-
-  const integral = restoreIntegralRamKit(asusSale.items);
-  if (integral.changed) changedOverall = true;
-
-  const healed = healActiveContainerPartMembership(integral.items);
+  const healed = healActiveContainerPartMembership(evoFix.items);
   if (healed.changed) changedOverall = true;
 
   return {
