@@ -257,6 +257,12 @@ export function onSupabaseAuthChange(callback: (user: User | null, session: Sess
   const sb = getSupabase();
   let unsubscribeSb = () => {};
   if (sb) {
+    sb.auth.getSession().then(({ data: { session } }) => {
+      if (!getDevAdminUser()) {
+        callback(session?.user ?? null, session);
+      }
+    }).catch(() => {});
+
     const { data: { subscription } } = sb.auth.onAuthStateChange((_event, session) => {
       if (!getDevAdminUser()) {
         callback(session?.user ?? null, session);
