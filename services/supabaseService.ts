@@ -137,9 +137,11 @@ export function isDevAdminSession(): boolean {
   return !!getDevAdminUser();
 }
 
+export const PRIMARY_OWNER_UID = '568865df-ee65-4de7-870b-ef73cd1f9c35';
+
 export function signInWithDevAdmin(email = OWNER_ADMIN_EMAIL): User {
   const user = {
-    id: 'dev-owner-' + (typeof btoa !== 'undefined' ? btoa(email).replace(/=/g, '') : 'local'),
+    id: PRIMARY_OWNER_UID,
     app_metadata: { provider: 'dev' },
     user_metadata: { name: 'Owner / Developer' },
     aud: 'authenticated',
@@ -534,7 +536,7 @@ function mapRowToItem(row: Record<string, unknown>): InventoryItem {
 // 5. READ FULL STATE FROM SUPABASE (WITH PAGINATION BEYOND 1000 ROWS)
 // ------------------------------------------------------------------------------
 
-export const LEGACY_MIGRATION_USER_ID = '4LFiPziIiTW3K0kdMC9dt7Qi2SZ2';
+export const LEGACY_MIGRATION_USER_ID = PRIMARY_OWNER_UID;
 
 async function fetchPaginatedTable<T = any>(
   tableName: string,
