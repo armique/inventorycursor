@@ -170,7 +170,9 @@ export async function signInWithGoogleOAuth(redirectTo?: string): Promise<{ erro
   const sb = getSupabase();
   if (!sb) return { error: new Error('Supabase is not configured') };
 
-  const targetUrl = redirectTo || (typeof window !== 'undefined' ? window.location.origin : '');
+  const targetUrl = (typeof redirectTo === 'string' && redirectTo.trim())
+    ? redirectTo.trim()
+    : (typeof window !== 'undefined' ? `${window.location.origin}/panel/dashboard` : '');
   const { error } = await sb.auth.signInWithOAuth({
     provider: 'google',
     options: {
@@ -526,6 +528,8 @@ function mapRowToItem(row: Record<string, unknown>): InventoryItem {
 // 5. READ FULL STATE FROM SUPABASE (WITH PAGINATION BEYOND 1000 ROWS)
 // ------------------------------------------------------------------------------
 
+export const LEGACY_MIGRATION_USER_ID = '4LFiPziIiTW3K0kdMC9dt7Qi2SZ2';
+
 async function fetchPaginatedTable<T = any>(
   tableName: string,
   userId: string,
@@ -534,27 +538,35 @@ async function fetchPaginatedTable<T = any>(
   const sb = getSupabase();
   if (!sb) return [];
   const PAGE_SIZE = 1000;
-  let all: T[] = [];
-  let from = 0;
 
-  while (true) {
-    const { data, error } = await sb
-      .from(tableName)
-      .select('*')
-      .eq('user_id', userId)
-      .order(orderByCol, { ascending: true })
-      .range(from, from + PAGE_SIZE - 1);
+  const fetchForId = async (targetId: string): Promise<T[]> => {
+    let all: T[] = [];
+    let from = 0;
+    while (true) {
+      const { data, error } = await sb
+        .from(tableName)
+        .select('*')
+        .eq('user_id', targetId)
+        .order(orderByCol, { ascending: true })
+        .range(from, from + PAGE_SIZE - 1);
 
-    if (error) {
-      console.error(`[supabase] Fetch error on ${tableName}:`, error);
-      break;
+      if (error) {
+        console.error(`[supabase] Fetch error on ${tableName}:`, error);
+        break;
+      }
+      if (!data || data.length === 0) break;
+      all.push(...(data as T[]));
+      if (data.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
     }
-    if (!data || data.length === 0) break;
-    all.push(...(data as T[]));
-    if (data.length < PAGE_SIZE) break;
-    from += PAGE_SIZE;
+    return all;
+  };
+
+  let rows = await fetchForId(userId);
+  if (rows.length === 0 && userId !== LEGACY_MIGRATION_USER_ID) {
+    rows = await fetchForId(LEGACY_MIGRATION_USER_ID);
   }
-  return all;
+  return rows;
 }
 
 export async function fetchSupabaseSnapshotDirect(userId: string): Promise<SupabaseSyncSnapshot | null> {
@@ -565,7 +577,12 @@ export async function fetchSupabaseSnapshotDirect(userId: string): Promise<Supab
     fetchPaginatedTable('inventory_items', userId),
     fetchPaginatedTable('expenses', userId, 'date'),
     fetchPaginatedTable('recurring_expenses', userId),
-    sb.from('user_profiles').select('*').eq('id', userId).maybeSingle(),
+    sb.from('user_profiles').select('*').eq('id', userId).maybeSingle().then(async (res) => {
+      if (!res.data && userId !== LEGACY_MIGRATION_USER_ID) {
+        return sb.from('user_profiles').select('*').eq('id', LEGACY_MIGRATION_USER_ID).maybeSingle();
+      }
+      return res;
+    }),
     fetchPaginatedTable('ebay_orders', userId),
     fetchPaginatedTable('ebay_tx_reports', userId),
     fetchPaginatedTable('action_history', userId, 'timestamp'),
@@ -976,8 +993,14 @@ export async function getCurrentUser(): Promise<User | null> {
   return getCurrentSupabaseUser();
 }
 
-export async function signInWithGoogle(redirectTo?: string): Promise<{ error: Error | null }> {
-  return signInWithGoogleOAuth(redirectTo);
+export async function signInWithGoogle(optsOrRedirectTo?: string | { returnPath?: string }): Promise<{ error: Error | null }> {
+  let targetUrl = typeof window !== 'undefined' ? `${window.location.origin}/panel/dashboard` : '';
+  if (typeof optsOrRedirectTo === 'string' && optsOrRedirectTo.trim()) {
+    targetUrl = optsOrRedirectTo.trim();
+  } else if (optsOrRedirectTo && typeof optsOrRedirectTo === 'object' && optsOrRedirectTo.returnPath) {
+    targetUrl = `${window.location.origin}${optsOrRedirectTo.returnPath}`;
+  }
+  return signInWithGoogleOAuth(targetUrl);
 }
 
 export async function signInWithEmail(email: string): Promise<{ error: Error | null }> {

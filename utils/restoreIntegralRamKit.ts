@@ -124,6 +124,10 @@ export function restoreIntegralRamKit(
     };
   }
 
+  if (items.length === 0 && trash.length === 0) {
+    return { items, trash, changed: false };
+  }
+
   const created = buildIntegralRamKitItem();
   return {
     items: [...detachKitFromContainers(items, created.id), created],
