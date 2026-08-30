@@ -540,24 +540,28 @@ export const LEGACY_MIGRATION_USER_ID = PRIMARY_OWNER_UID;
 
 async function fetchPaginatedTable<T = any>(
   tableName: string,
-  userId: string,
+  userId?: string,
   orderByCol = 'id'
 ): Promise<T[]> {
   const sb = getSupabase();
   if (!sb) return [];
   const PAGE_SIZE = 1000;
 
-  const fetchForId = async (targetId: string): Promise<T[]> => {
+  const fetchWithFilter = async (filterUserId?: string): Promise<T[]> => {
     let all: T[] = [];
     let from = 0;
     while (true) {
-      const { data, error } = await sb
+      let query = sb
         .from(tableName)
         .select('*')
-        .eq('user_id', targetId)
         .order(orderByCol, { ascending: true })
         .range(from, from + PAGE_SIZE - 1);
 
+      if (filterUserId) {
+        query = query.eq('user_id', filterUserId);
+      }
+
+      const { data, error } = await query;
       if (error) {
         console.error(`[supabase] Fetch error on ${tableName}:`, error);
         break;
@@ -570,9 +574,13 @@ async function fetchPaginatedTable<T = any>(
     return all;
   };
 
-  let rows = await fetchForId(userId);
-  if (rows.length === 0 && userId !== LEGACY_MIGRATION_USER_ID) {
-    rows = await fetchForId(LEGACY_MIGRATION_USER_ID);
+  const effectiveId = (userId && !userId.startsWith('dev-owner')) ? userId : PRIMARY_OWNER_UID;
+  let rows = await fetchWithFilter(effectiveId);
+  if (rows.length === 0 && effectiveId !== PRIMARY_OWNER_UID) {
+    rows = await fetchWithFilter(PRIMARY_OWNER_UID);
+  }
+  if (rows.length === 0) {
+    rows = await fetchWithFilter();
   }
   return rows;
 }
@@ -581,25 +589,28 @@ export async function fetchSupabaseSnapshotDirect(userId: string): Promise<Supab
   const sb = getSupabase();
   if (!sb) return null;
 
+  const effectiveId = (userId && !userId.startsWith('dev-owner')) ? userId : PRIMARY_OWNER_UID;
+
   const [invRows, expRows, recExpRows, profRes, ordersRows, reportsRows, actRes, bulkRes] = await Promise.all([
-    fetchPaginatedTable('inventory_items', userId),
-    fetchPaginatedTable('expenses', userId, 'date'),
-    fetchPaginatedTable('recurring_expenses', userId),
-    sb.from('user_profiles').select('*').eq('id', userId).maybeSingle().then(async (res) => {
-      if (!res.data && userId !== LEGACY_MIGRATION_USER_ID) {
-        return sb.from('user_profiles').select('*').eq('id', LEGACY_MIGRATION_USER_ID).maybeSingle();
+    fetchPaginatedTable('inventory_items', effectiveId),
+    fetchPaginatedTable('expenses', effectiveId, 'date'),
+    fetchPaginatedTable('recurring_expenses', effectiveId),
+    sb.from('user_profiles').select('*').eq('id', effectiveId).maybeSingle().then(async (res) => {
+      if (!res.data) {
+        const p2 = await sb.from('user_profiles').select('*').limit(1).maybeSingle();
+        return p2;
       }
       return res;
     }),
-    fetchPaginatedTable('ebay_orders', userId),
-    fetchPaginatedTable('ebay_tx_reports', userId),
-    fetchPaginatedTable('action_history', userId, 'timestamp'),
-    fetchPaginatedTable('bulk_imports', userId, 'imported_at'),
+    fetchPaginatedTable('ebay_orders', effectiveId),
+    fetchPaginatedTable('ebay_tx_reports', effectiveId),
+    fetchPaginatedTable('action_history', effectiveId, 'timestamp'),
+    fetchPaginatedTable('bulk_imports', effectiveId, 'imported_at'),
   ]);
 
   const allItems = invRows.map(mapRowToItem);
-  const items = allItems.filter((_, idx) => !invRows[idx].is_trash);
-  const trash = allItems.filter((_, idx) => !!invRows[idx].is_trash);
+  const items = allItems.filter((_, idx) => !(invRows[idx] as any).is_trash);
+  const trash = allItems.filter((_, idx) => !!(invRows[idx] as any).is_trash);
 
   const expenses: Expense[] = expRows.map((r: any) => ({
     id: String(r.id),
