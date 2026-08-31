@@ -1254,6 +1254,12 @@ const App: React.FC = () => {
   const applyRealtimeDelta = useCallback((delta: RealtimeItemDelta) => {
     if (Date.now() < suppressRemoteApplyUntilRef.current) return;
     if (cloudSyncInFlightRef.current) return;
+    // Never merge single rows into a set that has not finished loading. Doing so
+    // would assemble a partial inventory one row at a time, and money totals
+    // computed from a partial set are wrong in a way nobody can see (bundle
+    // dedup fails open when a parent is absent). The initial pull carries these
+    // rows anyway, so dropping deltas until then loses nothing.
+    if (!cloudHydratedRef.current) return;
     if (!delta.upserts.length && !delta.deletedIds.length) return;
 
     const deleted = new Set(delta.deletedIds);

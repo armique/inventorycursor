@@ -629,8 +629,15 @@ async function fetchPaginatedTable<T = any>(
 
       const { data, error } = await query;
       if (error) {
-        console.error(`[supabase] Fetch error on ${tableName}:`, error);
-        break;
+        // Never return a partially-paged result. A blip on page 2 of 3 used to
+        // `break` here and hand back 1000 of 2070 rows with no indication they
+        // were incomplete — and the dashboard would then compute money from that
+        // truncated set. Bundle dedup fails open when it cannot find a parent
+        // (financialAggregation.ts: `if (!parent) return false`), so the missing
+        // rows silently double-counted their children and the monthly profit
+        // changed on every refresh. Throwing keeps callers on their last known
+        // complete snapshot instead of quietly showing a wrong number.
+        throw new Error(`Incomplete read of ${tableName} at offset ${from}: ${error.message}`);
       }
       if (!data || data.length === 0) break;
       all.push(...(data as T[]));
