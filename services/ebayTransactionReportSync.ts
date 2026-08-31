@@ -1,7 +1,9 @@
 import {
+  clearEbayTxReportsCloud,
   fetchEbayTxReportRowsFromCloud,
   fetchEbayTxReportsFromCloud,
   isCloudEnabled,
+  upsertEbayOrdersToCloud,
   waitForAuthReady,
   writeEbayTxReportRowsToCloud,
   writeEbayTxReportsToCloud,
@@ -111,30 +113,123 @@ export async function persistEbayTxCloudStats(state: EbayTxCloudState): Promise<
 
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
 
+/**
+ * Short enough to feel immediate, long enough that a burst of rapid actions
+ * (linking twenty orders in a row) still collapses into one Supabase write
+ * instead of twenty racing ones.
+ */
+export const EBAY_TX_PUSH_DEBOUNCE_MS = 300;
+
+export type EbayTxPushStatus =
+  | { state: 'idle' }
+  | { state: 'pushing' }
+  | { state: 'ok'; at: string }
+  | { state: 'error'; at: string; message: string };
+
+let lastPushStatus: EbayTxPushStatus = { state: 'idle' };
+
+export const EBAY_TX_PUSH_STATUS_EVENT = 'ebay-tx-push-status';
+
+export function getEbayTxPushStatus(): EbayTxPushStatus {
+  return lastPushStatus;
+}
+
+function setPushStatus(next: EbayTxPushStatus): void {
+  lastPushStatus = next;
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(EBAY_TX_PUSH_STATUS_EVENT, { detail: next }));
+}
+
 export function scheduleEbayTxReportsCloudPush() {
   if (!isCloudEnabled()) return;
   if (pushTimer) clearTimeout(pushTimer);
   pushTimer = setTimeout(() => {
-    void pushEbayTxReportsToCloud().catch((err) => console.warn('eBay Abrechnung cloud push failed:', err));
-  }, 1500);
+    pushTimer = null;
+    void pushEbayTxReportsToCloud().catch(() => undefined);
+  }, EBAY_TX_PUSH_DEBOUNCE_MS);
 }
+
+/**
+ * Push right now and wait for Supabase to confirm, cancelling any pending
+ * debounced push. Use for actions that must be durable before the page can be
+ * reloaded — above all the one-time CSV baseline import: Supabase is the source
+ * of truth, so an imported report that only exists in IndexedDB would be wiped
+ * by the next authoritative pull rather than saved.
+ */
+export async function flushEbayTxReportsCloudPush(): Promise<EbayTxPushStatus> {
+  if (pushTimer) {
+    clearTimeout(pushTimer);
+    pushTimer = null;
+  }
+  if (!isCloudEnabled()) return getEbayTxPushStatus();
+  await pushEbayTxReportsToCloud().catch(() => undefined);
+  return getEbayTxPushStatus();
+}
+
+/** Supabase is the source of truth — a dropped write is real data loss, so retry before giving up. */
+const PUSH_MAX_ATTEMPTS = 3;
 
 export async function pushEbayTxReportsToCloud(): Promise<void> {
   if (!isCloudEnabled()) return;
+  // Never upload local state before the initial cloud reconcile has finished.
+  // On a device still holding a stale IndexedDB library (e.g. right after the
+  // cloud side was intentionally wiped for a clean baseline), any UI action that
+  // schedules a push could otherwise beat runEbayTxCloudSyncOnce() and re-upload
+  // the entire stale library — silently undoing the wipe. Waiting here means a
+  // push always runs against reconciled local state.
+  await runEbayTxCloudSyncOnce();
   const state = await buildEbayTxCloudStateFromLocal();
   await persistEbayTxCloudStats(state);
-  try {
-    // Actual row data, previously never synced at all — only meta/summary were. This is
-    // the piece that let a device's local storage getting cleared silently lose real data.
-    const library = await loadEbayTransactionLibrary();
-    const rowsByReport: Record<string, unknown[]> = {};
-    for (const r of library.reports) rowsByReport[r.meta.id] = r.rows || [];
-    const { rowChunks } = await writeEbayTxReportRowsToCloud(rowsByReport);
-    await writeEbayTxReportsToCloud({ ...state, rowChunks });
-  } catch (err) {
-    if (err instanceof Error && err.message === 'Not signed in') return;
-    throw err;
+
+  setPushStatus({ state: 'pushing' });
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= PUSH_MAX_ATTEMPTS; attempt++) {
+    try {
+      const library = await loadEbayTransactionLibrary();
+      if (library.reports.length === 0) {
+        setPushStatus({ state: 'ok', at: new Date().toISOString() });
+        return;
+      }
+
+      await writeEbayTxReportsToCloud(library.reports);
+
+      const merged = mergeEbayTxReports(library.reports);
+      if (merged?.rows?.length) {
+        const ledgers = buildEbayTxOrderLedgers(merged.rows);
+        const orderRows = merged.rows.filter((r) => r.kind === 'order' && (r.orderId || '').trim());
+        const orders = orderRows.map((row) => ({
+          orderId: row.orderId.trim(),
+          title: row.title || row.description,
+          buyerUsername: row.buyerUsername,
+          buyerName: row.buyerName,
+          date: row.createdSort || row.createdAt,
+          itemSubtotalEur: row.itemSubtotalEur,
+          shippingEur: row.shippingEur,
+          grossEur: row.grossEur,
+          netEur: row.netEur,
+          ledger: ledgers.get(row.orderId.trim()) || null,
+          source: row.id.startsWith('api-') ? 'api' : 'csv',
+        }));
+        await upsertEbayOrdersToCloud(orders);
+      }
+
+      setPushStatus({ state: 'ok', at: new Date().toISOString() });
+      return;
+    } catch (err) {
+      if (err instanceof Error && err.message === 'Not signed in') {
+        setPushStatus({ state: 'idle' });
+        return;
+      }
+      lastError = err;
+      if (attempt < PUSH_MAX_ATTEMPTS) await delay(attempt * 600);
+    }
   }
+
+  const message = lastError instanceof Error ? lastError.message : 'Supabase write failed';
+  console.error(`eBay Abrechnung cloud push failed after ${PUSH_MAX_ATTEMPTS} attempts:`, lastError);
+  setPushStatus({ state: 'error', at: new Date().toISOString(), message });
+  throw lastError instanceof Error ? lastError : new Error(message);
 }
 
 /** Wipe IndexedDB + cloud Abrechnung so Clear is not undone by the next cloud pull. */
@@ -153,7 +248,13 @@ export async function clearEbayTransactionReportsEverywhere(): Promise<void> {
   await persistEbayTxCloudStats(empty);
   if (isCloudEnabled()) {
     try {
-      await writeEbayTxReportsToCloud(empty);
+      // Must be a real DELETE on both ebay_tx_reports and ebay_orders.
+      // writeEbayTxReportsToCloud() cannot clear anything: it early-returns on an
+      // empty report list, so the previous call here was a silent no-op that left
+      // every row in Supabase. Local was wiped, cloud was not — and the next
+      // syncEbayTxReportsWithCloud() then pulled the whole stale library straight
+      // back down, which is exactly what "Clear" is supposed to prevent.
+      await clearEbayTxReportsCloud();
     } catch (err) {
       if (!(err instanceof Error && err.message === 'Not signed in')) {
         console.warn('eBay Abrechnung cloud clear failed:', err);
@@ -163,9 +264,13 @@ export async function clearEbayTransactionReportsEverywhere(): Promise<void> {
   notifyEbayTxReportUpdated();
 }
 
-function asReport(raw: { meta?: EbayTxMeta; summary?: EbayTxSummary }): EbayTxReport | null {
+function asReport(raw: any): EbayTxReport | null {
   if (!raw?.meta?.id || !raw.summary) return null;
-  return { meta: raw.meta, summary: raw.summary, rows: [] };
+  return {
+    meta: raw.meta,
+    summary: raw.summary,
+    rows: Array.isArray(raw.rows) ? raw.rows : [],
+  };
 }
 
 function mergeLabelOverrides(
@@ -184,38 +289,15 @@ export async function applyEbayTxCloudState(remote: EbayTxCloudState, keepLocalR
   const local = await loadEbayTransactionLibrary();
   const remoteHasReports = (remote.reports || []).length > 0;
   const localHasRows = local.reports.some((r) => r.rows?.length);
-  // A failed IndexedDB read returns []. Local is genuinely empty (fresh device, or storage
-  // just got cleared) — pull the real row data down from its shards instead of leaving this
-  // device with only summary stats and an empty order table (the bug that caused a device to
-  // look like it had "lost" 500+ linked orders when it never actually had cloud rows to lose).
-  if (keepLocalRows && !local.reports.length && remoteHasReports) {
-    const flatRows = await fetchEbayTxReportRowsFromCloud(remote.rowChunks || 0);
-    if (flatRows.length) {
-      const byReport = new Map<string, EbayTxRow[]>();
-      for (const { rid, row } of flatRows) {
-        const list = byReport.get(rid) || [];
-        list.push(row as EbayTxRow);
-        byReport.set(rid, list);
-      }
-      const reports = (remote.reports || [])
-        .map((raw) => asReport(raw as { meta?: EbayTxMeta; summary?: EbayTxSummary }))
-        .filter((r): r is EbayTxReport => Boolean(r))
-        .map((r) => ({ ...r, rows: byReport.get(r.meta.id) || [] }));
-      if (reports.length) await saveEbayTransactionLibrary({ reports });
-    }
-    mergeOrderMatcherNeedsReviewMap((remote.needsReview || {}) as Record<string, NeedsReviewEntry>);
-    await persistEbayTxCloudStats(remote);
-    notifyEbayTxReportUpdated();
-    return;
-  }
+
   const localById = new Map(local.reports.map((r) => [r.meta.id, r]));
   const reports: EbayTxReport[] = [];
   for (const raw of remote.reports || []) {
-    const cloud = asReport(raw as { meta?: EbayTxMeta; summary?: EbayTxSummary });
+    const cloud = asReport(raw);
     if (!cloud) continue;
     const existing = localById.get(cloud.meta.id);
-    if (keepLocalRows && existing?.rows?.length) {
-      reports.push({ ...existing, meta: cloud.meta, summary: cloud.summary });
+    if (existing?.rows?.length && (!cloud.rows?.length || keepLocalRows)) {
+      reports.push({ ...existing, meta: cloud.meta, summary: cloud.summary, rows: existing.rows });
     } else {
       reports.push(cloud);
     }
@@ -225,12 +307,8 @@ export async function applyEbayTxCloudState(remote: EbayTxCloudState, keepLocalR
     for (const leftover of localById.values()) reports.push(leftover);
   }
   reports.sort((a, b) => (a.meta.id || '').localeCompare(b.meta.id || ''));
-  const sameIds =
-    reports.length === local.reports.length &&
-    reports.every((r, i) => r.meta.id === local.reports[i]?.meta.id);
-  if (!(keepLocalRows && localHasRows && sameIds)) {
-    await saveEbayTransactionLibrary({ reports });
-  }
+  await saveEbayTransactionLibrary({ reports });
+
   const localLabels = await loadEbayTxLabelOverrides();
   await saveEbayTxLabelOverrides(
     mergeLabelOverrides(localLabels, (remote.labelOverrides || {}) as Record<string, EbayTxLabelOverride>)
@@ -246,70 +324,15 @@ function delay(ms: number): Promise<void> {
 
 export async function syncEbayTxReportsWithCloud(): Promise<void> {
   if (!isCloudEnabled()) return;
-  const localLib = await loadEbayTransactionLibrary();
-  const localStats = await loadEbayTxCloudStats();
-  const localLabels = await loadEbayTxLabelOverrides();
-  const localHas = localLib.reports.length > 0 || Object.keys(localLabels).length > 0;
-  let remote = await fetchEbayTxReportsFromCloud();
-  // fetchEbayTxReportsFromCloud() returns null both when the cloud genuinely has nothing
-  // AND when the read itself failed (auth token not fully warmed up right after a fresh
-  // sign-in, a cold Supabase connection, a transient network blip) — those two cases are
-  // indistinguishable from here, but only one of them is safe to treat as final. This
-  // wrapper is memoized per page load (see runEbayTxCloudSyncOnce below), so getting this
-  // wrong on the first try meant a device could show a permanently empty Abrechnung page
-  // for the rest of that session even though its real order history was sitting untouched
-  // in the cloud the whole time. When local is also empty, retry a couple of times before
-  // accepting "empty" — a device that actually has cloud data almost always succeeds on
-  // the second or third try; a device that's genuinely new stays empty either way.
-  if (!remote && !localHas) {
-    for (const backoffMs of [800, 1600]) {
-      await delay(backoffMs);
-      remote = await fetchEbayTxReportsFromCloud();
-      if (remote) break;
-    }
-  }
-  const clearedAt = readEbayTxClearedAt();
-  if (!remote) {
-    if (localHas) await pushEbayTxReportsToCloud();
+  const remote = await fetchEbayTxReportsFromCloud();
+  if (!remote || !remote.reports || remote.reports.length === 0) {
+    // Cloud is empty: clean local storage so browser never revives old reports
+    await clearEbayTransactionReport();
+    notifyEbayTxReportUpdated();
     return;
   }
-  const remoteHas = (remote.reports || []).length > 0 || Object.keys(remote.labelOverrides || {}).length > 0;
-  const remoteTs = remote.updatedAt || '';
-
-  // User cleared Abrechnung: keep empty until a newer cloud write (re-import on another device).
-  if (!localHas && clearedAt) {
-    if (!remoteHas || remoteTs <= clearedAt) {
-      if (remoteHas) await pushEbayTxReportsToCloud();
-      return;
-    }
-    clearEbayTxClearedMarker();
-    // keepLocalRows=true here isn't about preserving anything local (there's nothing to keep —
-    // !localHas guarantees local.reports is empty) — it's what actually gates the shard-row
-    // fetch inside applyEbayTxCloudState. Passing false skipped that fetch entirely and saved
-    // summary-only report shells with empty rows, which made a brand-new device's own coverage
-    // check see zero covered orders and treat the whole order history as "new" — this is very
-    // likely what actually caused a first-time phone login to duplicate orders, independent of
-    // the runEbayTxCloudSyncOnce timing fix above.
-    await applyEbayTxCloudState(remote, true);
-    return;
-  }
-
-  if (!localHas) {
-    await applyEbayTxCloudState(remote, true);
-    return;
-  }
-  const localTs = localStats?.updatedAt || '';
-  if (remoteTs > localTs) {
-    await applyEbayTxCloudState(remote, true);
-    const after = await loadEbayTransactionLibrary();
-    if (after.reports.length > (remote.reports?.length || 0)) {
-      await pushEbayTxReportsToCloud();
-    }
-    return;
-  }
-  if (localTs > remoteTs || localLib.reports.length > (remote.reports?.length || 0)) {
-    await pushEbayTxReportsToCloud();
-  }
+  // Cloud has reports: apply cloud state to local
+  await applyEbayTxCloudState(remote, false);
 }
 
 let inFlightCloudSync: Promise<void> | null = null;

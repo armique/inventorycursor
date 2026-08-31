@@ -89,7 +89,10 @@ export function getSupabase(): SupabaseClient | null {
   return supabaseInstance;
 }
 
+export const SUPABASE_TEMPORARILY_DISABLED = false;
+
 export function isSupabaseConfigured(): boolean {
+  if (SUPABASE_TEMPORARILY_DISABLED) return false;
   return !!getSupabase();
 }
 
@@ -586,10 +589,101 @@ async function fetchPaginatedTable<T = any>(
 }
 
 export async function fetchSupabaseSnapshotDirect(userId: string): Promise<SupabaseSyncSnapshot | null> {
+  const effectiveId = (userId && !userId.startsWith('dev-owner')) ? userId : PRIMARY_OWNER_UID;
+
+  // 1. Try high-performance server API first
+  try {
+    const apiRes = await fetch(`/api/supabase-sync?userId=${encodeURIComponent(effectiveId)}`);
+    if (apiRes.ok) {
+      const apiData = await apiRes.json();
+      if (apiData.ok && Array.isArray(apiData.items) && apiData.items.length > 0) {
+        const invRows = apiData.items;
+        const allItems = invRows.map(mapRowToItem);
+        const items = allItems.filter((_: any, idx: number) => !(invRows[idx] as any).is_trash);
+        const trash = allItems.filter((_: any, idx: number) => !!(invRows[idx] as any).is_trash);
+        const expenses: Expense[] = (apiData.expenses || []).map((r: any) => ({
+          id: String(r.id),
+          description: String(r.description),
+          amount: Number(r.amount),
+          date: String(r.date),
+          category: String(r.category),
+          recurringExpenseId: r.recurring_expense_id ? String(r.recurring_expense_id) : undefined,
+          attachmentUrl: r.attachment_url ? String(r.attachment_url) : undefined,
+          attachmentName: r.attachment_name ? String(r.attachment_name) : undefined,
+        }));
+        const recurringExpenses: RecurringExpense[] = (apiData.recurringExpenses || []).map((r: any) => ({
+          id: String(r.id),
+          description: String(r.description),
+          monthlyAmount: Number(r.monthly_amount),
+          startDate: String(r.start_date),
+          category: String(r.category),
+          lastGeneratedDate: r.last_generated_date ? String(r.last_generated_date) : undefined,
+        }));
+        const prof = apiData.profile || {};
+        const businessSettings: BusinessSettings = {
+          companyName: prof.company_name || '',
+          ownerName: prof.owner_name || '',
+          address: prof.address || '',
+          phone: prof.phone || '',
+          taxId: prof.tax_id || '',
+          vatId: prof.vat_id || undefined,
+          iban: prof.iban || '',
+          bic: prof.bic || '',
+          bankName: prof.bank_name || '',
+          taxMode: prof.tax_mode || 'SmallBusiness',
+          ebayPostalCode: prof.ebay_postal_code || undefined,
+          ebayPaypalEmail: prof.ebay_paypal_email || undefined,
+          ebayDispatchTime: prof.ebay_dispatch_time ?? 1,
+          ebayReturnPolicy: prof.ebay_return_policy || 'ReturnsAccepted',
+          ebaySellerUsername: prof.ebay_seller_username || undefined,
+        };
+        const actionHistory: ActionHistoryEntry[] = (apiData.actionHistory || []).map((r: any) => ({
+          id: String(r.id),
+          timestamp: String(r.timestamp),
+          description: String(r.description),
+          item: r.details?.item || ({} as any),
+          previousState: r.details?.previousState,
+          bulkItems: r.details?.bulkItems,
+        }));
+        const bulkImports: BulkImportSummary[] = (apiData.bulkImports || []).map((r: any) => ({
+          id: String(r.id),
+          importedAt: String(r.imported_at),
+          sourceTotalBuy: Number(r.source_total_buy || 0),
+          allocatedTotalBuy: Number(r.allocated_total_buy || 0),
+          sourceTotalSellTarget: Number(r.source_total_sell_target || 0),
+          itemCount: Number(r.item_count || 0),
+          vendor: r.vendor ? String(r.vendor) : undefined,
+          defaultPlatformBought: r.default_platform_bought ? String(r.default_platform_bought) : undefined,
+          defaultCategory: r.default_category ? String(r.default_category) : undefined,
+          defaultBuyPaymentType: r.default_buy_payment_type ? String(r.default_buy_payment_type) : undefined,
+          importTitle: r.import_title ? String(r.import_title) : undefined,
+          sourceFeeAmount: Number(r.source_fee_amount || 0),
+          sourceShippingCost: Number(r.source_shipping_cost || 0),
+          isSplitLot: Boolean(r.is_split_lot),
+          hasPhotos: Boolean(r.has_photos),
+        }));
+
+        return {
+          items,
+          trash,
+          expenses,
+          recurringExpenses,
+          categories: (prof.custom_categories as CategoryConfig[]) || [],
+          categoryFields: (prof.custom_category_fields as Record<string, CategoryFieldDef[]>) || {},
+          businessSettings,
+          monthlyGoal: Number(prof.monthly_goal || 0),
+          dashboardPrefs: (prof.dashboard_prefs as DashboardPreferences) || {},
+          actionHistory,
+          bulkImports,
+        };
+      }
+    }
+  } catch (apiErr) {
+    console.warn('[supabase] /api/supabase-sync not available, falling back to direct client:', apiErr);
+  }
+
   const sb = getSupabase();
   if (!sb) return null;
-
-  const effectiveId = (userId && !userId.startsWith('dev-owner')) ? userId : PRIMARY_OWNER_UID;
 
   const [invRows, expRows, recExpRows, profRes, ordersRows, reportsRows, actRes, bulkRes] = await Promise.all([
     fetchPaginatedTable('inventory_items', effectiveId),
@@ -801,18 +895,20 @@ export async function fetchFullAppStateFromSupabase(): Promise<SupabaseSyncSnaps
 // 6. INCREMENTAL / SINGLE-ITEM UPDATE (Fine-grained PostgreSQL sync)
 // ------------------------------------------------------------------------------
 
-export async function saveItemChangesToSupabase(
-  updatedItems: InventoryItem[],
+export const saveItemChangesToSupabase = writeItemBatchToSupabase;
+
+export async function writeItemBatchToSupabase(
+  updatedItems?: InventoryItem[],
   deleteIds?: string[]
 ): Promise<void> {
   const sb = getSupabase();
   if (!sb) return;
 
-  const { data: { user } } = await sb.auth.getUser();
-  if (!user) return;
+  const user = await getCurrentSupabaseUser();
+  const userId = user?.id || PRIMARY_OWNER_UID;
 
   if (updatedItems && updatedItems.length > 0) {
-    const rows = updatedItems.map(it => mapItemToRow(it, user.id, false));
+    const rows = updatedItems.map(it => mapItemToRow(it, userId, false));
     const { error } = await sb.from('inventory_items').upsert(rows, { onConflict: 'id' });
     if (error) {
       console.error('[supabase] Single/Batch item update error:', error);
@@ -823,13 +919,34 @@ export async function saveItemChangesToSupabase(
   if (deleteIds && deleteIds.length > 0) {
     const { error } = await sb
       .from('inventory_items')
-      .update({ is_trash: true, updated_at: new Date().toISOString() })
+      .delete()
       .in('id', deleteIds)
-      .eq('user_id', user.id);
+      .eq('user_id', userId);
     if (error) {
-      console.error('[supabase] Item trash error:', error);
+      console.error('[supabase] Item delete error:', error);
       throw error;
     }
+  }
+}
+
+export async function deleteInventoryItemsPermanentlyFromSupabase(
+  ids: string[]
+): Promise<void> {
+  const sb = getSupabase();
+  if (!sb || !ids.length) return;
+
+  const user = await getCurrentSupabaseUser();
+  const userId = user?.id || PRIMARY_OWNER_UID;
+
+  const { error } = await sb
+    .from('inventory_items')
+    .delete()
+    .in('id', ids)
+    .eq('user_id', userId);
+
+  if (error) {
+    console.error('[supabase] Permanent delete error:', error);
+    throw error;
   }
 }
 
@@ -844,12 +961,12 @@ export async function writeFullAppStateToSupabase(
   const sb = getSupabase();
   if (!sb) throw new Error('Supabase is not configured');
 
-  const { data: { user } } = await sb.auth.getUser();
-  if (!user) throw new Error('Not signed in to Supabase');
+  const user = await getCurrentSupabaseUser();
+  const userId = user?.id || PRIMARY_OWNER_UID;
 
   const incomingTotal = snapshot.items.length + snapshot.trash.length;
   if (incomingTotal === 0 && !options?.allowEmptyOverwrite) {
-    const { count } = await sb.from('inventory_items').select('*', { count: 'exact', head: true }).eq('user_id', user.id);
+    const { count } = await sb.from('inventory_items').select('*', { count: 'exact', head: true }).eq('user_id', userId);
     if ((count || 0) > 0) {
       throw new Error('Refusing to overwrite non-empty Supabase inventory with an empty local dataset.');
     }
@@ -857,8 +974,8 @@ export async function writeFullAppStateToSupabase(
 
   // 1. Profile & Settings
   await sb.from('user_profiles').upsert({
-    id: user.id,
-    email: user.email,
+    id: userId,
+    email: user?.email,
     company_name: snapshot.businessSettings.companyName || '',
     owner_name: snapshot.businessSettings.ownerName || '',
     address: snapshot.businessSettings.address || '',
@@ -1048,7 +1165,12 @@ export function getSyncErrorMessage(err: any): string {
 
 export function setLocalDataOnlyMode(_mode: boolean): void {}
 export function prewarmGoogleSignIn(): void {}
-export function completeGoogleRedirectSignIn(): Promise<any> { return Promise.resolve(null); }
+export async function completeGoogleRedirectSignIn(): Promise<any> {
+  const sb = getSupabase();
+  if (!sb) return null;
+  const { data: { session } } = await sb.auth.getSession();
+  return session?.user || null;
+}
 export function consumeAuthReturnPath(): string | null { return null; }
 export function consumeRedirectPending(): boolean { return false; }
 export function isUsingFirebaseEmulator(): boolean { return false; }
@@ -1291,35 +1413,35 @@ export async function deleteProductCardGalleryEntry(id: string): Promise<void> {
 export async function uploadBackupSnapshot(fileName: string, blob: Blob): Promise<void> {
   const sb = getSupabase();
   if (!sb) return;
-  const { data: { user } } = await sb.auth.getUser();
-  if (!user) return;
-  const path = `${user.id}/backups/${fileName}`;
+  const user = await getCurrentSupabaseUser();
+  const userId = user?.id || PRIMARY_OWNER_UID;
+  const path = `${userId}/backups/${fileName}`;
   await sb.storage.from('inventory-images').upload(path, blob, { upsert: true });
 }
 
 export async function listBackupSnapshotNames(): Promise<string[]> {
   const sb = getSupabase();
   if (!sb) return [];
-  const { data: { user } } = await sb.auth.getUser();
-  if (!user) return [];
-  const { data } = await sb.storage.from('inventory-images').list(`${user.id}/backups`);
+  const user = await getCurrentSupabaseUser();
+  const userId = user?.id || PRIMARY_OWNER_UID;
+  const { data } = await sb.storage.from('inventory-images').list(`${userId}/backups`);
   return (data || []).map((i) => i.name).sort();
 }
 
 export async function deleteBackupSnapshot(fileName: string): Promise<void> {
   const sb = getSupabase();
   if (!sb) return;
-  const { data: { user } } = await sb.auth.getUser();
-  if (!user) return;
-  await sb.storage.from('inventory-images').remove([`${user.id}/backups/${fileName}`]);
+  const user = await getCurrentSupabaseUser();
+  const userId = user?.id || PRIMARY_OWNER_UID;
+  await sb.storage.from('inventory-images').remove([`${userId}/backups/${fileName}`]);
 }
 
 export async function getBackupSnapshotUrl(fileName: string): Promise<string | null> {
   const sb = getSupabase();
   if (!sb) return null;
-  const { data: { user } } = await sb.auth.getUser();
-  if (!user) return null;
-  const { data: { publicUrl } } = sb.storage.from('inventory-images').getPublicUrl(`${user.id}/backups/${fileName}`);
+  const user = await getCurrentSupabaseUser();
+  const userId = user?.id || PRIMARY_OWNER_UID;
+  const { data: { publicUrl } } = sb.storage.from('inventory-images').getPublicUrl(`${userId}/backups/${fileName}`);
   return publicUrl;
 }
 
@@ -1355,13 +1477,13 @@ export async function waitForAuthReady(): Promise<void> {
   if (session) return;
 }
 
-export async function fetchEbayOrdersFromCloud(): Promise<{ orders: any[]; meta: EbayOrderCloudMeta | null } | null> {
+export async function fetchEbayOrdersFromCloud(): Promise<{ orders: any[]; meta: any } | null> {
   const sb = getSupabase();
   if (!sb) return null;
-  const { data: { user } } = await sb.auth.getUser();
-  if (!user) return null;
+  const user = await getCurrentSupabaseUser();
+  const userId = user?.id || PRIMARY_OWNER_UID;
   try {
-    const { data, error } = await sb.from('ebay_orders').select('order_data').eq('user_id', user.id);
+    const { data, error } = await sb.from('ebay_orders').select('order_data').eq('user_id', userId);
     if (error) return null;
     return {
       orders: (data || []).map((r: any) => r.order_data),
@@ -1375,11 +1497,11 @@ export async function fetchEbayOrdersFromCloud(): Promise<{ orders: any[]; meta:
 export async function writeEbayOrdersToCloud(orders: any[], metaPatch?: any): Promise<void> {
   const sb = getSupabase();
   if (!sb || !orders.length) return;
-  const { data: { user } } = await sb.auth.getUser();
-  if (!user) return;
+  const user = await getCurrentSupabaseUser();
+  const userId = user?.id || PRIMARY_OWNER_UID;
   const rows = orders.map((o) => ({
     id: o.orderId || o.id,
-    user_id: user.id,
+    user_id: userId,
     order_data: o,
     updated_at: new Date().toISOString(),
   }));
@@ -1393,9 +1515,9 @@ export async function writeEbayOrdersToCloud(orders: any[], metaPatch?: any): Pr
 export async function clearEbayOrdersCloud(): Promise<void> {
   const sb = getSupabase();
   if (!sb) return;
-  const { data: { user } } = await sb.auth.getUser();
-  if (!user) return;
-  await sb.from('ebay_orders').delete().eq('user_id', user.id);
+  const user = await getCurrentSupabaseUser();
+  const userId = user?.id || PRIMARY_OWNER_UID;
+  await sb.from('ebay_orders').delete().eq('user_id', userId);
 }
 
 export async function fetchEbayActiveListingsFromCloud(): Promise<{ listings: any[]; meta: EbayActiveListingsCloudMeta | null } | null> {
@@ -1487,15 +1609,43 @@ export async function clearEbayPurchasesCloud(): Promise<void> {
 export async function fetchEbayTxReportsFromCloud(): Promise<{ reports: any[]; meta: any } | null> {
   const sb = getSupabase();
   if (!sb) return null;
-  const { data: { user } } = await sb.auth.getUser();
-  if (!user) return null;
+  const user = await getCurrentSupabaseUser();
+  const userId = user?.id || PRIMARY_OWNER_UID;
   try {
-    const { data, error } = await sb.from('ebay_tx_reports').select('report_data').eq('user_id', user.id);
+    const { data, error } = await sb.from('ebay_tx_reports').select('id, report_name, report_data').eq('user_id', userId);
     if (error) return null;
-    return {
-      reports: (data || []).map((r: any) => r.report_data),
-      meta: { count: data?.length || 0 },
-    };
+    if (data && data.length > 0) {
+      return {
+        reports: data.map((r: any) => r.report_data),
+        meta: { count: data.length },
+      };
+    }
+    // Zero rows with no error is ambiguous: it means either "genuinely empty" or
+    // "RLS filtered everything out because this session has no JWT". Local
+    // dev-access mode is exactly the second case — and it cannot be detected by
+    // checking for a user, because getCurrentSupabaseUser() synthesises a truthy
+    // owner object there while no actual auth token exists. So always retry a
+    // zero-row result through the local read-through (localhost-only; see
+    // api/supabase-sync.js) before concluding the library is empty. Concluding
+    // that wrongly is destructive now that Supabase is the source of truth:
+    // syncEbayTxReportsWithCloud() clears the local cache on an empty cloud.
+    // In production this fetch simply 404s and we fall through.
+    try {
+      const res = await fetch(`/api/supabase-sync?userId=${encodeURIComponent(userId)}`);
+      if (res.ok) {
+        const payload = await res.json();
+        const rows = Array.isArray(payload?.ebayTxReports) ? payload.ebayTxReports : [];
+        if (rows.length > 0) {
+          return {
+            reports: rows.map((r: any) => r.report_data),
+            meta: { count: rows.length, via: 'local-dev-proxy' },
+          };
+        }
+      }
+    } catch {
+      /* proxy unavailable (normal in production) — fall through */
+    }
+    return { reports: [], meta: { count: 0 } };
   } catch {
     return null;
   }
@@ -1506,18 +1656,28 @@ export async function fetchEbayTxReportRowsFromCloud(): Promise<any[] | null> {
   return res?.reports || null;
 }
 
-export async function writeEbayTxReportsToCloud(reports: any[], metaPatch?: any): Promise<void> {
+export async function writeEbayTxReportsToCloud(payload: any, metaPatch?: any): Promise<void> {
   const sb = getSupabase();
-  if (!sb || !reports.length) return;
-  const { data: { user } } = await sb.auth.getUser();
-  if (!user) return;
-  const rows = reports.map((r, idx) => ({
-    id: String(r.id || r.reportId || idx),
-    user_id: user.id,
-    report_data: r,
-    updated_at: new Date().toISOString(),
-  }));
-  const BATCH_SIZE = 200;
+  if (!sb || !payload) return;
+  const user = await getCurrentSupabaseUser();
+  const userId = user?.id || PRIMARY_OWNER_UID;
+
+  const rawList: any[] = Array.isArray(payload) ? payload : (Array.isArray(payload.reports) ? payload.reports : []);
+  if (!rawList.length) return;
+
+  const rows = rawList.map((r, idx) => {
+    const id = String(r?.meta?.id || r?.id || r?.reportId || `report-${idx}`);
+    const name = String(r?.meta?.fileName || r?.report_name || id);
+    return {
+      id,
+      user_id: userId,
+      report_name: name,
+      report_data: r,
+      updated_at: new Date().toISOString(),
+    };
+  });
+
+  const BATCH_SIZE = 50;
   for (let i = 0; i < rows.length; i += BATCH_SIZE) {
     const chunk = rows.slice(i, i + BATCH_SIZE);
     await sb.from('ebay_tx_reports').upsert(chunk, { onConflict: 'id' });
@@ -1531,10 +1691,13 @@ export async function writeEbayTxReportRowsToCloud(reports: any[]): Promise<void
 export async function clearEbayTxReportsCloud(): Promise<void> {
   const sb = getSupabase();
   if (!sb) return;
-  const { data: { user } } = await sb.auth.getUser();
-  if (!user) return;
-  await sb.from('ebay_tx_reports').delete().eq('user_id', user.id);
+  const user = await getCurrentSupabaseUser();
+  const userId = user?.id || PRIMARY_OWNER_UID;
+  await sb.from('ebay_tx_reports').delete().eq('user_id', userId);
+  await sb.from('ebay_orders').delete().eq('user_id', userId);
 }
+
+export const upsertEbayOrdersToCloud = writeEbayOrdersToCloud;
 
 
 export type StorefrontBlockId = 'hero' | 'categoryGrid' | 'promoAds' | 'bestSellers' | 'trustRow';

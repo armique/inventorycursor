@@ -1,7 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowUpDown, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronUp, Clock, Download, ExternalLink, FileSpreadsheet, Flag, Layers, Link2, Loader2, Pencil, Plus, RefreshCw, Search, Trash2, Unlink, Upload, X } from 'lucide-react';
+import { ArchiveRestore, ArrowUpDown, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronUp, Clock, Cloud, Download, ExternalLink, FileSpreadsheet, Flag, Layers, Link2, Loader2, Pencil, Plus, RefreshCw, Save, Search, Trash2, Unlink, Upload, X } from 'lucide-react';
 import type { ActionHistoryEntry, InventoryItem, ItemUpdateOptions, TaxMode } from '../types';
+import {
+  fetchLatestCloudAutoBackup,
+  getLatestAutoBackupMeta,
+  runPeriodic5MinBackup,
+  type AutoBackupMeta,
+} from '../services/backupService';
 import { formatEUR, formatSignedEUR } from '../utils/formatMoney';
 import { hasEbaySaleSignals } from '../utils/salePlatform';
 import { isRealizedDisposal } from '../utils/itemDisposition';
@@ -55,6 +61,7 @@ import EbayAbrechnungMatchPicker from './EbayAbrechnungMatchPicker';
 import {
   clearEbayTransactionReportsEverywhere,
   EBAY_TX_REPORT_UPDATED_EVENT,
+  flushEbayTxReportsCloudPush,
   readEbayTxClearedAt,
   runEbayTxCloudSyncOnce,
   scheduleEbayTxReportsCloudPush,
@@ -64,7 +71,8 @@ import {
   countEbayTxLinkedSellDateFixes,
 } from '../utils/backfillEbayTxLinkedSellDates';
 import { findOwnOrderFullRefundReverts } from '../utils/refundFeeAbsorption';
-import { downloadEbayTxJsonBackup } from '../utils/ebayTxReportJsonExport';
+import { downloadEbayTxJsonBackup, parseEbayTxJsonBackup } from '../utils/ebayTxReportJsonExport';
+import { saveEbayTransactionLibrary, saveEbayTxLabelOverrides } from '../services/ebayTransactionReportStore';
 import {
   getOrderMatcherNeedsReviewKeys,
   flagOrderMatcherNeedsReview,
@@ -96,6 +104,7 @@ type Props = {
   taxMode: TaxMode;
   onUpdate: (items: InventoryItem[], deleteIds?: string[], options?: ItemUpdateOptions) => void;
   actionHistory?: ActionHistoryEntry[];
+  onRestoreBackup?: (data: any) => void;
 };
 
 const KIND_TONE: Record<EbayTxKind, string> = {
@@ -464,11 +473,68 @@ function resolveEbayTxViewReport(
   return mergeEbayTxReports(reports);
 }
 
-const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate, actionHistory = [] }) => {
+const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate, actionHistory = [], onRestoreBackup }) => {
   const [reports, setReports] = useState<EbayTxReport[]>([]);
   const [selectedId, setSelectedId] = useState<string>(() => readViewState().selectedId ?? 'all');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [autoBackupMeta, setAutoBackupMeta] = useState<AutoBackupMeta | null>(() => getLatestAutoBackupMeta());
+  const [cloudBackupBusy, setCloudBackupBusy] = useState(false);
+  const [cloudRestoreBusy, setCloudRestoreBusy] = useState(false);
+
+  useEffect(() => {
+    const updateMeta = () => setAutoBackupMeta(getLatestAutoBackupMeta());
+    const interval = setInterval(updateMeta, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleManualCloudBackup = async () => {
+    setCloudBackupBusy(true);
+    try {
+      const result = await runPeriodic5MinBackup(
+        {
+          inventory: items,
+          trash: [],
+          expenses: [],
+          actionHistory: actionHistory || [],
+        },
+        { force: true }
+      );
+      if (result.ran) {
+        setAutoBackupMeta(getLatestAutoBackupMeta());
+        setLinkNote('Full snapshot saved to Supabase Storage!');
+      }
+    } catch (e: any) {
+      setLinkNote(`Cloud backup failed: ${e?.message || e}`);
+    } finally {
+      setCloudBackupBusy(false);
+    }
+  };
+
+  const handleRestoreFromCloudAutoBackup = async () => {
+    if (
+      !window.confirm(
+        'Restore from the latest 5-minute Cloud Auto-Backup in Supabase Storage? All inventory items and eBay order links will be restored.'
+      )
+    ) {
+      return;
+    }
+    setCloudRestoreBusy(true);
+    try {
+      const data = await fetchLatestCloudAutoBackup();
+      if (!data) throw new Error('No cloud auto-backup snapshot found in Supabase Storage.');
+      if (onRestoreBackup) {
+        await Promise.resolve(onRestoreBackup(data));
+      } else if (Array.isArray((data as any).inventory)) {
+        onUpdate((data as any).inventory as InventoryItem[]);
+      }
+      setLinkNote('Successfully restored from Supabase Cloud Auto-Backup!');
+    } catch (e: any) {
+      setLinkNote(`Restore failed: ${e?.message || e}`);
+    } finally {
+      setCloudRestoreBusy(false);
+    }
+  };
   // `loading` only reflects this page's own local IndexedDB read, which resolves almost
   // instantly — it says nothing about App.tsx's separate Firestore pull for these reports
   // (services/ebayTransactionReportSync.ts), which can take real seconds. Any effect that
@@ -486,6 +552,7 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate, actionH
     () => readViewState().kindFilter ?? 'order'
   );
   const [hideLinked, setHideLinked] = useState(readHideLinked);
+  const [onlyFlagged, setOnlyFlagged] = useState(false);
   // "Needs review" flags live in localStorage (utils/orderMatcherNeedsReview.ts), synced to
   // the cloud alongside label overrides — not React state, so the list re-reads it on the
   // shared change event whenever the picker (or a cloud merge) toggles one.
@@ -729,12 +796,15 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate, actionH
   // whose completion this effect can't observe) closes that gap.
   useEffect(() => {
     let cancelled = false;
-    void runEbayTxCloudSyncOnce()
-      .then(() => reloadLocal())
-      .catch(() => undefined)
-      .finally(() => {
-        if (!cancelled) setCloudReportsSettled(true);
-      });
+    const syncAndBootstrap = async () => {
+      await runEbayTxCloudSyncOnce().catch(() => undefined);
+      await reloadLocal();
+    };
+
+    void syncAndBootstrap().finally(() => {
+      if (!cancelled) setCloudReportsSettled(true);
+    });
+
     return () => {
       cancelled = true;
     };
@@ -929,6 +999,17 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate, actionH
           await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
           await importText(text, file.name);
         }
+        // Supabase is the source of truth: an imported report that only reached
+        // IndexedDB would be discarded by the next authoritative pull instead of
+        // saved. Push now and wait for confirmation before reporting success, so
+        // the import is durable the moment the spinner stops.
+        const status = await flushEbayTxReportsCloudPush();
+        if (status.state === 'error') {
+          setError(
+            `Imported locally, but saving to Supabase failed: ${status.message}. ` +
+              'Do not reload — check your connection and use Retry save.'
+          );
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Could not read that CSV.');
       } finally {
@@ -1023,6 +1104,7 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate, actionH
     if (!displayReport || kindFilter === 'matcher') return [];
     const q = search.trim().toLowerCase();
     return displayReport.rows.filter((row) => {
+      if (onlyFlagged && !needsReviewKeys.has(row.id)) return false;
       if (kindFilter === 'refunded') {
         if (row.kind !== 'order') return false;
         if ((refundStateByRowId.get(row.id) || 'none') === 'none') return false;
@@ -1042,7 +1124,14 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate, actionH
         .toLowerCase()
         .includes(q);
     });
-  }, [displayReport, kindFilter, search, refundStateByRowId]);
+  }, [displayReport, kindFilter, search, refundStateByRowId, onlyFlagged, needsReviewKeys]);
+
+  const flaggedCount = useMemo(() => {
+    return (displayReport?.rows || []).reduce(
+      (sum, row) => sum + (needsReviewKeys.has(row.id) ? 1 : 0),
+      0
+    );
+  }, [displayReport, needsReviewKeys]);
 
   /** How many rows in the current tab/search match each component pill — shown as the pill's count. */
   const componentPinCounts = useMemo(() => {
@@ -1166,12 +1255,22 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate, actionH
   );
   const linkHistoryEntries = useMemo(() => {
     const filtered = actionHistory.filter((e) => LINK_HISTORY_ACTIONS.has(e.action));
-    // Oldest first to compute a running "which link number was this" tally, then reversed
-    // for display (newest first, like every other list on this page). Unlink/undo entries
-    // carry the count as it stood at that point — they don't decrement it, since the
-    // question this answers is "how far into your order history was this," not "how many
-    // are linked right now."
-    const ascending = [...filtered].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    // Deduplicate identical consecutive actions (same action, details, within 10 seconds)
+    const deduped: ActionHistoryEntry[] = [];
+    for (const entry of filtered) {
+      const last = deduped[deduped.length - 1];
+      if (
+        last &&
+        last.action === entry.action &&
+        last.details === entry.details &&
+        last.itemId === entry.itemId &&
+        Math.abs(new Date(last.timestamp).getTime() - new Date(entry.timestamp).getTime()) < 10000
+      ) {
+        continue;
+      }
+      deduped.push(entry);
+    }
+    const ascending = [...deduped].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
     let count = 0;
     const withCount = ascending.map((entry) => {
       if (entry.action === 'Abrechnung created' || entry.action === 'Abrechnung linked' || entry.action === 'Abrechnung bundle linked') {
@@ -1327,7 +1426,7 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate, actionH
       return;
     }
     setPage(0);
-  }, [kindFilter, search, sort, hideLinked, activeComponentPin]);
+  }, [kindFilter, search, sort, hideLinked, onlyFlagged, activeComponentPin]);
 
   const pageCount = Math.max(1, Math.ceil(sortedRows.length / PAGE_SIZE));
   const pageRows = sortedRows.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
@@ -1407,12 +1506,18 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate, actionH
     setMatcherPage(0);
   }, [matcherConfFilter, suggestions?.length]);
 
-  const onBuildSuggestions = useCallback(async () => {
+  const isBuildingSuggestionsRef = useRef(false);
+
+  const onBuildSuggestions = useCallback(async (opts?: { force?: boolean }) => {
     if (!report?.rows?.length) {
       setLinkNote('Import CSV files first, then open the Matcher tab.');
       return;
     }
-    matcherBuildAbortRef.current?.abort();
+    if (isBuildingSuggestionsRef.current && !opts?.force) {
+      return;
+    }
+
+    isBuildingSuggestionsRef.current = true;
     const ac = new AbortController();
     matcherBuildAbortRef.current = ac;
     setSuggestBusy(true);
@@ -1426,6 +1531,7 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate, actionH
       });
       if (ac.signal.aborted) return;
       setSuggestions(rows);
+      matcherAutoBuiltRef.current = true;
       const stats = summarizeEbayTxBulkMatchSuggestions(rows);
       setLinkNote(
         `Matcher: ${stats.total} orders · ${stats.high} high · ${stats.medium} medium · ${stats.low} low · ${stats.linked} linked · ${stats.none} none`
@@ -1435,10 +1541,16 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate, actionH
       setLinkNote(err instanceof Error ? err.message : 'Could not build matcher.');
     } finally {
       if (matcherBuildAbortRef.current === ac) matcherBuildAbortRef.current = null;
+      isBuildingSuggestionsRef.current = false;
       setSuggestBusy(false);
       setMatcherProgress(null);
     }
   }, [items, ledgers, matcherOrderCount, report]);
+
+  const onBuildSuggestionsRef = useRef(onBuildSuggestions);
+  useEffect(() => {
+    onBuildSuggestionsRef.current = onBuildSuggestions;
+  }, [onBuildSuggestions]);
 
   useEffect(() => {
     if (!hasImportedCsv) matcherAutoBuiltRef.current = false;
@@ -1470,15 +1582,15 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate, actionH
   // partial snapshot happened to be in `items` the instant this tab first opened.
   useEffect(() => {
     if (kindFilter !== 'matcher') return;
-    if (loading || !report?.rows?.length || !items.length || suggestBusy) return;
-    if (suggestions?.length) return;
+    if (loading || !report?.rows?.length || !items.length || suggestBusy || isBuildingSuggestionsRef.current) return;
+    if (suggestions && suggestions.length > 0) return;
     if (matcherAutoBuiltRef.current) return;
     const t = setTimeout(() => {
       matcherAutoBuiltRef.current = true;
-      void onBuildSuggestions();
-    }, 800);
+      void onBuildSuggestionsRef.current();
+    }, 150);
     return () => clearTimeout(t);
-  }, [kindFilter, loading, report?.rows?.length, items, suggestBusy, suggestions?.length, onBuildSuggestions]);
+  }, [kindFilter, loading, report?.rows?.length, items.length, suggestBusy, suggestions]);
 
   useEffect(() => {
     if (kindFilter === 'matcher') setMatchRow(null);
@@ -1534,11 +1646,65 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate, actionH
     setSuggestions(null);
   }, [suggestions, report, items, ledgers, taxMode, onUpdate]);
 
+  const backupFileRef = useRef<HTMLInputElement>(null);
+
   const onSaveBackupJson = useCallback(() => {
-    if (!reports.length) return;
-    const downloaded = downloadEbayTxJsonBackup(reports, labelOverrides);
-    setLinkNote(`Backup saved · ${downloaded.fileName} · ${downloaded.rowCount} rows`);
-  }, [reports, labelOverrides]);
+    if (!reports.length && !items.length) return;
+    const downloaded = downloadEbayTxJsonBackup(reports, labelOverrides, items);
+    setLinkNote(
+      `Saved backup · ${downloaded.fileName} · ${downloaded.rowCount} report rows · ${downloaded.linkedCount} linked items`
+    );
+  }, [reports, labelOverrides, items]);
+
+  const onImportBackupJsonFile = useCallback(
+    async (file: File | null | undefined) => {
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const data = parseEbayTxJsonBackup(text);
+
+        // 1. Restore Abrechnung CSV reports & label overrides
+        if (Array.isArray(data.ebayTxReports) && data.ebayTxReports.length > 0) {
+          await saveEbayTransactionLibrary({
+            version: 1,
+            reports: data.ebayTxReports,
+            updatedAt: new Date().toISOString(),
+          });
+          if (data.ebayTxLabelOverrides) {
+            await saveEbayTxLabelOverrides(data.ebayTxLabelOverrides);
+          }
+          await reloadLocal();
+          scheduleEbayTxReportsCloudPush();
+        }
+
+        // 2. Restore Linked items
+        const linked = data.linkedItems || (data as any).inventory;
+        if (Array.isArray(linked) && linked.length > 0) {
+          if (onRestoreBackup) {
+            await Promise.resolve(onRestoreBackup(data as any));
+          } else {
+            // Merge linked items back into items by ID
+            const itemMap = new Map(items.map((i) => [i.id, i]));
+            for (const l of linked) {
+              if (l && l.id) {
+                itemMap.set(l.id, { ...itemMap.get(l.id), ...l });
+              }
+            }
+            onUpdate(Array.from(itemMap.values()));
+          }
+        }
+
+        setLinkNote(
+          `Restored from ${file.name} (${data.ebayTxReports?.length || 0} reports, ${
+            linked?.length || 0
+          } linked items)`
+        );
+      } catch (err: any) {
+        setError(`Failed to restore backup: ${err?.message || err}`);
+      }
+    },
+    [items, reloadLocal, onRestoreBackup, onUpdate]
+  );
 
   const [clearBusy, setClearBusy] = useState(false);
   const onClearEverywhere = useCallback(async () => {
@@ -1937,6 +2103,43 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate, actionH
                 e.target.value = '';
               }}
             />
+
+            {/* Supabase 5-Min Cloud Auto-Backup Status & Controls */}
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-indigo-200 bg-indigo-50/90 text-indigo-950 shadow-sm">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              <span className="text-[11px] font-bold flex items-center gap-1">
+                <Cloud size={13} className="text-indigo-600" />
+                <span>Auto-Backup (5m)</span>
+                {autoBackupMeta ? (
+                  <span className="opacity-70 font-semibold tabular-nums text-[10px]">
+                    · {autoBackupMeta.itemCount} items
+                  </span>
+                ) : null}
+              </span>
+              <button
+                type="button"
+                onClick={handleManualCloudBackup}
+                disabled={cloudBackupBusy || cloudRestoreBusy}
+                title="Save full database snapshot to Supabase Storage right now"
+                className="ml-1 px-2 py-0.5 rounded bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase inline-flex items-center gap-1 disabled:opacity-50 transition-colors"
+              >
+                {cloudBackupBusy ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} />}
+                Backup
+              </button>
+              <button
+                type="button"
+                onClick={handleRestoreFromCloudAutoBackup}
+                disabled={cloudBackupBusy || cloudRestoreBusy}
+                title="Restore full database from the last 5-minute Supabase Storage snapshot"
+                className="px-2 py-0.5 rounded bg-white hover:bg-indigo-100 text-indigo-900 border border-indigo-300 text-[10px] font-black uppercase inline-flex items-center gap-1 disabled:opacity-50 transition-colors"
+              >
+                {cloudRestoreBusy ? <Loader2 size={10} className="animate-spin" /> : <ArchiveRestore size={10} />}
+                Restore
+              </button>
+            </div>
             <button
               type="button"
               onClick={() => runEbaySync(true)}
@@ -1970,18 +2173,39 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate, actionH
               {busy ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
               Add CSV
             </button>
-            {reports.length ? (
-              <button
-                type="button"
-                onClick={onSaveBackupJson}
-                disabled={busy}
-                title="Download a JSON backup of every imported report and DHL label override — an extra local copy alongside the automatic cloud sync"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-900 text-xs font-bold hover:bg-emerald-100 disabled:opacity-50"
-              >
-                <Download size={14} />
-                Save backup
-              </button>
-            ) : null}
+
+            {/* Local File-based Save & Restore Backup (CSVs + Linked Records) */}
+            <input
+              ref={backupFileRef}
+              type="file"
+              accept=".json,application/json"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                void onImportBackupJsonFile(file);
+                e.target.value = '';
+              }}
+            />
+            <button
+              type="button"
+              onClick={onSaveBackupJson}
+              disabled={busy || (!reports.length && !items.length)}
+              title="Download a JSON backup of all imported CSV reports, label overrides, and linked inventory records"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-950 text-xs font-bold hover:bg-emerald-100 disabled:opacity-50"
+            >
+              <Download size={14} />
+              Save backup (.json)
+            </button>
+            <button
+              type="button"
+              onClick={() => backupFileRef.current?.click()}
+              disabled={busy}
+              title="Upload and restore a JSON backup file (CSVs, label overrides, and linked inventory records)"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-300 bg-white text-emerald-950 text-xs font-bold hover:bg-emerald-50 disabled:opacity-50"
+            >
+              <Upload size={14} />
+              Restore from file
+            </button>
             <button
               type="button"
               onClick={() => void onClearEverywhere()}
@@ -2343,26 +2567,46 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate, actionH
               </button>
             </div>
 
-            {/* Mobile Quick Search Input */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" size={14} />
-              <input
-                type="search"
-                enterKeyHint="search"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search order ID, buyer, article title…"
-                className="w-full pl-8 pr-8 py-2 rounded-xl border border-slate-800 bg-slate-900 text-white placeholder-slate-500 text-xs font-semibold outline-none focus:border-amber-500/50"
-              />
-              {search && (
-                <button
-                  type="button"
-                  onClick={() => setSearch('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1"
-                >
-                  <X size={13} />
-                </button>
-              )}
+            {/* Mobile Quick Search & Flagged Toggle */}
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" size={14} />
+                <input
+                  type="search"
+                  enterKeyHint="search"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search order ID, buyer, article title…"
+                  className="w-full pl-8 pr-8 py-2 rounded-xl border border-slate-800 bg-slate-900 text-white placeholder-slate-500 text-xs font-semibold outline-none focus:border-amber-500/50"
+                />
+                {search && (
+                  <button
+                    type="button"
+                    onClick={() => setSearch('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setOnlyFlagged((v) => !v)}
+                title={onlyFlagged ? 'Show all' : 'Show flagged only'}
+                className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0 border transition-all ${
+                  onlyFlagged
+                    ? 'bg-amber-500 text-slate-950 border-amber-400 font-black shadow-sm'
+                    : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+                }`}
+              >
+                <Flag size={13} className={onlyFlagged ? 'fill-current' : ''} />
+                <span>Flagged</span>
+                {flaggedCount > 0 && (
+                  <span className={`px-1 py-0.2 rounded-full text-[9px] font-black tabular-nums ${onlyFlagged ? 'bg-slate-950 text-amber-400' : 'bg-amber-500/30 text-amber-300'}`}>
+                    {flaggedCount}
+                  </span>
+                )}
+              </button>
             </div>
           </div>
 
@@ -2456,6 +2700,27 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate, actionH
                 {hideLinked ? 'Linked hidden' : 'Hide linked'}
                 {linkedInFilteredCount > 0 ? (
                   <span className="ml-0.5 tabular-nums font-semibold opacity-80">{linkedInFilteredCount}</span>
+                ) : null}
+              </button>
+            ) : null}
+            {kindFilter !== 'matcher' ? (
+              <button
+                type="button"
+                onClick={() => setOnlyFlagged((v) => !v)}
+                aria-pressed={onlyFlagged}
+                title={onlyFlagged ? 'Showing only flagged orders — click to show all' : 'Filter to show only orders flagged for review'}
+                className={`px-2 py-1 rounded-lg text-[11px] font-bold border inline-flex items-center gap-1 transition-colors ${
+                  onlyFlagged
+                    ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-sm'
+                    : 'bg-white text-slate-600 border-slate-200 hover:border-amber-400'
+                }`}
+              >
+                <Flag size={12} className={onlyFlagged ? 'fill-current' : ''} />
+                <span>{onlyFlagged ? 'Flagged only' : 'Flagged'}</span>
+                {flaggedCount > 0 ? (
+                  <span className={`ml-0.5 tabular-nums font-black px-1 rounded text-[10px] ${onlyFlagged ? 'bg-slate-950 text-amber-400' : 'bg-amber-100 text-amber-800'}`}>
+                    {flaggedCount}
+                  </span>
                 ) : null}
               </button>
             ) : null}
@@ -2581,7 +2846,7 @@ const EbayAbrechnungPage: React.FC<Props> = ({ items, taxMode, onUpdate, actionH
                     onClick={() => {
                       matcherAutoBuiltRef.current = false;
                       setSuggestions(null);
-                      void onBuildSuggestions();
+                      void onBuildSuggestions({ force: true });
                     }}
                     disabled={suggestBusy || busy}
                     className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-violet-300 bg-white text-violet-900 text-[11px] font-bold hover:bg-violet-100 disabled:opacity-50"
