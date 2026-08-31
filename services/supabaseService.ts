@@ -668,6 +668,114 @@ async function fetchPaginatedTable<T = any>(
   return rows;
 }
 
+/**
+ * Incremental inventory read.
+ *
+ * A full boot currently transfers every row of every table — 12.6 MB at 2073
+ * items, projected to 42.7 MB at 10,000, which is 134% of the free-tier egress
+ * allowance on its own. Almost all of it is re-downloading rows that have not
+ * changed since the last sync.
+ *
+ * This fetches a cheap manifest of (id, updated_at) first, then the full body of
+ * only the rows that are new or actually changed. At 10,000 items the manifest is
+ * roughly 550 KB against 38 MB for the bodies, so an unchanged reopen costs
+ * about 1.5% of a full read.
+ *
+ * The manifest is also what makes deletions work. An "only fetch what changed"
+ * read can never observe a row that was deleted elsewhere — it simply stops being
+ * in the results, which is indistinguishable from unchanged. Because the manifest
+ * lists every id the server has, anything held locally but missing from it is a
+ * genuine remote delete, and is reported in deletedIds.
+ *
+ * Partial reads are refused here exactly as in fetchPaginatedTable: a manifest
+ * missing a page would report live rows as deleted, which is far worse than a
+ * failed sync. Any error throws and the caller keeps its last complete state.
+ */
+export type InventoryDelta = {
+  /** New or modified rows, fully populated. */
+  changed: InventoryItem[];
+  /** Ids held locally that the server no longer has. */
+  deletedIds: string[];
+  /** Every id the server holds — authoritative. */
+  serverIds: string[];
+  /** Rows skipped because they were already current locally. */
+  unchangedCount: number;
+};
+
+const DELTA_BODY_CHUNK = 200;
+
+export async function fetchInventoryDelta(
+  userId: string,
+  known: ReadonlyMap<string, string>,
+  // Injectable so tests drive the real function against the test project rather
+  // than a reimplementation of these queries. Defaults to the app's own client.
+  clientOverride?: SupabaseClient
+): Promise<InventoryDelta> {
+  const sb = clientOverride ?? getSupabase();
+  if (!sb) throw new Error('Supabase is not configured.');
+
+  const effectiveId = userId && !userId.startsWith('dev-owner') ? userId : PRIMARY_OWNER_UID;
+  const PAGE_SIZE = 1000;
+
+  // --- manifest -----------------------------------------------------------
+  const manifest: Array<{ id: string; updated_at: string }> = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await sb
+      .from('inventory_items')
+      .select('id,updated_at')
+      .eq('user_id', effectiveId)
+      .order('id', { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) {
+      throw new Error(`Incomplete inventory manifest at offset ${from}: ${error.message}`);
+    }
+    if (!data || data.length === 0) break;
+    manifest.push(...(data as Array<{ id: string; updated_at: string }>));
+    if (data.length < PAGE_SIZE) break;
+  }
+
+  const serverIds = manifest.map((r) => String(r.id));
+
+  // --- what actually needs fetching ---------------------------------------
+  const staleIds: string[] = [];
+  let unchangedCount = 0;
+  for (const row of manifest) {
+    const id = String(row.id);
+    const seen = known.get(id);
+    // No local copy, or the server's row is a different revision. String
+    // comparison is deliberate: these are the server's own timestamps echoed
+    // back, so equality means "same revision" without any clock arithmetic.
+    if (seen === undefined || seen !== String(row.updated_at)) staleIds.push(id);
+    else unchangedCount++;
+  }
+
+  const deletedIds = [...known.keys()].filter((id) => !serverIds.includes(id));
+
+  // --- bodies for the stale rows only -------------------------------------
+  const changed: InventoryItem[] = [];
+  for (let i = 0; i < staleIds.length; i += DELTA_BODY_CHUNK) {
+    const chunk = staleIds.slice(i, i + DELTA_BODY_CHUNK);
+    const { data, error } = await sb
+      .from('inventory_items')
+      .select('*')
+      .eq('user_id', effectiveId)
+      .in('id', chunk);
+    if (error) {
+      throw new Error(`Incomplete inventory delta at chunk ${i}: ${error.message}`);
+    }
+    if (!data || data.length !== chunk.length) {
+      // A row named by the manifest did not come back. Treating that as "nothing
+      // changed for it" would leave a stale local copy in the money totals.
+      throw new Error(
+        `Inventory delta returned ${data?.length ?? 0} of ${chunk.length} requested rows at chunk ${i}`
+      );
+    }
+    changed.push(...(data as Record<string, unknown>[]).map(mapRowToItem));
+  }
+
+  return { changed, deletedIds, serverIds, unchangedCount };
+}
+
 export async function fetchSupabaseSnapshotDirect(userId: string): Promise<SupabaseSyncSnapshot | null> {
   const effectiveId = (userId && !userId.startsWith('dev-owner')) ? userId : PRIMARY_OWNER_UID;
 
