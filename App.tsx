@@ -2443,6 +2443,8 @@ const App: React.FC = () => {
     const preserveMissingFields = !options?.skipFieldPreserve;
     const itemsToApply = updatedItems;
     let pendingActionEntries: ActionHistoryEntry[] = [];
+    /** Ids removed inside the updater that Supabase has not been told about yet. */
+    let pendingRemovedIds: string[] = [];
 
     setItems(currentItems => {
         let nextItems = currentItems.slice();
@@ -2452,10 +2454,19 @@ const App: React.FC = () => {
         const trashBefore = trashRef.current;
         let nextTrash = trashBefore;
         let nextAssetTagNum = maxAssetTagNumber(nextItems, trashBefore);
-        const addToTrash = (rows: InventoryItem[]) => {
-          if (!rows.length) return;
-          const existing = new Set(nextTrash.map((t) => t.id));
-          nextTrash = [...nextTrash, ...rows.filter((r) => !existing.has(r.id))];
+        // Trash was removed as a concept: deleting is permanent. That makes it
+        // important to distinguish WHO removed a row.
+        //
+        // Only an explicit user delete (deleteIds) is propagated to Supabase.
+        // Automatic removals — a stale container link, or an emptied PC/bundle shell
+        // — are display-level cleanup and must NOT delete the row remotely. They used
+        // to land in trash, which made them recoverable; with trash gone, propagating
+        // them would silently destroy data. That is not hypothetical: restoring 46
+        // previously-trashed items made 32 empty bundle shells active again, and the
+        // shell cleanup then permanently deleted every one of them.
+        const removedIds: string[] = [];
+        const recordRemoved = (rows: InventoryItem[]) => {
+          for (const r of rows) if (r?.id && !removedIds.includes(r.id)) removedIds.push(r.id);
         };
         itemsToApply.forEach(u => {
           const idx = indexById.has(u.id) ? indexById.get(u.id)! : -1;
@@ -2531,10 +2542,10 @@ const App: React.FC = () => {
         }
         
         if (deleteIds && deleteIds.length > 0) {
-           const toTrash = nextItems.filter(i => deleteIds.includes(i.id));
-           if (toTrash.length > 0) {
-              addToTrash(toTrash);
-              if (recordAction) toTrash.forEach((i) => actionEntries.push(makeActionEntry('Item moved to trash', i)));
+           const removed = nextItems.filter(i => deleteIds.includes(i.id));
+           if (removed.length > 0) {
+              recordRemoved(removed);
+              if (recordAction) removed.forEach((i) => actionEntries.push(makeActionEntry('Item deleted', i)));
            }
            nextItems = nextItems.filter(i => !deleteIds.includes(i.id));
         }
@@ -2546,9 +2557,9 @@ const App: React.FC = () => {
             if (enforced.deleteIds.length > 0) {
               const removed = nextItems.filter((i) => enforced.deleteIds.includes(i.id));
               if (removed.length > 0) {
-                addToTrash(removed);
+                recordRemoved(removed);
                 if (recordAction) {
-                  removed.forEach((i) => actionEntries.push(makeActionEntry('Item moved to trash', i)));
+                  removed.forEach((i) => actionEntries.push(makeActionEntry('Item deleted', i)));
                 }
               }
             }
@@ -2563,7 +2574,7 @@ const App: React.FC = () => {
           if (emptyShellIds.length > 0) {
             const removed = nextItems.filter((i) => emptyShellIds.includes(i.id));
             if (removed.length > 0) {
-              addToTrash(removed);
+              recordRemoved(removed);
               if (recordAction) {
                 removed.forEach((i) =>
                   actionEntries.push(makeActionEntry('Empty container removed', i)),
@@ -2577,6 +2588,11 @@ const App: React.FC = () => {
         const actionEntriesMerged = recordAction ? mergeTradeActionEntries(actionEntries, updatedItems) : [];
         if (actionEntriesMerged.length > 0) {
           pendingActionEntries = actionEntriesMerged;
+        }
+        if (removedIds.length > 0) {
+          // Deliberately empty: explicit deletes already went to Supabase before this
+          // updater ran, and automatic removals must not be propagated (see above).
+          pendingRemovedIds = [];
         }
         const touchedIds = [
           ...updatedItems.map((u) => u.id),
@@ -2600,6 +2616,11 @@ const App: React.FC = () => {
     });
     if (pendingActionEntries.length > 0) {
       addActionEntries(pendingActionEntries);
+    }
+    if (pendingRemovedIds.length > 0) {
+      void deleteInventoryItemsPermanentlyFromSupabase(pendingRemovedIds).catch((err) =>
+        console.error('[supabase] Auto-removal delete failed:', err)
+      );
     }
   }, [addActionEntries, businessSettings.taxMode, pushUndoSnapshot, requestFastCloudFlush]);
 

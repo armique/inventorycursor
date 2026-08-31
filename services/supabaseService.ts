@@ -661,9 +661,11 @@ export async function fetchSupabaseSnapshotDirect(userId: string): Promise<Supab
       const apiData = await apiRes.json();
       if (apiData.ok && Array.isArray(apiData.items) && apiData.items.length > 0) {
         const invRows = apiData.items;
-        const allItems = invRows.map(mapRowToItem);
-        const items = allItems.filter((_: any, idx: number) => !(invRows[idx] as any).is_trash);
-        const trash = allItems.filter((_: any, idx: number) => !!(invRows[idx] as any).is_trash);
+        // Trash is gone: every stored row is a normal inventory item. A legacy
+        // is_trash row loads as an ordinary item rather than disappearing into a
+        // bin the app no longer has any way to open.
+        const items = invRows.map(mapRowToItem);
+        const trash: InventoryItem[] = [];
         const expenses: Expense[] = (apiData.expenses || []).map((r: any) => ({
           id: String(r.id),
           description: String(r.description),
@@ -765,9 +767,9 @@ export async function fetchSupabaseSnapshotDirect(userId: string): Promise<Supab
     fetchPaginatedTable('bulk_imports', effectiveId, 'imported_at'),
   ]);
 
-  const allItems = invRows.map(mapRowToItem);
-  const items = allItems.filter((_, idx) => !(invRows[idx] as any).is_trash);
-  const trash = allItems.filter((_, idx) => !!(invRows[idx] as any).is_trash);
+  // Trash is gone: every stored row is a normal inventory item (see above).
+  const items = invRows.map(mapRowToItem);
+  const trash: InventoryItem[] = [];
 
   const expenses: Expense[] = expRows.map((r: any) => ({
     id: String(r.id),
@@ -874,9 +876,9 @@ export async function fetchFullAppStateFromSupabase(): Promise<SupabaseSyncSnaps
     fetchPaginatedTable('bulk_imports', user.id, 'imported_at'),
   ]);
 
-  const allItems = invRows.map(mapRowToItem);
-  const items = allItems.filter((_, idx) => !invRows[idx].is_trash);
-  const trash = allItems.filter((_, idx) => !!invRows[idx].is_trash);
+  // Trash is gone: every stored row is a normal inventory item (see above).
+  const items = invRows.map(mapRowToItem);
+  const trash: InventoryItem[] = [];
 
   const expenses: Expense[] = expRows.map((r: any) => ({
     id: String(r.id),
@@ -1073,11 +1075,11 @@ export async function writeFullAppStateToSupabase(
     dashboard_prefs: snapshot.dashboardPrefs || {},
   });
 
-  // 2. Inventory Items & Trash in chunks of 200
-  const allRows = [
-    ...snapshot.items.map((it) => mapItemToRow(it, user.id, false)),
-    ...snapshot.trash.map((it) => mapItemToRow(it, user.id, true)),
-  ];
+  // 2. Inventory items in chunks of 200.
+  // Trash was removed as a concept — deleting is permanent. Nothing may be written
+  // back with is_trash = true: a client still holding a stale trash array would
+  // otherwise silently re-trash rows that were deliberately restored.
+  const allRows = snapshot.items.map((it) => mapItemToRow(it, user.id, false));
 
   const BATCH_SIZE = 200;
   for (let i = 0; i < allRows.length; i += BATCH_SIZE) {
