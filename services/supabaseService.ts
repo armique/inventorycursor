@@ -126,14 +126,77 @@ export function getDevAdminUser(): User | null {
 
 export const DEFAULT_MASTER_PIN = '7788';
 
-export function verifyAndSignInWithPin(pin: string, email = OWNER_ADMIN_EMAIL): { success: boolean; user?: User; error?: string } {
+/**
+ * Developer passcode sign-in — LOCAL DEVELOPMENT ONLY.
+ *
+ * These passcodes are compiled into the client bundle, so on a deployed site
+ * they are readable by anyone who opens the JS. They are therefore not a secret
+ * and cannot be treated as an authentication factor in production; the only
+ * thing that makes them acceptable at all is that they never leave localhost.
+ * Production sign-in must go through real Supabase auth (Google / email OTP).
+ *
+ * Returns a REAL Supabase session on success (see establishDevOwnerSession), not
+ * a synthetic user object — without a JWT every write is rejected by RLS, which
+ * made dev sessions silently read-only.
+ */
+export async function verifyAndSignInWithPin(
+  pin: string,
+  email = OWNER_ADMIN_EMAIL
+): Promise<{ success: boolean; user?: User; error?: string }> {
+  if (!isLocalOrDevEnvironment()) {
+    return { success: false, error: 'Developer access is only available on localhost.' };
+  }
   const cleanPin = String(pin || '').trim();
   const validPins = [DEFAULT_MASTER_PIN, '123456'];
   if (!validPins.includes(cleanPin)) {
     return { success: false, error: 'Invalid Developer Passcode. Access denied.' };
   }
+
+  // Mint a genuine Supabase session so RLS treats this exactly like the owner.
+  // Falls back to the legacy synthetic user (read-only) if that cannot be done,
+  // so local work still functions rather than failing to sign in at all.
+  const real = await establishDevOwnerSession();
   const user = signInWithDevAdmin(email);
+  if (!real.ok) {
+    console.warn(
+      `[dev-auth] Signed in without a Supabase session (${real.error}). ` +
+        'Reads work via the local proxy, but writes will be rejected by RLS.'
+    );
+  }
   return { success: true, user };
+}
+
+/**
+ * Ask the localhost-only dev endpoint to mint a real session for the owner, then
+ * install it on the client. The service role key stays server-side; what comes
+ * back is an ordinary user session subject to the same RLS as a normal login.
+ */
+export async function establishDevOwnerSession(): Promise<{ ok: boolean; error?: string }> {
+  if (!isLocalOrDevEnvironment()) return { ok: false, error: 'not local' };
+  const sb = getSupabase();
+  if (!sb) return { ok: false, error: 'supabase not configured' };
+
+  try {
+    const res = await fetch('/api/supabase-sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'dev-session' }),
+    });
+    if (!res.ok) return { ok: false, error: `dev-session HTTP ${res.status}` };
+    const payload = await res.json();
+    if (!payload?.ok || !payload.tokenHash) {
+      return { ok: false, error: payload?.error || 'no token returned' };
+    }
+    const { data, error } = await sb.auth.verifyOtp({
+      token_hash: payload.tokenHash,
+      type: 'magiclink',
+    });
+    if (error) return { ok: false, error: error.message };
+    if (!data.session) return { ok: false, error: 'no session established' };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'dev session failed' };
+  }
 }
 
 export function isDevAdminSession(): boolean {

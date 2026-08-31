@@ -82,11 +82,36 @@ export default async function handler(req, res) {
     return res.status(404).json({ error: 'Not found' });
   }
 
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   res.setHeader('Cache-Control', 'no-store');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
+
+  // POST { action: 'dev-session' } — mint a genuine Supabase session for the
+  // owner so local development has the same RLS-backed read/write access as a
+  // normal login. The service role key never leaves the server: what goes back
+  // is a single-use magic-link token hash the client exchanges for a session.
+  // Only reachable on localhost (isLocalDev above).
+  if (req.method === 'POST') {
+    const action = req.body?.action;
+    if (action !== 'dev-session') {
+      return res.status(400).json({ error: 'Unsupported action' });
+    }
+    try {
+      const sb = getServiceClient();
+      const email = process.env.DEV_OWNER_EMAIL || 'abelyanarmen@gmail.com';
+      const { data, error } = await sb.auth.admin.generateLink({ type: 'magiclink', email });
+      if (error) return res.status(500).json({ ok: false, error: error.message });
+      const tokenHash = data?.properties?.hashed_token;
+      if (!tokenHash) return res.status(500).json({ ok: false, error: 'No token returned' });
+      return res.status(200).json({ ok: true, tokenHash });
+    } catch (err) {
+      console.error('[api/supabase-sync] dev-session error:', err);
+      return res.status(500).json({ ok: false, error: err.message || 'Server error' });
+    }
+  }
+
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
   const userId = req.query?.userId;

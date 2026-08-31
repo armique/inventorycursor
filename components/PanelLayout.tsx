@@ -179,13 +179,21 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             >
               Email OTP
             </button>
-            <button
-              type="button"
-              onClick={() => { setAuthTab('dev'); setSignInError(null); }}
-              className={`flex-1 py-1.5 rounded-lg transition-colors ${authTab === 'dev' ? 'bg-white text-slate-900 shadow-sm' : 'hover:text-slate-900'}`}
-            >
-              Dev Access
-            </button>
+            {/* Localhost only. The dev passcodes are compiled into the client
+                bundle, so on a deployed site they are readable by anyone and are
+                not a secret — offering this tab in production would put the admin
+                panel behind a published password. verifyAndSignInWithPin enforces
+                the same rule server-side, so hiding the tab is defence in depth,
+                not the control itself. */}
+            {isLocalDev && (
+              <button
+                type="button"
+                onClick={() => { setAuthTab('dev'); setSignInError(null); }}
+                className={`flex-1 py-1.5 rounded-lg transition-colors ${authTab === 'dev' ? 'bg-white text-slate-900 shadow-sm' : 'hover:text-slate-900'}`}
+              >
+                Dev Access
+              </button>
+            )}
           </div>
 
           {authTab === 'google' && (
@@ -293,10 +301,17 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
               onSubmit={(e) => {
                 e.preventDefault();
                 setSignInError(null);
-                const res = verifyAndSignInWithPin(devPinInput, OWNER_ADMIN_EMAIL);
-                if (!res.success) {
-                  setSignInError(res.error || 'Invalid Developer Passcode');
-                }
+                setSigningIn(true);
+                void verifyAndSignInWithPin(devPinInput, OWNER_ADMIN_EMAIL)
+                  .then((res) => {
+                    if (!res.success) {
+                      setSignInError(res.error || 'Invalid Developer Passcode');
+                    }
+                  })
+                  .catch((err) => {
+                    setSignInError(err instanceof Error ? err.message : 'Developer sign-in failed');
+                  })
+                  .finally(() => setSigningIn(false));
               }}
               className="space-y-3 text-left"
             >
