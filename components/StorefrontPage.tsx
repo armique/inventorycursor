@@ -8,6 +8,7 @@ import {
   createStoreInquiry,
   subscribeToStorefrontConfig,
   DEFAULT_STOREFRONT_CONFIG,
+  normalizeStorefrontConfig,
   type StoreCatalogPayload,
   type StorefrontConfig,
   type StorefrontBlockId,
@@ -117,7 +118,10 @@ const StorefrontPage: React.FC = () => {
 
   useEffect(() => {
     const unsub = subscribeToStorefrontConfig((data) => {
-      setStorefrontConfig(data ?? DEFAULT_STOREFRONT_CONFIG);
+      // Normalize on the way into state so every read below is safe, whatever the
+      // stored config looks like. This is the public shop — a partial config must
+      // degrade to defaults, never blank the page with an error boundary.
+      setStorefrontConfig(normalizeStorefrontConfig(data));
     });
     return () => unsub();
   }, []);
@@ -321,8 +325,11 @@ const StorefrontPage: React.FC = () => {
 
   // --- Storefront configurator: derived, config-driven data ---
   const orderedBlocks = useMemo(
-    () => [...(Array.isArray(storefrontConfig?.blocks) ? storefrontConfig.blocks : DEFAULT_STOREFRONT_CONFIG.blocks)].sort((a, b) => a.order - b.order),
-    [storefrontConfig?.blocks]
+    // normalizeStorefrontConfig guarantees `blocks`, but this is the public shop —
+    // it must not be able to crash on an unexpected config, so resolve defensively
+    // here too rather than spreading whatever arrives.
+    () => [...(normalizeStorefrontConfig(storefrontConfig).blocks || [])].sort((a, b) => a.order - b.order),
+    [storefrontConfig]
   );
   const activePromoAds = useMemo(
     () => (Array.isArray(storefrontConfig?.promoAds) ? storefrontConfig.promoAds : []).filter((a) => a.visible && !a.archived),

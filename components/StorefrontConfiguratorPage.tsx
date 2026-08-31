@@ -12,6 +12,7 @@ import {
   writeStorefrontConfig,
   uploadStorefrontAsset,
   DEFAULT_STOREFRONT_CONFIG,
+  normalizeStorefrontConfig,
   type StorefrontConfig,
   type StorefrontBlockId,
   type StorefrontPromoAd,
@@ -69,7 +70,7 @@ const StorefrontConfiguratorPage: React.FC = () => {
 
   useEffect(() => {
     const unsub = subscribeToStorefrontConfig((data, error) => {
-      const resolved = data ?? DEFAULT_STOREFRONT_CONFIG;
+      const resolved = normalizeStorefrontConfig(data);
       setConfig(cloneConfig(resolved));
       setSavedConfig(cloneConfig(resolved));
       setLoadError(
@@ -125,7 +126,7 @@ const StorefrontConfiguratorPage: React.FC = () => {
     );
   }
 
-  const orderedBlocks = [...(Array.isArray(config?.blocks) ? config.blocks : DEFAULT_STOREFRONT_CONFIG.blocks)].sort((a, b) => a.order - b.order);
+  const orderedBlocks = [...(normalizeStorefrontConfig(config).blocks || [])].sort((a, b) => a.order - b.order);
   const activeAds = (Array.isArray(config?.promoAds) ? config.promoAds : []).filter((a) => !a.archived);
   const archivedAds = (Array.isArray(config?.promoAds) ? config.promoAds : []).filter((a) => a.archived);
   const activeTrust = (Array.isArray(config?.trustItems) ? config.trustItems : DEFAULT_STOREFRONT_CONFIG.trustItems).filter((t) => !t.archived);
@@ -133,7 +134,9 @@ const StorefrontConfiguratorPage: React.FC = () => {
 
   const moveBlock = (id: StorefrontBlockId, dir: -1 | 1) => {
     patch((c) => {
-      const sorted = [...c.blocks].sort((a, b) => a.order - b.order);
+      // c.blocks is absent on any config saved before the field existed — spreading
+      // it directly is what crashed the storefront, so resolve it the same way here.
+      const sorted = [...(normalizeStorefrontConfig(c).blocks || [])].sort((a, b) => a.order - b.order);
       const idx = sorted.findIndex((b) => b.id === id);
       const swapIdx = idx + dir;
       if (swapIdx < 0 || swapIdx >= sorted.length) return;
@@ -148,7 +151,9 @@ const StorefrontConfiguratorPage: React.FC = () => {
 
   const toggleBlockVisible = (id: StorefrontBlockId) => {
     patch((c) => {
-      const b = c.blocks.find((x) => x.id === id);
+      // Same reason as moveBlock: `blocks` may be missing on an older config.
+      c.blocks = normalizeStorefrontConfig(c).blocks;
+      const b = c.blocks?.find((x) => x.id === id);
       if (b) b.visible = !b.visible;
     });
   };

@@ -1868,16 +1868,106 @@ export interface StorefrontTrustItem {
   active?: boolean;
 }
 
+export interface StorefrontBlock {
+  id: StorefrontBlockId;
+  order: number;
+  visible: boolean;
+}
+
+/** Per-section copy overrides. Every field is optional — the UI falls back to its
+ *  own default text — but the section objects themselves must always exist, since
+ *  the storefront reads `config.hero.subtitle` and friends directly. */
+export interface StorefrontHeroText {
+  subtitle?: string;
+  ctaLabel?: string;
+  ctaSaleLabel?: string;
+}
+export interface StorefrontSectionText {
+  heading?: string;
+  subheading?: string;
+}
+
 export interface StorefrontConfig {
   storeName?: string;
   heroHeadline?: string;
   heroTagline?: string;
   heroCtaText?: string;
   heroBackgroundUrl?: string;
+  hero?: StorefrontHeroText;
+  categoryGrid?: StorefrontSectionText;
+  bestSellers?: StorefrontSectionText;
+  /**
+   * Per-block order AND visibility. The storefront and its configurator both need
+   * a `visible` flag, which the older `blocksOrder` (a bare list of ids) cannot
+   * express — so this is the field they read. `blocksOrder` is kept for configs
+   * saved before this existed; normalizeStorefrontConfig derives `blocks` from it.
+   */
+  blocks?: StorefrontBlock[];
+  /** @deprecated superseded by `blocks`; still read when migrating an old config. */
   blocksOrder?: StorefrontBlockId[];
   promoAds?: StorefrontPromoAd[];
   trustItems?: StorefrontTrustItem[];
   themeColor?: string;
+}
+
+export const DEFAULT_STOREFRONT_BLOCK_ORDER: StorefrontBlockId[] = [
+  'hero',
+  'categoryGrid',
+  'promoAds',
+  'bestSellers',
+  'trustRow',
+];
+
+function blocksFromOrder(order: StorefrontBlockId[]): StorefrontBlock[] {
+  return order.map((id, index) => ({ id, order: index, visible: true }));
+}
+
+/**
+ * Guarantee the shape the storefront components rely on.
+ *
+ * Without this, `config.blocks` is undefined for every config saved before the
+ * field existed (and for the default itself), and the storefront's
+ * `[...config.blocks]` spread throws "is not iterable" — taking down the entire
+ * public shop with an error boundary, not just the block list.
+ */
+export function normalizeStorefrontConfig(raw: StorefrontConfig | null | undefined): StorefrontConfig {
+  const cfg: StorefrontConfig = { ...DEFAULT_STOREFRONT_CONFIG, ...(raw || {}) };
+
+  if (!Array.isArray(cfg.blocks) || cfg.blocks.length === 0) {
+    const order =
+      Array.isArray(cfg.blocksOrder) && cfg.blocksOrder.length
+        ? cfg.blocksOrder
+        : DEFAULT_STOREFRONT_BLOCK_ORDER;
+    cfg.blocks = blocksFromOrder(order);
+  } else {
+    // Repair partial rows rather than letting a bad `order`/`visible` break sorting.
+    cfg.blocks = cfg.blocks
+      .filter((b) => b && b.id)
+      .map((b, index) => ({
+        id: b.id,
+        order: Number.isFinite(b.order) ? Number(b.order) : index,
+        visible: b.visible !== false,
+      }));
+    // Append any block the stored config predates, so new sections still render.
+    for (const id of DEFAULT_STOREFRONT_BLOCK_ORDER) {
+      if (!cfg.blocks.some((b) => b.id === id)) {
+        cfg.blocks.push({ id, order: cfg.blocks.length, visible: true });
+      }
+    }
+  }
+
+  if (!Array.isArray(cfg.promoAds)) cfg.promoAds = [];
+  if (!Array.isArray(cfg.trustItems)) cfg.trustItems = [];
+
+  // The storefront reads these as `config.hero.subtitle`, `config.categoryGrid.heading`
+  // and so on. A config saved before these sections existed has them undefined, and
+  // reading through them throws — which takes down the whole public page, not just
+  // the heading. Guarantee the objects; the fields inside stay optional.
+  if (!cfg.hero || typeof cfg.hero !== 'object') cfg.hero = {};
+  if (!cfg.categoryGrid || typeof cfg.categoryGrid !== 'object') cfg.categoryGrid = {};
+  if (!cfg.bestSellers || typeof cfg.bestSellers !== 'object') cfg.bestSellers = {};
+
+  return cfg;
 }
 
 export interface StoreCatalogPayload {
@@ -1891,7 +1981,17 @@ export const DEFAULT_STOREFRONT_CONFIG: StorefrontConfig = {
   heroHeadline: 'Premium Hardware & Custom Gaming PCs',
   heroTagline: 'Hand-tested components, custom builds, fast delivery.',
   heroCtaText: 'Shop Inventory',
+  hero: {},
+  categoryGrid: {},
+  bestSellers: {},
   blocksOrder: ['hero', 'categoryGrid', 'promoAds', 'bestSellers', 'trustRow'],
+  blocks: [
+    { id: 'hero', order: 0, visible: true },
+    { id: 'categoryGrid', order: 1, visible: true },
+    { id: 'promoAds', order: 2, visible: true },
+    { id: 'bestSellers', order: 3, visible: true },
+    { id: 'trustRow', order: 4, visible: true },
+  ],
   promoAds: [],
   trustItems: [],
   themeColor: '#0a84ff',
@@ -1934,16 +2034,19 @@ export function subscribeToStorefrontConfig(
 ): () => void {
   const sb = getSupabase();
   if (!sb) {
-    callback(DEFAULT_STOREFRONT_CONFIG);
+    callback(normalizeStorefrontConfig(null));
     return () => {};
   }
 
+  // Normalize here so every consumer receives a config that already satisfies the
+  // shape they read; the public storefront must never be able to crash on a
+  // partial or older stored config.
   const load = async () => {
     try {
       const { data } = await sb.from('storefront_config').select('config_data').limit(1).maybeSingle();
-      callback({ ...DEFAULT_STOREFRONT_CONFIG, ...(data?.config_data || {}) });
+      callback(normalizeStorefrontConfig(data?.config_data || null));
     } catch {
-      callback(DEFAULT_STOREFRONT_CONFIG);
+      callback(normalizeStorefrontConfig(null));
     }
   };
 
