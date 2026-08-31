@@ -317,9 +317,19 @@ function runTradeAllocationTests(): void {
 }
 
 function runProfitTests(): void {
-  assertClose(calculateSaleProfit(119, 50, 10, 'RegularVAT'), roundMoney(119 / 1.19 - 50 - 10), 'RegularVAT profit');
+  // Profit is deliberately cash-in-pocket: sell - buy - fees, with no VAT taken
+  // out in any tax mode. VAT is handled outside the app by the Steuerberater
+  // (owner's decision, 2026-08-31), so the tax mode must NOT change this number.
+  // These three assert exactly that, so a re-introduced VAT branch fails loudly
+  // instead of quietly moving every reported profit.
+  assertClose(calculateSaleProfit(119, 50, 10, 'RegularVAT'), 59, 'RegularVAT profit is gross');
   assertClose(calculateSaleProfit(100, 40, 5, 'SmallBusiness'), 55, 'SmallBusiness profit');
   assertClose(calculateSaleProfit(80, 100, 0, 'DifferentialVAT'), -20, 'DifferentialVAT loss margin');
+  assertClose(
+    calculateSaleProfit(119, 50, 10, 'DifferentialVAT'),
+    calculateSaleProfit(119, 50, 10, 'RegularVAT'),
+    'tax mode does not change profit'
+  );
 
   const gifted = baseItem({
     status: ItemStatus.GIFTED,

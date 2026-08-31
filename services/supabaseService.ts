@@ -382,7 +382,12 @@ export interface SupabaseSyncSnapshot {
 // 4. MAPPER HELPERS (Item <-> DB Row)
 // ------------------------------------------------------------------------------
 
-function mapItemToRow(item: InventoryItem, userId: string, isTrash: boolean): Record<string, unknown> {
+/**
+ * Exported alongside mapRowToItem so tests can prove a full write→read round trip
+ * loses nothing. A field present on InventoryItem but absent here is dropped
+ * silently on every save; only a round-trip test catches that.
+ */
+export function mapItemToRow(item: InventoryItem, userId: string, isTrash: boolean): Record<string, unknown> {
   return {
     id: item.id,
     user_id: userId,
