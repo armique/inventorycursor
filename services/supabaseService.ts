@@ -818,10 +818,14 @@ export async function fetchSupabaseSnapshotDirect(userId: string): Promise<Supab
   const monthlyGoal = Number(prof.monthly_goal) || 0;
   const dashboardPrefs = (prof.dashboard_prefs as DashboardPreferences) || undefined;
 
-  const ebayOrders: EbayOrderRecord[] = (ordersRes.data || []).map((r) => r.order_data as EbayOrderRecord);
-  const ebayTxReports: EbayTxReport[] = (reportsRes.data || []).map((r) => r.report_data as EbayTxReport);
+  // These four come from fetchPaginatedTable, which returns a plain array — not a
+  // PostgREST { data } response. Reading `.data` off them yields undefined, and the
+  // two that were also misnamed (ordersRes / reportsRes) threw ReferenceError and
+  // aborted the whole snapshot fetch, so the panel loaded completely empty.
+  const ebayOrders: EbayOrderRecord[] = (ordersRows || []).map((r: any) => r.order_data as EbayOrderRecord);
+  const ebayTxReports: EbayTxReport[] = (reportsRows || []).map((r: any) => r.report_data as EbayTxReport);
 
-  const actionHistory: ActionHistoryEntry[] = (actRes.data || []).map((r) => ({
+  const actionHistory: ActionHistoryEntry[] = (actRes || []).map((r: any) => ({
     id: String(r.id),
     action: String(r.action),
     timestamp: String(r.timestamp),
@@ -830,7 +834,7 @@ export async function fetchSupabaseSnapshotDirect(userId: string): Promise<Supab
     details: r.details ? String(r.details) : undefined,
   }));
 
-  const bulkImports: BulkImportRecord[] = (bulkRes.data || []).map((r) => r.import_data as BulkImportRecord);
+  const bulkImports: BulkImportRecord[] = (bulkRes || []).map((r: any) => r.import_data as BulkImportRecord);
 
   const canonical = canonicalizeInventoryItems(items, businessSettings.taxMode);
   const finalItems = canonical.items;
@@ -923,10 +927,14 @@ export async function fetchFullAppStateFromSupabase(): Promise<SupabaseSyncSnaps
   const monthlyGoal = Number(prof.monthly_goal) || 0;
   const dashboardPrefs = (prof.dashboard_prefs as DashboardPreferences) || undefined;
 
-  const ebayOrders: EbayOrderRecord[] = (ordersRes.data || []).map((r) => r.order_data as EbayOrderRecord);
-  const ebayTxReports: EbayTxReport[] = (reportsRes.data || []).map((r) => r.report_data as EbayTxReport);
+  // These four come from fetchPaginatedTable, which returns a plain array — not a
+  // PostgREST { data } response. Reading `.data` off them yields undefined, and the
+  // two that were also misnamed (ordersRes / reportsRes) threw ReferenceError and
+  // aborted the whole snapshot fetch, so the panel loaded completely empty.
+  const ebayOrders: EbayOrderRecord[] = (ordersRows || []).map((r: any) => r.order_data as EbayOrderRecord);
+  const ebayTxReports: EbayTxReport[] = (reportsRows || []).map((r: any) => r.report_data as EbayTxReport);
 
-  const actionHistory: ActionHistoryEntry[] = (actRes.data || []).map((r) => ({
+  const actionHistory: ActionHistoryEntry[] = (actRes || []).map((r: any) => ({
     id: String(r.id),
     action: String(r.action),
     timestamp: String(r.timestamp),
@@ -935,7 +943,7 @@ export async function fetchFullAppStateFromSupabase(): Promise<SupabaseSyncSnaps
     details: r.details ? String(r.details) : undefined,
   }));
 
-  const bulkImports: BulkImportRecord[] = (bulkRes.data || []).map((r) => r.import_data as BulkImportRecord);
+  const bulkImports: BulkImportRecord[] = (bulkRes || []).map((r: any) => r.import_data as BulkImportRecord);
 
   return {
     items,
