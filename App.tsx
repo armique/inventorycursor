@@ -65,7 +65,8 @@ import {
   type RealtimeItemDelta
 } from './services/supabaseService';
 import { runWeeklyPhotoPruneIfDue } from './services/photoPruneService';
-import { computeItemHistoryDiff, appendItemHistoryEntry } from './utils/itemHistoryDiff';
+import { computeItemHistoryDiff, appendItemHistoryEntry, type ItemHistoryEntry } from './utils/itemHistoryDiff';
+import { recordItemAudit, flushItemAudit } from './services/itemAuditLog';
 import { withTimeout } from './utils/withTimeout';
 import { runDailyBackupIfDue, runPeriodic5MinBackup } from './services/backupService';
 import { pullOrderIndexFromCloud } from './services/ebayOrderIndex';
@@ -715,6 +716,12 @@ const App: React.FC = () => {
   const healthInsuranceLedgerDoneRef = useRef(false);
   
   const [authUser, setAuthUser] = useState<any>(null);
+  /** Mirror of authUser for use inside handleUpdate, which must not take authUser
+   *  as a dependency — that would rebuild the callback on every auth change. */
+  const authUserRef = useRef<any>(null);
+  authUserRef.current = authUser;
+  /** Audit entries gathered inside the setItems updater, drained after commit. */
+  const auditBufferRef = useRef<Array<{ item: { id?: string; name?: string }; entry: ItemHistoryEntry }>>([]);
   // Tracks when Supabase auth has completed its initial check (so we don't flash the login screen before session restore).
   const [authReady, setAuthReady] = useState<boolean>(!isCloudEnabled());
   const isRemoteUpdate = useRef(false);
@@ -1733,6 +1740,36 @@ const App: React.FC = () => {
     return () => clearTimeout(t);
   }, [authUser, appState, items.length, getSyncSnapshot]);
 
+  // Drain audit entries collected during the last committed items update.
+  // Runs after commit, so the updater stays a pure state computation and the
+  // entries are guaranteed to exist by the time this reads them.
+  useEffect(() => {
+    if (!auditBufferRef.current.length) return;
+    const uid = authUserRef.current?.id;
+    // No user id yet (session still restoring): keep the entries buffered rather
+    // than clearing them. authUser is in the deps, so this re-runs and drains
+    // them as soon as auth lands. Clearing first and checking after would drop
+    // every edit made during the restore window.
+    if (!uid) return;
+    const batch = auditBufferRef.current;
+    auditBufferRef.current = [];
+    recordItemAudit(batch, uid);
+  }, [items, trash, authUser]);
+
+  // Drain the audit queue once signed in, and again when the tab is hidden.
+  // Entries are written to a durable local queue at edit time, so nothing is
+  // lost if a flush fails — this just makes sure it is retried promptly rather
+  // than waiting for the next edit.
+  useEffect(() => {
+    if (!authUser) return;
+    void flushItemAudit().catch(() => undefined);
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') void flushItemAudit().catch(() => undefined);
+    };
+    document.addEventListener('visibilitychange', onHide);
+    return () => document.removeEventListener('visibilitychange', onHide);
+  }, [authUser]);
+
   // Periodic 5-minute cloud auto-backup
   useEffect(() => {
     if (!isCloudEnabled() || appState !== 'READY' || items.length === 0) return;
@@ -2450,6 +2487,19 @@ const App: React.FC = () => {
     let pendingActionEntries: ActionHistoryEntry[] = [];
     /** Ids removed inside the updater that Supabase has not been told about yet. */
     let pendingRemovedIds: string[] = [];
+    /** Audit entries collected inside the updater.
+     *
+     *  Collected into a ref rather than a local, because setItems does not run
+     *  its updater synchronously — React invokes it during the following render,
+     *  so anything read straight after the setItems call is still empty. They are
+     *  drained by an effect once the new items have actually committed.
+     *
+     *  Double-collection under StrictMode is harmless: each entry carries a
+     *  unique id which is the audit table's primary key, and the flush upserts
+     *  on it, so a repeat cannot duplicate a row. */
+    const collectAudit = (e: { item: { id?: string; name?: string }; entry: ItemHistoryEntry }) => {
+      auditBufferRef.current.push(e);
+    };
 
     setItems(currentItems => {
         let nextItems = currentItems.slice();
@@ -2498,6 +2548,10 @@ const App: React.FC = () => {
           // Compute rich structured diff for item timeline and global action history
           const { historyEntry, actionEntry } = computeItemHistoryDiff(oldItem, final, options?.actionNote);
           final = appendItemHistoryEntry(final, historyEntry);
+          // Same entry also goes to the permanent audit log. item.history is
+          // capped at 100 and dies with the item; the audit log is neither, and
+          // is queryable across items (every refund in a period, and so on).
+          collectAudit({ item: { id: final.id, name: final.name }, entry: historyEntry });
 
           if (idx >= 0) {
             nextItems[idx] = final;

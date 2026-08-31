@@ -491,7 +491,12 @@ function mapItemToRow(item: InventoryItem, userId: string, isTrash: boolean): Re
   };
 }
 
-function mapRowToItem(row: Record<string, unknown>): InventoryItem {
+/**
+ * Exported so tests can decode rows exactly as the app does. A test that maps
+ * rows with its own hand-written mapper proves nothing about the real read path —
+ * it would have happily passed while `history` was missing from the schema.
+ */
+export function mapRowToItem(row: Record<string, unknown>): InventoryItem {
   return {
     id: String(row.id),
     name: String(row.name || ''),
