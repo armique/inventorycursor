@@ -691,17 +691,16 @@ const App: React.FC = () => {
     bulkImportsRef.current = bulkImports;
   }, [bulkImports]);
 
-  // One-time storefront reset requested by user: hide all currently visible items.
-  useEffect(() => {
-    if (items.length === 0) return;
-    const resetKey = 'storefront_reset_applied_v1';
-    if (localStorage.getItem(resetKey) === '1') return;
-    if (items.some((i) => i.storeVisible === true)) {
-      setItems((prev) => prev.map((i) => (i.storeVisible === true ? { ...i, storeVisible: false } : i)));
-      hasUnsavedChanges.current = true;
-    }
-    localStorage.setItem(resetKey, '1');
-  }, [items.length]);
+  // Removed: a one-time "hide every item from the storefront" reset.
+  //
+  // It was gated on a localStorage flag (storefront_reset_applied_v1), which is
+  // per-browser — so it was never actually one-time. It re-ran on every new
+  // device, every fresh profile, and after any cache clear, silently setting
+  // storeVisible = false on everything the owner had since made visible. The
+  // reset it was written for has long since been applied (2064 of 2068 rows are
+  // hidden), so the only thing it can still do is undo future changes.
+  //
+  // Storefront visibility is now controlled solely from Store management.
 
   const [appState, setAppState] = useState<AppState>('BOOTING');
   const [syncState, setSyncState] = useState<SyncState>({ status: 'idle', lastSynced: null });
