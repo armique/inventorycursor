@@ -894,55 +894,6 @@ const Dashboard: React.FC<Props> = ({
     }).slice(0, 5);
   }, [statsItems, statsExpenses]);
 
-  if (items.length === 0 && expenses.length === 0) {
-    const emptyCreate = ADD_OPTIONS.filter((o) => o.group === 'create').slice(0, 6);
-    const emptyImport = ADD_OPTIONS.filter((o) => o.group === 'import');
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-8 px-2">
-        <div>
-          <h2 className="text-2xl font-black text-slate-800 tracking-tight">Inventory is empty</h2>
-          <p className="text-slate-500 max-w-md mt-2 text-sm font-semibold">
-            Choose how you want to add your first stock — same options as Add.
-          </p>
-        </div>
-        <div className="w-full max-w-3xl space-y-6 text-left">
-          <section>
-            <h3 className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400 mb-2 px-1">
-              Create
-            </h3>
-            <div className="grid grid-cols-3 md:grid-cols-6 gap-1 sm:gap-2">
-              {emptyCreate.map((opt) => (
-                <AddOptionTile
-                  key={opt.id}
-                  label={opt.label}
-                  hint={opt.hint}
-                  icon={opt.icon}
-                  onClick={() => navigate(opt.to)}
-                />
-              ))}
-            </div>
-          </section>
-          <section>
-            <h3 className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400 mb-2 px-1">
-              Import
-            </h3>
-            <div className="grid grid-cols-3 md:grid-cols-6 gap-1 sm:gap-2">
-              {emptyImport.map((opt) => (
-                <AddOptionTile
-                  key={opt.id}
-                  label={opt.label}
-                  hint={opt.hint}
-                  icon={opt.icon}
-                  onClick={() => navigate(opt.to)}
-                />
-              ))}
-            </div>
-          </section>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <>
       <MobileDashboardView
@@ -1061,33 +1012,6 @@ const Dashboard: React.FC<Props> = ({
               <input type="date" className="rounded-lg border border-slate-200 px-2 lg:px-3 py-1.5 lg:py-2 text-xs lg:text-sm font-bold" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} />
             </div>
           )}
-          <div
-            className="flex rounded-lg lg:rounded-xl border border-slate-200 bg-white p-0.5 lg:p-1"
-            title="Tax mode only changes Dashboard profit. Sold tab always shows pocket margin."
-          >
-            {(
-              [
-                { id: 'SmallBusiness' as const, label: 'Kleinunt.', title: 'Pocket profit — Bestelleinnahmen − EK, no VAT. Same as Sold tab.' },
-                { id: 'DifferentialVAT' as const, label: 'Diff.', title: 'Differenzbesteuerung — VAT deducted from the cash margin.' },
-                { id: 'RegularVAT' as const, label: 'VAT', title: 'Regelbesteuerung — 19% VAT deducted from proceeds.' },
-              ] as const
-            ).map((opt) => (
-              <button
-                key={opt.id}
-                type="button"
-                title={opt.title}
-                onClick={() => {
-                  if (!businessSettings || !onBusinessSettingsChange) return;
-                  onBusinessSettingsChange({ ...businessSettings, taxMode: opt.id });
-                }}
-                className={`px-2.5 py-1.5 lg:px-3 lg:py-2 text-[10px] lg:text-xs font-black uppercase rounded-md lg:rounded-lg transition-colors min-h-[36px] lg:min-h-[44px] ${
-                  taxMode === opt.id ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
           <button
             type="button"
             onClick={() => setShowWidgetModal(true)}
@@ -1166,9 +1090,6 @@ const Dashboard: React.FC<Props> = ({
             </div>
           ))}
         </button>
-        <p className="px-3 lg:px-6 py-1.5 lg:py-2 text-[10px] lg:text-xs font-semibold text-slate-500 border-b border-slate-100 bg-slate-50/70">
-          {taxModeProfitCaption(taxMode)}
-        </p>
 
         {monthOverMonth && (
           <div className="px-3 lg:px-6 py-2 lg:py-3 bg-blue-50/80 border-b border-blue-100 flex items-center gap-2 text-xs lg:text-sm">

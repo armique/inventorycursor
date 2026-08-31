@@ -482,7 +482,7 @@ const INV_DATE_INPUT =
 
 /** Title-row icon strip (OVP/IO toggles only — sell/delete moved to Flags). */
 const ITEM_TITLE_ACTIONS_RESERVE = '2.75rem';
-const BUNDLE_PART_FIN_GRID = 'w-[11.5rem]';
+const BUNDLE_PART_FIN_GRID = 'w-[12.5rem]';
 
 const DEFAULT_WIDTHS: Record<string, number> = {
   select: 36,
@@ -4464,15 +4464,18 @@ const InventoryList: React.FC<Props> = ({
                     style={{ maxWidth: `calc(100% - ${ITEM_TITLE_ACTIONS_RESERVE})` }}
                   >
                          {isSoldContainerRow && (
-                           <div className="flex items-center gap-2 px-1 pb-0.5 min-w-0">
+                           <div className="flex items-center gap-2 py-0.5 pl-1.5 pr-1 min-w-0 border-l-[3px] border-transparent">
                              <span className="flex-1 min-w-0 text-[8px] font-bold uppercase tracking-wider text-slate-400">
                                Part
                              </span>
-                             <span className={`shrink-0 ${BUNDLE_PART_FIN_GRID} grid grid-cols-3 gap-x-1 items-baseline text-right text-[8px] font-bold uppercase tracking-wider text-slate-400 tabular-nums`}>
-                               <span>EK</span>
-                               <span>Sold</span>
-                               <span>Profit</span>
-                             </span>
+                             <div className="ml-auto flex items-center gap-1.5 shrink-0">
+                               <span className={`shrink-0 ${BUNDLE_PART_FIN_GRID} grid grid-cols-3 gap-x-1 items-baseline text-right text-[8px] font-bold uppercase tracking-wider text-slate-400 tabular-nums`}>
+                                 <span>EK</span>
+                                 <span>Sold</span>
+                                 <span>Profit</span>
+                               </span>
+                               <span className="h-6 w-6 shrink-0" aria-hidden />
+                             </div>
                            </div>
                          )}
                          {childItems.map((child) => {
@@ -4650,28 +4653,31 @@ const InventoryList: React.FC<Props> = ({
                              Total cost €{formatEUR(item.buyPrice)} · {childItems.length} parts
                            </p>
                          )}
-                         {isSoldContainerRow && (
-                           <div className="flex items-center gap-2 px-1 pt-0.5 min-w-0">
-                             <span className={`flex-1 min-w-0 text-[9px] font-bold uppercase tracking-wider ${
-                               item.isPC ? 'text-indigo-600/90' : 'text-violet-600/90'
-                             }`}>
-                               {childItems.length} parts
-                             </span>
-                             <span className={`shrink-0 ${BUNDLE_PART_FIN_GRID} grid grid-cols-3 gap-x-1 items-baseline text-right tabular-nums text-[9px] font-bold ${
-                               item.isPC ? 'text-indigo-700' : 'text-violet-700'
-                             }`}>
-                               <span>€{formatEUR(childItems.reduce((s, c) => s + (Number((itemsById.get(c.id) || c).buyPrice) || 0), 0))}</span>
-                               <span>€{formatEUR(childSoldSum)}</span>
-                               <span>
-                                 €{formatEUR(
-                                   childProfitById
-                                     ? [...childProfitById.values()].reduce((s, n) => s + n, 0)
-                                     : childItems.reduce((s, c) => s + (Number(profitForDisplay(itemsById.get(c.id) || c)) || 0), 0)
-                                 )}
-                               </span>
-                             </span>
-                           </div>
-                         )}
+                          {isSoldContainerRow && (
+                            <div className="flex items-center gap-2 pl-1.5 pr-1 pt-1 pb-0.5 min-w-0 border-l-[3px] border-transparent border-t border-slate-200/60 mt-0.5">
+                              <span className={`flex-1 min-w-0 text-[9px] font-bold uppercase tracking-wider ${
+                                item.isPC ? 'text-indigo-600/90' : 'text-violet-600/90'
+                              }`}>
+                                {childItems.length} parts
+                              </span>
+                              <div className="ml-auto flex items-center gap-1.5 shrink-0">
+                                <span className={`shrink-0 ${BUNDLE_PART_FIN_GRID} grid grid-cols-3 gap-x-1 items-baseline text-right tabular-nums text-[9.5px] font-bold ${
+                                  item.isPC ? 'text-indigo-700' : 'text-violet-700'
+                                }`}>
+                                  <span>€{formatEUR(childItems.reduce((s, c) => s + (Number((itemsById.get(c.id) || c).buyPrice) || 0), 0))}</span>
+                                  <span>€{formatEUR(childSoldSum)}</span>
+                                  <span>
+                                    €{formatEUR(
+                                      childProfitById
+                                        ? [...childProfitById.values()].reduce((s, n) => s + n, 0)
+                                        : childItems.reduce((s, c) => s + (Number(profitForDisplay(itemsById.get(c.id) || c)) || 0), 0)
+                                    )}
+                                  </span>
+                                </span>
+                                <span className="w-6 shrink-0" aria-hidden />
+                              </div>
+                            </div>
+                          )}
                       </div>
                    )}
                    <div className="mt-auto pt-1.5 space-y-1.5 min-w-0 w-full">
@@ -7880,7 +7886,7 @@ const InventoryList: React.FC<Props> = ({
                   <Trash2 size={24}/>
                </div>
                <h3 className="text-xl font-black text-slate-900 mb-2">Delete Item?</h3>
-               <p className="text-sm text-slate-500 mb-6">"{itemToDelete.name}" will be moved to trash.</p>
+               <p className="text-sm text-slate-500 mb-6">"{itemToDelete.name}" will be permanently deleted.</p>
                <div className="flex gap-3">
                   <button onClick={() => setItemToDelete(null)} className="flex-1 py-3 bg-slate-100 text-slate-500 rounded-xl font-bold">Cancel</button>
                   <button onClick={() => handleDeleteItem(itemToDelete)} className="flex-1 py-3 bg-red-500 text-white rounded-xl font-bold shadow-lg shadow-red-200">Delete</button>
@@ -7896,7 +7902,7 @@ const InventoryList: React.FC<Props> = ({
                   <Trash2 size={24}/>
                </div>
                <h3 className="text-xl font-black text-slate-900 mb-2">Delete {selectedIds.length} Items?</h3>
-               <p className="text-sm text-slate-500 mb-6">Selected items will be moved to trash.</p>
+               <p className="text-sm text-slate-500 mb-6">Selected items will be permanently deleted.</p>
                <div className="flex gap-3">
                   <button onClick={() => setShowBulkDeleteConfirm(false)} className="flex-1 py-3 bg-slate-100 text-slate-500 rounded-xl font-bold hover:bg-slate-200">Cancel</button>
                   <button onClick={handleBulkDelete} className="flex-1 py-3 bg-red-500 text-white rounded-xl font-bold shadow-lg shadow-red-200 hover:bg-red-600">Delete All</button>

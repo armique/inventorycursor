@@ -368,7 +368,6 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
     { to: '/panel/action-history', icon: <History size={16} />, label: 'Action history' },
     { to: '/panel/expenses', icon: <RefreshCw size={16} />, label: 'Expenses' },
     { to: '/panel/import', icon: <CloudUpload size={16} />, label: 'Import CSV' },
-    { to: '/panel/trash', icon: <Trash2 size={16} />, label: 'Trash' },
     { to: '/panel/store-management', icon: <Globe size={16} />, label: 'Store' },
     { to: '/panel/storefront-configurator', icon: <LayoutTemplate size={16} />, label: 'Storefront config' },
   ];

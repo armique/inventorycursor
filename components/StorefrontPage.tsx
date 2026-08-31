@@ -321,12 +321,12 @@ const StorefrontPage: React.FC = () => {
 
   // --- Storefront configurator: derived, config-driven data ---
   const orderedBlocks = useMemo(
-    () => [...storefrontConfig.blocks].sort((a, b) => a.order - b.order),
-    [storefrontConfig.blocks]
+    () => [...(Array.isArray(storefrontConfig?.blocks) ? storefrontConfig.blocks : DEFAULT_STOREFRONT_CONFIG.blocks)].sort((a, b) => a.order - b.order),
+    [storefrontConfig?.blocks]
   );
   const activePromoAds = useMemo(
-    () => storefrontConfig.promoAds.filter((a) => a.visible && !a.archived),
-    [storefrontConfig.promoAds]
+    () => (Array.isArray(storefrontConfig?.promoAds) ? storefrontConfig.promoAds : []).filter((a) => a.visible && !a.archived),
+    [storefrontConfig?.promoAds]
   );
   const DEFAULT_TRUST_FALLBACK: Record<string, { title: string; description: string }> = {
     'trust-checked': { title: TEXTS.trustCheckedTitle, description: TEXTS.trustCheckedDesc },
@@ -335,7 +335,7 @@ const StorefrontPage: React.FC = () => {
     'trust-support': { title: TEXTS.trustSupportTitle, description: TEXTS.trustSupportDesc },
   };
   const activeTrustItems = useMemo(
-    () => storefrontConfig.trustItems
+    () => (Array.isArray(storefrontConfig?.trustItems) ? storefrontConfig.trustItems : DEFAULT_STOREFRONT_CONFIG.trustItems)
       .filter((t) => t.visible && !t.archived)
       .map((t) => ({
         id: t.id,
@@ -344,7 +344,7 @@ const StorefrontPage: React.FC = () => {
         description: t.description || DEFAULT_TRUST_FALLBACK[t.id]?.description || t.description,
       })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [storefrontConfig.trustItems, lang]
+    [storefrontConfig?.trustItems, lang]
   );
 
   const renderBlock = (id: StorefrontBlockId): React.ReactNode => {

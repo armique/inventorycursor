@@ -173,3 +173,124 @@ export async function runDailyBackupIfDue(
 
   return { ran: true, fileName, bytes: blob.size, deleted };
 }
+
+// ------------------------------------------------------------------------------
+// 5-MINUTE PERIODIC CLOUD AUTO-BACKUP
+// ------------------------------------------------------------------------------
+
+const AUTO_BACKUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const LAST_5MIN_BACKUP_TIME_KEY = 'dein_last_5min_backup_time';
+const LATEST_5MIN_BACKUP_META_KEY = 'dein_latest_5min_backup_meta';
+const LATEST_AUTO_BACKUP_FILE = 'latest-auto-backup.json.gz';
+
+export type AutoBackupMeta = {
+  timestamp: string;
+  itemCount: number;
+  trashCount: number;
+  expenseCount: number;
+  sizeBytes: number;
+};
+
+export function getLatestAutoBackupMeta(): AutoBackupMeta | null {
+  try {
+    const raw = localStorage.getItem(LATEST_5MIN_BACKUP_META_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function runPeriodic5MinBackup(
+  payload: BackupPayload,
+  options?: { force?: boolean }
+): Promise<BackupRunResult> {
+  const now = Date.now();
+  const lastTime = Number(localStorage.getItem(LAST_5MIN_BACKUP_TIME_KEY) || 0);
+
+  if (!options?.force && now - lastTime < AUTO_BACKUP_INTERVAL_MS) {
+    return { ran: false, reason: 'already-today' };
+  }
+
+  // Never overwrite a good snapshot with an empty one
+  if (!payload.inventory?.length && !payload.expenses?.length) {
+    return { ran: false, reason: 'empty' };
+  }
+
+  const json = JSON.stringify({
+    schemaVersion: 2,
+    createdAt: new Date().toISOString(),
+    counts: {
+      inventory: payload.inventory?.length ?? 0,
+      trash: payload.trash?.length ?? 0,
+      expenses: payload.expenses?.length ?? 0,
+    },
+    payload,
+  });
+
+  const { blob } = await toBlob(json);
+  
+  // 1. Upload as latest-auto-backup.json.gz (always points to most recent state)
+  await uploadBackupSnapshot(LATEST_AUTO_BACKUP_FILE, blob);
+
+  // 2. Also upload timestamped copy for historical point-in-time recovery
+  const timestampStr = new Date().toISOString().replace(/[:.]/g, '-');
+  const timestampedFile = `auto-backup-${timestampStr}.json.gz`;
+  await uploadBackupSnapshot(timestampedFile, blob).catch(() => {});
+
+  localStorage.setItem(LAST_5MIN_BACKUP_TIME_KEY, String(now));
+  const meta: AutoBackupMeta = {
+    timestamp: new Date().toISOString(),
+    itemCount: payload.inventory?.length ?? 0,
+    trashCount: payload.trash?.length ?? 0,
+    expenseCount: payload.expenses?.length ?? 0,
+    sizeBytes: blob.size,
+  };
+  localStorage.setItem(LATEST_5MIN_BACKUP_META_KEY, JSON.stringify(meta));
+
+  // Prune older timestamped auto-backups beyond 20 copies
+  try {
+    const names = await listBackupSnapshotNames();
+    const autoBackups = names.filter((n) => n.startsWith('auto-backup-')).sort();
+    if (autoBackups.length > 20) {
+      const toDelete = autoBackups.slice(0, autoBackups.length - 20);
+      for (const stale of toDelete) {
+        await deleteBackupSnapshot(stale);
+      }
+    }
+  } catch (err) {
+    console.warn('[backup] Auto-backup pruning error:', err);
+  }
+
+  return { ran: true, fileName: LATEST_AUTO_BACKUP_FILE, bytes: blob.size, deleted: [] };
+}
+
+export async function fetchLatestCloudAutoBackup(): Promise<BackupPayload | null> {
+  const url = await getBackupSnapshotUrl(LATEST_AUTO_BACKUP_FILE);
+  if (!url) return null;
+
+  try {
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    
+    let text = '';
+    const DecompressionStreamCtor = (globalThis as { DecompressionStream?: typeof DecompressionStream }).DecompressionStream;
+    if (DecompressionStreamCtor) {
+      try {
+        const stream = blob.stream().pipeThrough(new DecompressionStreamCtor('gzip'));
+        text = await new Response(stream).text();
+      } catch {
+        text = await blob.text();
+      }
+    } else {
+      text = await blob.text();
+    }
+
+    const parsed = JSON.parse(text);
+    return parsed.payload || parsed;
+  } catch (err) {
+    console.error('[backup] Failed to download/decompress latest cloud backup:', err);
+    return null;
+  }
+}
+

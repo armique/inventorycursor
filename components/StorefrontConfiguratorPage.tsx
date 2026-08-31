@@ -125,11 +125,11 @@ const StorefrontConfiguratorPage: React.FC = () => {
     );
   }
 
-  const orderedBlocks = [...config.blocks].sort((a, b) => a.order - b.order);
-  const activeAds = config.promoAds.filter((a) => !a.archived);
-  const archivedAds = config.promoAds.filter((a) => a.archived);
-  const activeTrust = config.trustItems.filter((t) => !t.archived);
-  const archivedTrust = config.trustItems.filter((t) => t.archived);
+  const orderedBlocks = [...(Array.isArray(config?.blocks) ? config.blocks : DEFAULT_STOREFRONT_CONFIG.blocks)].sort((a, b) => a.order - b.order);
+  const activeAds = (Array.isArray(config?.promoAds) ? config.promoAds : []).filter((a) => !a.archived);
+  const archivedAds = (Array.isArray(config?.promoAds) ? config.promoAds : []).filter((a) => a.archived);
+  const activeTrust = (Array.isArray(config?.trustItems) ? config.trustItems : DEFAULT_STOREFRONT_CONFIG.trustItems).filter((t) => !t.archived);
+  const archivedTrust = (Array.isArray(config?.trustItems) ? config.trustItems : []).filter((t) => t.archived);
 
   const moveBlock = (id: StorefrontBlockId, dir: -1 | 1) => {
     patch((c) => {

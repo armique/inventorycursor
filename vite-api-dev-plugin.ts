@@ -93,6 +93,10 @@ async function loadHandler(pathname: string): Promise<{ handler: (req: ApiReques
           : undefined;
     return { handler: mod.default, route };
   }
+  if (pathname === '/api/supabase-sync') {
+    const mod = await import('./api/supabase-sync.js');
+    return { handler: mod.default };
+  }
   return null;
 }
 

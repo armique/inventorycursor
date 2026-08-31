@@ -1055,31 +1055,115 @@ export async function writeFullAppStateToSupabase(
 // 7. REALTIME SUBSCRIPTION
 // ------------------------------------------------------------------------------
 
+export type RealtimeItemUpsert = {
+  item: InventoryItem;
+  /** is_trash is a column, not a field on InventoryItem — the caller needs it to
+   *  route the row into the active list or the trash list. */
+  isTrash: boolean;
+};
+
+export type RealtimeItemDelta = {
+  /** Rows inserted or updated remotely, already mapped to InventoryItem. */
+  upserts: RealtimeItemUpsert[];
+  /** Ids hard-deleted remotely. */
+  deletedIds: string[];
+  /** True when user_profiles changed and settings should be re-pulled. */
+  profileChanged: boolean;
+};
+
+/**
+ * Realtime inventory sync — row deltas, never full refetches.
+ *
+ * The previous implementation subscribed to every change on inventory_items,
+ * threw the payload away, and had the caller re-download the entire snapshot.
+ * With ~2000 items that is several MB per event, so a single bulk write (a CSV
+ * import writing 963 rows, or a 600-row bulk edit) turned into hundreds of full
+ * downloads on every connected device — gigabytes of egress against a 5 GB/month
+ * free tier, from one action.
+ *
+ * This version carries the changed row in the event itself, so cost per change is
+ * one small message rather than one whole database. It also filters server-side
+ * by user_id, so other tenants' writes never reach this client at all.
+ *
+ * Events are coalesced over a short window: a bulk write arrives as one batch
+ * instead of hundreds of individual state updates.
+ */
 export function subscribeToSupabaseRealtime(
-  onRemoteChange: () => void
+  userId: string,
+  onDelta: (delta: RealtimeItemDelta) => void,
+  options?: { coalesceMs?: number }
 ): () => void {
   const sb = getSupabase();
-  if (!sb) return () => {};
+  if (!sb || !userId) return () => {};
+
+  const coalesceMs = options?.coalesceMs ?? 400;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let pendingUpserts = new Map<string, RealtimeItemUpsert>();
+  let pendingDeletes = new Set<string>();
+  let pendingProfile = false;
+
+  const flush = () => {
+    timer = null;
+    if (!pendingUpserts.size && !pendingDeletes.size && !pendingProfile) return;
+    const delta: RealtimeItemDelta = {
+      upserts: [...pendingUpserts.values()],
+      deletedIds: [...pendingDeletes],
+      profileChanged: pendingProfile,
+    };
+    pendingUpserts = new Map();
+    pendingDeletes = new Set();
+    pendingProfile = false;
+    try {
+      onDelta(delta);
+    } catch (e) {
+      console.warn('[supabase] realtime delta handler failed:', e);
+    }
+  };
+
+  const schedule = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(flush, coalesceMs);
+  };
 
   const channel = sb
-    .channel('public:inventory_changes')
+    .channel(`inventory_rt_${userId}`)
     .on(
       'postgres_changes',
-      { event: '*', schema: 'public', table: 'inventory_items' },
-      () => {
-        onRemoteChange();
+      { event: '*', schema: 'public', table: 'inventory_items', filter: `user_id=eq.${userId}` },
+      (payload: any) => {
+        const row = payload.new ?? payload.old;
+        const id = row?.id ? String(row.id) : '';
+        if (!id) return;
+        if (payload.eventType === 'DELETE') {
+          pendingUpserts.delete(id);
+          pendingDeletes.add(id);
+        } else {
+          pendingDeletes.delete(id);
+          try {
+            pendingUpserts.set(id, {
+              item: mapRowToItem(payload.new),
+              isTrash: Boolean((payload.new as Record<string, unknown>).is_trash),
+            });
+          } catch (e) {
+            console.warn('[supabase] realtime row map failed:', e);
+            return;
+          }
+        }
+        schedule();
       }
     )
     .on(
       'postgres_changes',
-      { event: '*', schema: 'public', table: 'user_profiles' },
+      { event: '*', schema: 'public', table: 'user_profiles', filter: `id=eq.${userId}` },
       () => {
-        onRemoteChange();
+        pendingProfile = true;
+        schedule();
       }
     )
     .subscribe();
 
   return () => {
+    if (timer) clearTimeout(timer);
     void sb.removeChannel(channel);
   };
 }

@@ -62,7 +62,7 @@ export function ChartWidgetSkeleton({ className = '' }: { className?: string }) 
 }
 
 export function panelSuspenseFallback(pathname: string): React.ReactNode {
-  if (pathname.startsWith('/panel/inventory') || pathname.startsWith('/panel/trash')) {
+  if (pathname.startsWith('/panel/inventory')) {
     return <InventoryPageSkeleton />;
   }
   return <PanelPageSkeleton />;

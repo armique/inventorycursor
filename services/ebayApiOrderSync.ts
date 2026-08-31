@@ -271,6 +271,12 @@ export async function syncNewEbayOrdersOnAppVisit(options?: { force?: boolean })
     return { status: 'skipped', reason: 'already_ran' };
   }
 
+  const library = await loadEbayTransactionLibrary();
+  const hasCsv = library.reports.some((r) => r.meta.id !== API_SYNC_REPORT_ID && (r.rows?.length ?? 0) > 0);
+  if (!hasCsv && !options?.force) {
+    return { status: 'skipped', reason: 'already_ran' };
+  }
+
   const status = getEbayConnectionStatus();
   if (!status.connected) {
     return { status: 'skipped', reason: 'not_connected' };

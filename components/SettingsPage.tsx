@@ -45,6 +45,12 @@ import {
   type GitHubRepoItem,
 } from '../services/githubBackupService';
 import CategoryEditor from './CategoryEditor';
+import {
+  fetchLatestCloudAutoBackup,
+  getLatestAutoBackupMeta,
+  runPeriodic5MinBackup,
+  type AutoBackupMeta,
+} from '../services/backupService';
 import type { DateBounds, FinanzamtExportRangePreset } from '../utils/exportDateRange';
 import {
   filterExpensesForRange,
@@ -1007,6 +1013,61 @@ const SettingsPage: React.FC<Props> = ({
     navigator.clipboard.writeText(text).then(() => showToast('Copied to clipboard', 'success')).catch(() => showToast('Copy failed', 'error'));
   };
 
+  const [autoBackupMeta, setAutoBackupMeta] = useState<AutoBackupMeta | null>(() => getLatestAutoBackupMeta());
+  const [cloudBackupBusy, setCloudBackupBusy] = useState(false);
+  const [cloudRestoreBusy, setCloudRestoreBusy] = useState(false);
+
+  const handleManualCloudBackup = async () => {
+    setCloudBackupBusy(true);
+    try {
+      const result = await runPeriodic5MinBackup(
+        {
+          inventory: items,
+          trash,
+          expenses,
+          settings: businessSettings,
+          goals: { monthly: monthlyGoal },
+          dashboard: dashboardPrefs,
+          categories,
+          categoryFields,
+          actionHistory,
+          bulkImports,
+        },
+        { force: true }
+      );
+      if (result.ran) {
+        setAutoBackupMeta(getLatestAutoBackupMeta());
+        showToast('Full snapshot saved to Supabase Storage!', 'success');
+      }
+    } catch (e: any) {
+      showToast(e?.message || 'Cloud backup failed', 'error');
+    } finally {
+      setCloudBackupBusy(false);
+    }
+  };
+
+  const handleRestoreFromCloudAutoBackup = async () => {
+    if (!onRestoreBackup) return;
+    if (
+      !window.confirm(
+        'Restore from the latest 5-minute Cloud Auto-Backup in Supabase Storage? Current local data will be replaced with the snapshot.'
+      )
+    ) {
+      return;
+    }
+    setCloudRestoreBusy(true);
+    try {
+      const data = await fetchLatestCloudAutoBackup();
+      if (!data) throw new Error('No cloud auto-backup snapshot found in Supabase Storage.');
+      await Promise.resolve(onRestoreBackup(data as any));
+      showToast('Successfully restored from Supabase Cloud Auto-Backup!', 'success');
+    } catch (e: any) {
+      showToast(e?.message || 'Restore failed', 'error');
+    } finally {
+      setCloudRestoreBusy(false);
+    }
+  };
+
   const isModal = variant === 'modal';
 
   return (
@@ -1847,9 +1908,65 @@ const SettingsPage: React.FC<Props> = ({
                    </button>
                 </div>
 
+                {/* Supabase Cloud Auto-Backup (Every 5 min) */}
+                <div className="bg-gradient-to-br from-indigo-900 to-slate-900 text-white p-6 rounded-[3rem] shadow-lg space-y-4 border border-indigo-700/40">
+                   <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="space-y-1">
+                         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-black uppercase tracking-wider">
+                            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                            Cloud Auto-Backup Active (Every 5 min)
+                         </div>
+                         <h3 className="text-xl font-black tracking-tight text-white flex items-center gap-2">
+                            <Cloud size={22} className="text-indigo-400" /> Supabase Storage Auto-Snapshots
+                         </h3>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                         <button
+                            type="button"
+                            onClick={handleManualCloudBackup}
+                            disabled={cloudBackupBusy || cloudRestoreBusy}
+                            className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-xs uppercase transition-all flex items-center gap-2 disabled:opacity-50"
+                         >
+                            {cloudBackupBusy ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                            Backup Now
+                         </button>
+                         <button
+                            type="button"
+                            onClick={handleRestoreFromCloudAutoBackup}
+                            disabled={cloudBackupBusy || cloudRestoreBusy}
+                            className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-xl font-bold text-xs uppercase transition-all flex items-center gap-2 disabled:opacity-50"
+                         >
+                            {cloudRestoreBusy ? <Loader2 size={14} className="animate-spin" /> : <ArchiveRestore size={14} />}
+                            Restore Last Cloud Backup
+                         </button>
+                      </div>
+                   </div>
+
+                   <p className="text-xs text-indigo-200/80 leading-relaxed">
+                      Your entire database (inventory items, eBay order links, sold dates, fees, profits, expenses, categories, and settings) is automatically compressed and uploaded to your Supabase Storage bucket every 5 minutes. If anything is ever accidentally modified or lost, you can restore your complete state in 1 click.
+                   </p>
+
+                   {autoBackupMeta && (
+                      <div className="flex flex-wrap gap-4 pt-2 border-t border-indigo-800/60 text-xs text-indigo-200">
+                         <div>
+                            <span className="opacity-60 text-[10px] uppercase font-bold block">Last Auto-Backup</span>
+                            <span className="font-bold text-white tabular-nums">{new Date(autoBackupMeta.timestamp).toLocaleString()}</span>
+                         </div>
+                         <div>
+                            <span className="opacity-60 text-[10px] uppercase font-bold block">Items Protected</span>
+                            <span className="font-bold text-emerald-400 tabular-nums">{autoBackupMeta.itemCount} items</span>
+                         </div>
+                         <div>
+                            <span className="opacity-60 text-[10px] uppercase font-bold block">Snapshot Size</span>
+                            <span className="font-bold text-white tabular-nums">{Math.round(autoBackupMeta.sizeBytes / 1024)} KB (gzipped)</span>
+                         </div>
+                      </div>
+                   )}
+                </div>
+
                 {/* Backup & restore */}
                 <div className="bg-white p-6 rounded-[3rem] border border-slate-200 shadow-sm">
-                   <h3 className="text-lg font-black text-slate-900 mb-2">Backup &amp; restore</h3>
+                   <h3 className="text-lg font-black text-slate-900 mb-2">Manual JSON Backup &amp; restore</h3>
                    <p className="text-sm text-slate-500 mb-4">Download a JSON backup of all data (inventory, trash, expenses, settings, categories). Restore it anytime if you lose data.</p>
                    <div className="flex flex-wrap gap-3">
                       <button type="button" onClick={handleExportBackup} className="px-4 py-2.5 bg-slate-900 text-white rounded-xl font-bold text-xs uppercase hover:bg-black transition-all flex items-center gap-2">

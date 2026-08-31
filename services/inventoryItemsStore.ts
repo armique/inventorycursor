@@ -229,3 +229,46 @@ export async function loadInventoryItemsForBoot(): Promise<InventoryItem[]> {
   }
   return [];
 }
+
+export async function purgeAllLocalData(): Promise<void> {
+  try {
+    const db = await openDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) {
+    console.warn('[inventoryItemsStore] IndexedDB clear failed:', e);
+  }
+
+  const keysToRemove = [
+    'inventory_items',
+    'inventory_items_pending_patches',
+    'inventory_items_rev',
+    'inventory_trash',
+    'inventory_expenses',
+    'recurring_expenses',
+    'action_history',
+    'bulk_imports',
+    'ebay_order_index',
+    'ebay_tx_reports',
+    'ebay_purchases',
+    'ebay_purchases_index',
+    'ebay_inventory_links',
+    'deinventory_linked_orders',
+    'three_d_print_cloud',
+    'ai_sourcing_history',
+    'price_check_history',
+  ];
+
+  for (const k of keysToRemove) {
+    try {
+      localStorage.removeItem(k);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+

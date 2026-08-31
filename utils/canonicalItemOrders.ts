@@ -3,14 +3,6 @@
  * Guarantees zero flapping between page loads, cache snapshots, and remote updates.
  */
 import { InventoryItem, TaxMode } from '../types';
-import { applyCrucialRamInvoiceSaleFix } from './crucialRamInvoiceSaleFix';
-import { applyAsusGtx1080RogStrixHubSaleFix } from './asusGtx1080RogStrixHubSaleFix';
-import { applyRx6500XtHubSellSync } from './rx6500XtHubSellSync';
-import { applySamsungEvo840RefundResale } from './applySamsungEvo840RefundResale';
-import { backfillContainerBuyDates } from './backfillContainerBuyDates';
-import { healActiveContainerPartMembership } from './healActiveContainerPartMembership';
-import { restoreIntegralRamKit } from './restoreIntegralRamKit';
-import { restoreAsusA320mPcSale } from './restoreAsusA320mPcSale';
 
 /**
  * Extracts all canonical eBay order IDs associated with an inventory item.
@@ -69,37 +61,12 @@ export function buildCanonicalLinkedByOrderMap(items: InventoryItem[]): Map<stri
   return map;
 }
 
-/**
- * Synchronous, deterministic data pipeline that transforms raw or cached inventory items
- * into their canonical state. Guarantees profit and pricing calculations are 100% identical
- * on initial render, cache hydration, and Supabase snapshot sync.
- */
 export function canonicalizeInventoryItems(
   items: InventoryItem[],
   taxMode: TaxMode = 'SmallBusiness'
 ): { items: InventoryItem[]; changed: boolean } {
-  let changedOverall = false;
-
-  const { items: filledInv, updatedCount: filledCount } = backfillContainerBuyDates(items);
-  if (filledCount > 0) changedOverall = true;
-
-  const ramFix = applyCrucialRamInvoiceSaleFix(filledInv, taxMode);
-  if (ramFix.changed) changedOverall = true;
-
-  const asusFix = applyAsusGtx1080RogStrixHubSaleFix(ramFix.items, taxMode);
-  if (asusFix.changed) changedOverall = true;
-
-  const rxFix = applyRx6500XtHubSellSync(asusFix.items, taxMode);
-  if (rxFix.changed) changedOverall = true;
-
-  const evoFix = applySamsungEvo840RefundResale(rxFix.items, taxMode);
-  if (evoFix.changed) changedOverall = true;
-
-  const healed = healActiveContainerPartMembership(evoFix.items);
-  if (healed.changed) changedOverall = true;
-
   return {
-    items: healed.items,
-    changed: changedOverall,
+    items,
+    changed: false,
   };
 }
