@@ -50,5 +50,14 @@ data/inventory-backup/
 # Local full-data backups taken before risky operations (see live-backups convention)
 data/live-backups/
 
+# Point-in-time safety copies of real order/link data (contains business records)
+data/backups/
+
+# Supabase CLI scratch
+supabase/.temp/
+
 .vercel
 .env*
+# Templates carry no secrets and document what a contributor must supply.
+!.env.example
+!.env.test.example

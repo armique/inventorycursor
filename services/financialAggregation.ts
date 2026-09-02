@@ -474,7 +474,16 @@ export function resolveSaleProfitParts(item: InventoryItem): { sell: number; fee
   return { sell, fee };
 }
 
-/** Sold tab always shows this — cash in pocket, no VAT taken out. Dashboard applies TaxMode. */
+/**
+ * Sold tab shows cash in pocket, no VAT taken out.
+ *
+ * This once meant something: the Dashboard passed the real TaxMode and got a
+ * VAT-adjusted figure, while the Sold tab forced SmallBusiness to show gross.
+ * calculateSaleProfit now ignores tax mode entirely (see utils/saleProfit.ts —
+ * the owner's Steuerberater handles VAT), so both paths return the same number
+ * and this constant no longer changes any output. Kept because it still names
+ * the intent at the call sites; it is not a behavioural switch.
+ */
 export const POCKET_PROFIT_TAX_MODE: TaxMode = 'SmallBusiness';
 
 /**

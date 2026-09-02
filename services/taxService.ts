@@ -72,6 +72,13 @@ export const calculateTaxSummary = (items: InventoryItem[], expenses: Expense[],
     const booksAreBuyerTotal =
       Number.isFinite(buyerTotal) && Math.abs(itemRevenue - buyerTotal) < 0.05;
 
+    // RegularVAT only, deliberately. There is no DifferentialVAT (§25a) branch:
+    // under Differenzbesteuerung VAT is owed on the margin, and the owner's
+    // Steuerberater calculates that outside the app (confirmed 2026-08-31). So
+    // with taxMode = DifferentialVAT this reports estimatedVat = 0 by design,
+    // not by oversight — revenue stays gross and no margin VAT is estimated.
+    // scripts/analyze-differential-vat-gap.ts reports what §25a would come to if
+    // that decision is ever revisited.
     if (taxMode === 'RegularVAT') {
       const netAmount = itemRevenue / 1.19;
       const vatAmount = itemRevenue - netAmount;

@@ -185,6 +185,94 @@ export function clearPendingItemPatches(): void {
   }
 }
 
+/** After Supabase acknowledges rows, drop WAL entries and persist the live list so F5 matches cloud. */
+export async function commitInventoryAfterCloudPush(
+  allItems: InventoryItem[],
+  syncedIds: string[]
+): Promise<void> {
+  if (syncedIds.length) removePendingItemPatchIds(syncedIds);
+  await writeInventoryItemsToDB(allItems);
+}
+
+/** Drop pending write-ahead rows for ids removed from inventory (e.g. explicit delete). */
+export function removePendingItemPatchIds(ids: string[]): void {
+  if (!ids.length) return;
+  try {
+    const raw = localStorage.getItem(PENDING_PATCH_KEY);
+    if (!raw) return;
+    const map = JSON.parse(raw) as Record<string, InventoryItem>;
+    let changed = false;
+    for (const id of ids) {
+      if (map[id]) {
+        delete map[id];
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    if (Object.keys(map).length === 0) localStorage.removeItem(PENDING_PATCH_KEY);
+    else localStorage.setItem(PENDING_PATCH_KEY, JSON.stringify(map));
+  } catch (e) {
+    console.warn('[inventoryItemsStore] Could not remove pending patch ids:', e);
+  }
+}
+
+const DELETED_IDS_KEY = 'inventory_deleted_ids';
+const DELETED_IDS_CAP = 400;
+
+/**
+ * Ids the user permanently deleted on this device. Used to block cloud reconcile /
+ * pending-patch replay from resurrecting rows before (or if) the server delete lands.
+ */
+export function addLocallyDeletedIds(ids: string[]): void {
+  if (!ids.length) return;
+  try {
+    const raw = localStorage.getItem(DELETED_IDS_KEY);
+    const map: Record<string, number> = raw ? JSON.parse(raw) : {};
+    const now = Date.now();
+    for (const id of ids) {
+      if (id) map[id] = now;
+    }
+    const trimmed = Object.entries(map)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, DELETED_IDS_CAP);
+    localStorage.setItem(DELETED_IDS_KEY, JSON.stringify(Object.fromEntries(trimmed)));
+  } catch (e) {
+    console.warn('[inventoryItemsStore] Could not record locally deleted ids:', e);
+  }
+}
+
+export function readLocallyDeletedIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(DELETED_IDS_KEY);
+    if (!raw) return new Set();
+    const map = JSON.parse(raw) as Record<string, number>;
+    return new Set(Object.keys(map));
+  } catch {
+    return new Set();
+  }
+}
+
+export function removeLocallyDeletedIds(ids: string[]): void {
+  if (!ids.length) return;
+  try {
+    const raw = localStorage.getItem(DELETED_IDS_KEY);
+    if (!raw) return;
+    const map = JSON.parse(raw) as Record<string, number>;
+    let changed = false;
+    for (const id of ids) {
+      if (map[id]) {
+        delete map[id];
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    if (Object.keys(map).length === 0) localStorage.removeItem(DELETED_IDS_KEY);
+    else localStorage.setItem(DELETED_IDS_KEY, JSON.stringify(map));
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
  * Boot-time load: IndexedDB is the source of truth. Falls back to migrating the old
  * localStorage blob (pre-existing installs) if IndexedDB is empty, and to the last
@@ -246,6 +334,7 @@ export async function purgeAllLocalData(): Promise<void> {
   const keysToRemove = [
     'inventory_items',
     'inventory_items_pending_patches',
+    'inventory_deleted_ids',
     'inventory_items_rev',
     'inventory_trash',
     'inventory_expenses',

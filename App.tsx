@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense, startTransition } from 'react';
+import { flushSync } from 'react-dom';
 import { BrowserRouter as Router, Routes, Route, Navigate, useSearchParams, useNavigate } from 'react-router-dom';
 import { Cloud, CheckCircle2, Loader2, WifiOff, RefreshCw, X } from 'lucide-react';
 
 import PanelLayout from './components/PanelLayout';
+import { publishPanelSearchData } from './services/panelSearchStore';
 import { SettingsModalProvider } from './context/SettingsModalContext';
 import SettingsModalHost from './components/SettingsModalHost';
 import OpenSettingsFromRoute from './components/OpenSettingsFromRoute';
@@ -21,10 +23,8 @@ const StorefrontConfiguratorPage = lazy(() => import('./components/StorefrontCon
 const LegalPage = lazy(() => import('./components/LegalPage'));
 const InvoiceManager = lazy(() => import('./components/InvoiceManager'));
 const ActionHistoryPage = lazy(() => import('./components/ActionHistoryPage'));
-const ThreeDPrintPage = lazy(() => import('./components/ThreeDPrintPage'));
 const ProductCardGalleryPage = lazy(() => import('./components/ProductCardGalleryPage'));
 const BulkImportHistoryPage = lazy(() => import('./components/BulkImportHistoryPage'));
-const SellTodayPage = lazy(() => import('./components/SellTodayPage'));
 const EbayAbrechnungPage = lazy(() => import('./components/EbayAbrechnungPage'));
 const EditItemRoute = lazy(() => import('./components/EditItemRoute'));
 const AddHubPage = lazy(() => import('./components/AddHubPage'));
@@ -32,7 +32,6 @@ const AddItemRoute = lazy(() => import('./components/AddItemRoute'));
 const PhonePhotoUploadPage = lazy(() => import('./components/PhonePhotoUploadPage'));
 const EstDealwatchPage = lazy(() => import('./components/EstDealwatchPage'));
 const ReinvestAssistantPage = lazy(() => import('./components/ReinvestAssistantPage'));
-const ComboLabPage = lazy(() => import('./components/ComboLabPage'));
 import { InventoryItem, Expense, ItemStatus, BusinessSettings, RecurringExpense, DashboardPreferences, ActionHistoryEntry, TaxMode, ItemUpdateOptions, BulkImportRecord } from './types';
 import {
   loadDashboardPreferencesFromLocalStorage,
@@ -60,18 +59,22 @@ import {
   deleteInventoryItemsPermanentlyFromSupabase,
   isSupabaseConfigured,
   fetchSupabaseSnapshotDirect,
+  fetchInventoryDelta,
+  fetchInventoryCloudManifestFromServer,
+  fetchAppMetaFromSupabase,
   subscribeToSupabaseRealtime,
   writeFullAppStateToSupabase,
+  writeAppMetaToSupabase,
   type RealtimeItemDelta
 } from './services/supabaseService';
 import { runWeeklyPhotoPruneIfDue } from './services/photoPruneService';
-import { computeItemHistoryDiff, appendItemHistoryEntry } from './utils/itemHistoryDiff';
+import { computeItemHistoryDiff, appendItemHistoryEntry, type ItemHistoryEntry } from './utils/itemHistoryDiff';
+import { recordItemAudit, flushItemAudit } from './services/itemAuditLog';
 import { withTimeout } from './utils/withTimeout';
-import { runDailyBackupIfDue, runPeriodic5MinBackup } from './services/backupService';
-import { pullOrderIndexFromCloud } from './services/ebayOrderIndex';
+import { runDailyBackupIfDue } from './services/backupService';
 import { pullPurchaseIndexFromCloud } from './services/ebayPurchaseIndex';
 import { ensureEbayListings, pullListingIndexFromCloud } from './services/ebayListingIndex';
-import { runEbayTxCloudSyncOnce } from './services/ebayTransactionReportSync';
+import { ensureEbayCloudDataLoaded } from './services/ebayTransactionReportSync';
 import { syncNewEbayOrdersOnAppVisit } from './services/ebayApiOrderSync';
 import { runEbayTxDailyCsvExport } from './services/ebayTxDailyExport';
 import { ensureKaListings } from './services/kleinanzeigenListingIndex';
@@ -95,9 +98,21 @@ import {
   appendPendingItemPatches,
   readPendingItemPatches,
   clearPendingItemPatches,
+  removePendingItemPatchIds,
+  commitInventoryAfterCloudPush,
+  addLocallyDeletedIds,
+  readLocallyDeletedIds,
+  removeLocallyDeletedIds,
   setInventoryItemsStaleListener,
   purgeAllLocalData,
 } from './services/inventoryItemsStore';
+import {
+  readInventoryCloudManifest,
+  writeInventoryCloudManifest,
+  patchInventoryCloudManifest,
+  removeIdsFromInventoryCloudManifest,
+} from './services/inventoryCloudManifest';
+import { applyInventoryDelta, pickNewerSoldActiveSide, healStaleRestockedSoldRows, localSoldLooksLikeStaleRestock } from './utils/inventoryCloudMerge';
 import {
   migrateLegacyGpuSubcategoryNames,
   renameCategoryInCatalog,
@@ -111,7 +126,7 @@ import { planAbrechnungMistakenLinkHeals } from './utils/itemSaleCycle';
 import { enforceContainerMembershipInvariants, findEmptyContainerShellIds } from './utils/containerMembershipInvariants';
 import { applyTradeRevert } from './services/tradeRevert';
 import { mergeTradeActionEntries } from './services/tradeActionHistory';
-import { applyUnsoldRestock, loadRefundOrdersForRestock, pruneActionHistory } from './services/saleRevert';
+import { applyUnsoldRestock, loadRefundOrdersForRestock, pruneActionHistory, RESTOCK_CLOUD_SYNC_OPTIONS } from './services/saleRevert';
 import { saveOAuthResult, getStoredConfig as getStoredGitHubBackupConfig, runDailyGitHubBackupIfDue } from './services/githubBackupService';
 import { exchangeEbayAuthorizationCode } from './services/ebayService';
 import { generateExpensesFromRecurring } from './services/recurringExpenseService';
@@ -121,6 +136,7 @@ import {
   hydrateMarketplaceCredentialsFromSettings,
   mergeLocalMarketplaceCredentialsIntoSettings,
   withLocalEbayOAuthOnSettings,
+  ensureMarketplaceCredentialsFromCloud,
 } from './utils/marketplaceCredentialsSync';
 import { UndoToastProvider, useUndoToastContext } from './context/UndoToastContext';
 import { appendUndoHistory, makeUndoSnapshot, type UndoSnapshot } from './utils/appendUndoHistory';
@@ -148,7 +164,7 @@ import {
   preferFilledContainerBuyDate,
 } from './utils/backfillContainerBuyDates';
 import { canonicalizeInventoryItems } from './utils/canonicalItemOrders';
-import { localInventoryAheadOfRemote, inventoryLooksUnchanged, expenseListLooksUnchanged, mergeItemsPreservingReferences } from './utils/inventoryCloudPush';
+import { localInventoryAheadOfRemote, inventoryLooksUnchanged, inventoryItemsNeedingCloudPush, expenseListLooksUnchanged, mergeItemsPreservingReferences, collectItemsForIncrementalCloudPush, collectDeletedInventoryIds } from './utils/inventoryCloudPush';
 import { addRecentItemId } from './services/recentItemsService';
 import { mergeBusinessSettings } from './utils/mergeBusinessSettings';
 import { maxAssetTagNumber, formatAssetTag } from './utils/assetTag';
@@ -163,11 +179,11 @@ import {
   LOCAL_PERSIST_DEBOUNCE_MS,
   STORE_CATALOG_DEBOUNCE_MS,
   REMOTE_APPLY_SUPPRESS_MS,
+  RESTOCK_REMOTE_SUPPRESS_MS,
   REMOTE_ECHO_TOLERANCE_MS,
   BULK_IMPORT_SYNC_FLUSH_MS,
   inventoryCloudDebounceMs,
   resolveCloudFlushDelay,
-  shouldFlushCloudSoon,
   shouldAcceptRemoteSnapshot,
 } from './utils/cloudSyncTiming';
 import {
@@ -176,6 +192,7 @@ import {
   SYNC_MSG_SYNCED,
   SYNC_MSG_RETRYING,
 } from './utils/cloudSyncStatus';
+import { dispatchInventoryCloudSynced } from './utils/cloudSyncEvents';
 
 const ACTION_HISTORY_LIMIT = 100000; // No artificial truncation with Supabase PostgreSQL
 
@@ -622,6 +639,10 @@ const App: React.FC = () => {
     businessSettings.kleinanzeigenProfileUrl,
   ]);
 
+  useEffect(() => {
+    publishPanelSearchData({ items, expenses, businessSettings });
+  }, [items, expenses, businessSettings]);
+
   // When Connect eBay / refresh updates localStorage, mirror into cloud business settings.
   useEffect(() => {
     const sync = () => {
@@ -715,6 +736,12 @@ const App: React.FC = () => {
   const healthInsuranceLedgerDoneRef = useRef(false);
   
   const [authUser, setAuthUser] = useState<any>(null);
+  /** Mirror of authUser for use inside handleUpdate, which must not take authUser
+   *  as a dependency — that would rebuild the callback on every auth change. */
+  const authUserRef = useRef<any>(null);
+  authUserRef.current = authUser;
+  /** Audit entries gathered inside the setItems updater, drained after commit. */
+  const auditBufferRef = useRef<Array<{ item: { id?: string; name?: string }; entry: ItemHistoryEntry }>>([]);
   // Tracks when Supabase auth has completed its initial check (so we don't flash the login screen before session restore).
   const [authReady, setAuthReady] = useState<boolean>(!isCloudEnabled());
   const isRemoteUpdate = useRef(false);
@@ -734,6 +761,9 @@ const App: React.FC = () => {
 
   /** After remote merge, push if this device had bulk-import history cloud lacked. */
   const pendingCloudPushAfterRemoteRef = useRef(false);
+  /** Last inventory pulled from cloud — used to upsert only rows that differ locally. */
+  const lastRemoteInventoryRef = useRef<InventoryItem[]>([]);
+  const hasPendingMetaCloudSyncRef = useRef(false);
   const writeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dashboardCloudDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const runSilentCloudSyncRef = useRef<(() => Promise<void>) | null>(null);
@@ -741,10 +771,17 @@ const App: React.FC = () => {
   /** Next cloud write delay; discrete actions set FAST_CLOUD_FLUSH_MS before setState. */
   const preferredCloudFlushMsRef = useRef(WRITE_DEBOUNCE_MS);
   const pendingCloudFlushRef = useRef(false);
+  /** Pending inventory row upserts (offline, pre-hydrate, or failed push). */
+  const hasPendingItemCloudPushRef = useRef(false);
   const initialWriteDoneRef = useRef(false);
   /** Blocks cloud uploads until the first pull finishes (prevents empty-phone wipe). */
   const cloudHydratedRef = useRef(!isCloudEnabled());
   const [cloudHydrated, setCloudHydrated] = useState(!isCloudEnabled());
+  /** Skip duplicate cloud reconcile on TOKEN_REFRESHED / repeated auth callbacks. */
+  const cloudReconcileUserIdRef = useRef<string | null>(null);
+  const cloudReconcileDoneRef = useRef(false);
+  const localBootDoneRef = useRef(false);
+  const cloudReconcileInFlightRef = useRef(false);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncProgress, setSyncProgress] = useState<number>(100);
   const [syncStepLabel, setSyncStepLabel] = useState<string>('Ready');
@@ -752,8 +789,7 @@ const App: React.FC = () => {
     cloudHydratedRef.current = true;
     setCloudHydrated(true);
   }, []);
-  const ebayOrderIndexPulledRef = useRef(false);
-  const ebayTxReportsPulledRef = useRef(false);
+  const ebayCloudHydrateTriedRef = useRef(false);
   const ebayApiOrderSyncTriedRef = useRef(false);
   const ebayListingDailyRefreshTriedRef = useRef(false);
   const kaListingDailyRefreshTriedRef = useRef(false);
@@ -816,9 +852,13 @@ const App: React.FC = () => {
       },
       flushCloudNow: async () => {
         hasUnsavedChanges.current = true;
-        requestFastCloudFlush();
+        hasPendingMetaCloudSyncRef.current = true;
         if (writeDebounceRef.current) clearTimeout(writeDebounceRef.current);
         await runSilentCloudSyncRef.current?.();
+        const pending = readPendingItemPatches();
+        if (pending.length && isSupabaseConfigured()) {
+          await saveItemChangesToSupabase(pending);
+        }
       },
     };
     (window as unknown as { __inventoryDev?: typeof api }).__inventoryDev = api;
@@ -829,8 +869,93 @@ const App: React.FC = () => {
 
   const markCloudDirty = useCallback(() => {
     hasUnsavedChanges.current = true;
+    hasPendingMetaCloudSyncRef.current = true;
     requestFastCloudFlush();
   }, [requestFastCloudFlush]);
+
+  const pushItemChangesToCloud = useCallback(
+    async (
+      updatedItems?: InventoryItem[],
+      deleteIds?: string[],
+      options?: { suppressMs?: number }
+    ) => {
+      if (!isSupabaseConfigured() || !isCloudEnabled()) return;
+      if (!updatedItems?.length && !deleteIds?.length) return;
+      if (!cloudHydratedRef.current) {
+        hasPendingItemCloudPushRef.current = true;
+        return;
+      }
+      try {
+        setSyncState((prev) =>
+          prev.status === 'syncing'
+            ? prev
+            : { ...prev, status: 'syncing', message: SYNC_MSG_UPLOADING }
+        );
+        await saveItemChangesToSupabase(updatedItems, deleteIds);
+        if (deleteIds?.length) removeLocallyDeletedIds(deleteIds);
+        if (updatedItems?.length) {
+          const pushedById = new Map(updatedItems.map((item) => [item.id, item]));
+          const remote = lastRemoteInventoryRef.current;
+          const mergedRemote = remote.map((row) => pushedById.get(row.id) ?? row);
+          for (const item of updatedItems) {
+            if (!remote.some((row) => row.id === item.id)) mergedRemote.push(item);
+          }
+          lastRemoteInventoryRef.current = mergedRemote;
+        }
+        hasPendingItemCloudPushRef.current = false;
+        lastLocalPushAtRef.current = Date.now();
+        suppressRemoteApplyUntilRef.current =
+          Date.now() + (options?.suppressMs ?? REMOTE_APPLY_SUPPRESS_MS);
+        setSyncState({ status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED });
+        if (updatedItems?.length) {
+          dispatchInventoryCloudSynced(updatedItems.map((item) => item.id));
+          const syncedIds = updatedItems.map((item) => item.id);
+          void commitInventoryAfterCloudPush(itemsRef.current, syncedIds).catch((err) =>
+            console.warn('[supabase] Local commit after cloud push failed:', err)
+          );
+        }
+      } catch (err) {
+        hasPendingItemCloudPushRef.current = true;
+        console.warn('[supabase] Incremental item push failed (will retry on next edit):', err);
+        setSyncState((prev) => ({ ...prev, status: 'error', message: getSyncErrorMessage(err) }));
+      }
+    },
+    []
+  );
+
+  const flushPendingInventoryPatchesToCloud = useCallback(async () => {
+    if (!isSupabaseConfigured() || !isCloudEnabled() || !cloudHydratedRef.current) return;
+    const pending = readPendingItemPatches();
+    if (!pending.length) {
+      hasPendingItemCloudPushRef.current = false;
+      return;
+    }
+    const currentById = new Map(itemsRef.current.map((i) => [i.id, i]));
+    const remoteById = new Map(lastRemoteInventoryRef.current.map((i) => [i.id, i]));
+    const toPush: InventoryItem[] = [];
+    const staleWalIds: string[] = [];
+
+    for (const patch of pending) {
+      const live = currentById.get(patch.id);
+      const remote = remoteById.get(patch.id);
+      if (live && remote && smallJsonLooksUnchanged(live, remote) && !smallJsonLooksUnchanged(patch, remote)) {
+        staleWalIds.push(patch.id);
+        continue;
+      }
+      if (live && smallJsonLooksUnchanged(live, patch)) {
+        staleWalIds.push(patch.id);
+        continue;
+      }
+      toPush.push(live ?? patch);
+    }
+
+    if (staleWalIds.length) removePendingItemPatchIds(staleWalIds);
+    if (!toPush.length) {
+      hasPendingItemCloudPushRef.current = false;
+      return;
+    }
+    await pushItemChangesToCloud(toPush);
+  }, [pushItemChangesToCloud]);
 
   useEffect(() => {
     const syncLocal3d = () => {
@@ -839,6 +964,7 @@ const App: React.FC = () => {
       setThreeDPrintCloud(next);
       threeDPrintCloudRef.current = next;
       hasUnsavedChanges.current = true;
+      hasPendingMetaCloudSyncRef.current = true;
       requestFastCloudFlush();
     };
     window.addEventListener('filament-stock-updated', syncLocal3d);
@@ -910,15 +1036,20 @@ const App: React.FC = () => {
    * Merge remote inventory with local. Remote wins on conflicts, but local-only items (e.g.
    * newly added via bulk) are preserved until synced.
    *
-   * `localTrashIds` (optional): item ids this device has already moved to trash. Without it,
-   * a remote snapshot that hasn't caught up to a just-deleted item yet resurrects it straight
-   * back into active inventory on the next merge pass — the delete equivalent of the restock
-   * bug above, caught the same way (a just-trashed item reappearing on reload).
+   * `localTrashIds` (optional): item ids this device has already moved to trash or permanently
+   * deleted. Without it, a remote snapshot that hasn't caught up to a just-deleted item yet
+   * resurrects it straight back into active inventory on the next merge pass — the delete
+   * equivalent of the restock bug above, caught the same way (a just-trashed item reappearing
+   * on reload).
    */
   const mergeInventoryWithLocal = useCallback((
     remoteList: InventoryItem[],
     localList: InventoryItem[],
-    localTrashIds?: Set<string>
+    localTrashIds?: Set<string>,
+    mergeTimestamps?: {
+      remoteUpdatedAtById?: ReadonlyMap<string, string>;
+      localUpdatedAtById?: ReadonlyMap<string, string>;
+    }
   ): InventoryItem[] => {
     const largeFields = ['imageUrl', 'receiptUrl', 'kleinanzeigenChatImage', 'kleinanzeigenBuyChatImage', 'marketDescription'] as const;
     const localById = new Map(localList.map((i) => [i.id, i]));
@@ -968,53 +1099,43 @@ const App: React.FC = () => {
       const localDisposed = isDisposed(local.status);
       const remoteDisposed = isDisposed(r.status);
 
-      if (localDisposed && !remoteDisposed) {
-        const kept = applyLargeFieldPlaceholders(local, r);
-        const localBid = (local.bulkImportId || '').trim();
-        let next =
-          localBid && !(kept.bulkImportId || '').trim()
-            ? { ...kept, bulkImportId: localBid }
-            : kept;
-        next = mergeItemAuditFields(next, r);
-        byId.set(r.id, next);
-        return;
-      }
-
-      // A lagging sold shard must not put the item back in Sold — from ANY source, not just
-      // this same device/tab. Caught live: some other session kept re-pushing a stale "Sold"
-      // snapshot, and whenever it landed here without the exact [Returned …] tag or a
-      // pending-edit flag already set locally, this fell through to the generic "remote wins"
-      // path below and silently re-sold a just-restocked item — a real item, repeatedly,
-      // undoing the restock within minutes each time, no matter how many times it was redone.
-      //
-      // The old exact-tag check isn't reliable across devices/tabs, each with their own timing
-      // — so this compares which side's data is actually NEWER instead, using each side's most
-      // recent price-history entry (every sale and every restock appends one). That correctly
-      // protects a just-done restock from a lagging stale write, while still letting a
-      // genuinely later sale on another device come through — the old code, by contrast, could
-      // only protect the narrow "this exact tab's own edit" case.
-      // Exception: an intentional sale restore (clears [Returned], stamps [Sale restored …])
-      // always wins over a local Active restock copy regardless of timestamps — it's a
-      // deliberate correction, not a race.
-      if (!localDisposed && remoteDisposed) {
-        const remoteRestored = /\[Sale restored /i.test(String(r.comment2 || ''));
-        if (remoteRestored) {
-          byId.set(r.id, mergeItemAuditFields(applyLargeFieldPlaceholders(r, local), local));
-          return;
-        }
-        const lastHistoryDate = (it: InventoryItem): string => {
-          const hist = it.priceHistory || [];
-          return hist.length ? String(hist[hist.length - 1]?.date || '') : '';
-        };
-        const localTs = lastHistoryDate(local);
-        const remoteTs = lastHistoryDate(r);
-        if (hasUnsavedChanges.current || !remoteTs || (localTs && localTs >= remoteTs)) {
+      if (localDisposed !== remoteDisposed) {
+        const winner = pickNewerSoldActiveSide(local, r, {
+          hasUnsavedLocal: hasUnsavedChanges.current,
+          remoteUpdatedAt: mergeTimestamps?.remoteUpdatedAtById?.get(r.id),
+          localUpdatedAt: mergeTimestamps?.localUpdatedAtById?.get(r.id),
+        });
+        if (winner === 'local') {
           const kept = applyLargeFieldPlaceholders(local, r);
-          byId.set(r.id, mergeItemAuditFields(kept, r));
+          const localBid = (local.bulkImportId || '').trim();
+          let next =
+            localBid && !(kept.bulkImportId || '').trim()
+              ? { ...kept, bulkImportId: localBid }
+              : kept;
+          next = mergeItemAuditFields(next, r);
+          byId.set(r.id, next);
           return;
         }
-        // Remote's own sale is genuinely newer than anything local knows about — let it
-        // through the normal remote-wins path below instead of returning here.
+        let changed = false;
+        const out = { ...r };
+        for (const key of largeFields) {
+          const rv = (r as unknown as Record<string, unknown>)[key];
+          const lv = (local as unknown as Record<string, unknown>)[key];
+          if (rv === CLOUD_OMITTED_PLACEHOLDER && lv && typeof lv === 'string' && lv.length > 0) {
+            (out as unknown as Record<string, unknown>)[key] = lv;
+            changed = true;
+          }
+        }
+        const localBid = (local.bulkImportId || '').trim();
+        const remoteBid = (r.bulkImportId || '').trim();
+        if (localBid && !remoteBid) {
+          out.bulkImportId = localBid;
+          changed = true;
+        }
+        const withBuyDate = preferFilledContainerBuyDate(changed ? out : r, local);
+        const withHistory = mergeItemAuditFields(withBuyDate.buyDate !== out.buyDate ? withBuyDate : changed ? out : r, local);
+        byId.set(r.id, withHistory);
+        return;
       }
 
       let changed = false;
@@ -1084,6 +1205,7 @@ const App: React.FC = () => {
     if (!data) return;
     const remoteInv = (data.inventory || []) as InventoryItem[];
     const remoteTrash = (data.trash || []) as InventoryItem[];
+    lastRemoteInventoryRef.current = remoteInv;
     const localItems = itemsRef.current;
     const localTrash = trashRef.current;
     const ahead =
@@ -1092,7 +1214,6 @@ const App: React.FC = () => {
     if (ahead) {
       pendingCloudPushAfterRemoteRef.current = true;
       hasUnsavedChanges.current = true;
-      requestFastCloudFlush();
     }
     const inventoryMatchesRemote =
       inventoryLooksUnchanged(localItems, remoteInv) &&
@@ -1179,7 +1300,7 @@ const App: React.FC = () => {
       if (flushSettingsDiff && (keptLocalFilled || stampedSettings.changed)) {
         pendingCloudPushAfterRemoteRef.current = true;
         hasUnsavedChanges.current = true;
-        requestFastCloudFlush();
+        hasPendingMetaCloudSyncRef.current = true;
       }
       if (goal !== monthlyGoalRef.current) setMonthlyGoal(goal);
       const nextCats = migrateCategoriesRecord(cats);
@@ -1195,7 +1316,8 @@ const App: React.FC = () => {
 
     isRemoteUpdate.current = true;
     const localTrashIds = new Set(localTrash.map((i) => i.id).filter(Boolean));
-    const inv = mergeInventoryWithLocal(remoteInv, localItems, localTrashIds);
+    const localExcludedIds = new Set([...localTrashIds, ...readLocallyDeletedIds()]);
+    const inv = mergeInventoryWithLocal(remoteInv, localItems, localExcludedIds);
     const tr = mergeInventoryWithLocal(remoteTrash, localTrash);
     if (
       inventoryLooksUnchanged(localItems, inv) &&
@@ -1260,10 +1382,38 @@ const App: React.FC = () => {
     // dedup fails open when a parent is absent). The initial pull carries these
     // rows anyway, so dropping deltas until then loses nothing.
     if (!cloudHydratedRef.current) return;
+    if (!delta.upserts.length && !delta.deletedIds.length && !delta.profileChanged) return;
+
+    if (delta.profileChanged && authUser) {
+      const uid = authUser.id || (authUser as any).uid;
+      if (uid) {
+        void fetchAppMetaFromSupabase(uid).then((meta) => {
+          if (!meta) return;
+          applyRemoteData({
+            inventory: itemsRef.current,
+            trash: trashRef.current,
+            expenses: meta.expenses,
+            recurringExpenses: meta.recurringExpenses,
+            categories: meta.categories,
+            categoryFields: meta.categoryFields,
+            settings: meta.businessSettings,
+            goals: { monthly: meta.monthlyGoal },
+            dashboard: meta.dashboardPrefs,
+            actionHistory: meta.actionHistory,
+            bulkImports: meta.bulkImports,
+            updatedAt: new Date().toISOString(),
+          });
+        });
+      }
+    }
+
     if (!delta.upserts.length && !delta.deletedIds.length) return;
 
     const deleted = new Set(delta.deletedIds);
-    const activeIncoming = delta.upserts.filter((u) => !u.isTrash).map((u) => u.item);
+    const locallyDeleted = readLocallyDeletedIds();
+    const activeIncoming = delta.upserts
+      .filter((u) => !u.isTrash && !locallyDeleted.has(u.item.id))
+      .map((u) => u.item);
     const trashIncoming = delta.upserts.filter((u) => u.isTrash).map((u) => u.item);
     // A row that moved to trash remotely must leave the active list, and vice versa.
     const movedToTrash = new Set(trashIncoming.map((i) => i.id));
@@ -1292,13 +1442,156 @@ const App: React.FC = () => {
 
     isRemoteUpdate.current = true;
     startTransition(() => {
-      setItems((prev) => mergeInto(prev, activeIncoming, new Set([...deleted, ...movedToTrash])));
+      setItems((prev) => {
+        const next = mergeInto(prev, activeIncoming, new Set([...deleted, ...movedToTrash]));
+        if (next !== prev) {
+          scheduleBackgroundWork(async () => {
+            await writeInventoryItemsToDB(next);
+          });
+        }
+        return next;
+      });
       setTrash((prev) => mergeInto(prev, trashIncoming, new Set([...deleted, ...movedToActive])));
     });
-  }, []);
+
+    const manifestRows = delta.upserts
+      .filter((u) => u.updatedAt)
+      .map((u) => ({ id: u.item.id, updated_at: u.updatedAt! }));
+    if (manifestRows.length) void patchInventoryCloudManifest(manifestRows);
+    if (delta.deletedIds.length) void removeIdsFromInventoryCloudManifest(delta.deletedIds);
+    if (delta.deletedIds.length) removeLocallyDeletedIds(delta.deletedIds);
+  }, [applyRemoteData, authUser]);
 
   const applyRealtimeDeltaRef = useRef(applyRealtimeDelta);
   applyRealtimeDeltaRef.current = applyRealtimeDelta;
+
+  /**
+   * Reconcile local IndexedDB cache with Supabase.
+   * Cold device (no cache, no manifest): one full download, then manifest stored.
+   * Warm device: manifest diff — only changed row bodies + meta tables.
+   */
+  const reconcileCloudFromSupabase = useCallback(
+    async (uid: string, onStep?: (label: string) => void) => {
+      cloudSyncInFlightRef.current = true;
+      try {
+        const manifest = await readInventoryCloudManifest();
+        const hasWarmCache = (itemsRef.current?.length || 0) > 0;
+        const coldStart = manifest.size === 0 && !hasWarmCache;
+
+        if (coldStart) {
+          onStep?.('Fetching initial inventory from cloud…');
+          const sbSnapshot = await fetchSupabaseSnapshotDirect(uid);
+          if (sbSnapshot) {
+            lastRemoteInventoryRef.current = sbSnapshot.items || [];
+            applyRemoteData({
+              inventory: sbSnapshot.items,
+              trash: sbSnapshot.trash,
+              expenses: sbSnapshot.expenses,
+              recurringExpenses: sbSnapshot.recurringExpenses,
+              categories: sbSnapshot.categories,
+              categoryFields: sbSnapshot.categoryFields,
+              settings: sbSnapshot.businessSettings,
+              goals: { monthly: sbSnapshot.monthlyGoal },
+              dashboard: sbSnapshot.dashboardPrefs,
+              actionHistory: sbSnapshot.actionHistory,
+              bulkImports: sbSnapshot.bulkImports,
+              updatedAt: new Date().toISOString(),
+            } as any);
+            const serverManifest = await fetchInventoryCloudManifestFromServer(uid);
+            await writeInventoryCloudManifest(serverManifest);
+          }
+        } else {
+          const known = manifest.size > 0 ? new Map(manifest) : new Map<string, string>();
+          for (const item of itemsRef.current) {
+            if (localSoldLooksLikeStaleRestock(item)) {
+              known.delete(item.id);
+            }
+          }
+          onStep?.('Checking for inventory changes…');
+          const delta = await fetchInventoryDelta(uid, known);
+          let merged = itemsRef.current;
+
+          if (delta.changed.length || delta.deletedIds.length) {
+            onStep?.(
+              delta.changed.length
+                ? `Applying ${delta.changed.length} changed item(s)…`
+                : `Applying ${delta.deletedIds.length} deletion(s)…`
+            );
+            merged = applyInventoryDelta(
+              itemsRef.current,
+              delta.changed,
+              delta.deletedIds,
+              (remote, local) =>
+                mergeInventoryWithLocal(remote, local, undefined, {
+                  remoteUpdatedAtById: delta.manifestMap,
+                  localUpdatedAtById: manifest,
+                }),
+              {
+                remoteUpdatedAtById: delta.manifestMap,
+                localUpdatedAtById: manifest,
+                hasUnsavedLocal: hasUnsavedChanges.current,
+                excludeIds: readLocallyDeletedIds(),
+              }
+            );
+            const taxMode = businessSettingsRef.current.taxMode;
+            const canonical = canonicalizeInventoryItems(merged.map(migrateContainerItem), taxMode);
+            merged = canonical.items;
+            if (canonical.changed) {
+              hasUnsavedChanges.current = true;
+            }
+            if (delta.deletedIds.length) removeLocallyDeletedIds(delta.deletedIds);
+            isRemoteUpdate.current = true;
+            startTransition(() => {
+              setItems(mergeItemsPreservingReferences(itemsRef.current, merged));
+            });
+            lastRemoteInventoryRef.current = merged;
+            await writeInventoryItemsToDB(merged);
+            const pendingWal = readPendingItemPatches();
+            if (pendingWal.length) {
+              const mergedById = new Map(merged.map((i) => [i.id, i]));
+              const coveredWalIds = pendingWal.map((p) => p.id).filter((id) => mergedById.has(id));
+              if (coveredWalIds.length) removePendingItemPatchIds(coveredWalIds);
+            }
+          }
+
+          await writeInventoryCloudManifest(delta.manifestMap);
+
+          onStep?.('Syncing settings & expenses…');
+          const meta = await fetchAppMetaFromSupabase(uid);
+          if (meta) {
+            applyRemoteData({
+              inventory: merged,
+              trash: trashRef.current,
+              expenses: meta.expenses,
+              recurringExpenses: meta.recurringExpenses,
+              categories: meta.categories,
+              categoryFields: meta.categoryFields,
+              settings: meta.businessSettings,
+              goals: { monthly: meta.monthlyGoal },
+              dashboard: meta.dashboardPrefs,
+              actionHistory: meta.actionHistory,
+              bulkImports: meta.bulkImports,
+              updatedAt: new Date().toISOString(),
+            } as any);
+          }
+        }
+
+        markCloudHydrated();
+        pendingCloudFlushRef.current = false;
+        initialWriteDoneRef.current = true;
+        if (!hasPendingItemCloudPushRef.current) {
+          hasUnsavedChanges.current = false;
+        }
+        setSyncState({ status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED });
+      } finally {
+        cloudSyncInFlightRef.current = false;
+      }
+    },
+    [applyRemoteData, markCloudHydrated, mergeInventoryWithLocal]
+  );
+
+  const reconcileCloudFromSupabaseRef = useRef(reconcileCloudFromSupabase);
+  reconcileCloudFromSupabaseRef.current = reconcileCloudFromSupabase;
 
   // Another tab/window (same browser) saved newer local inventory data than this tab has —
   // this is a narrow race between two tabs' local IndexedDB writes, not a real conflict; the
@@ -1339,25 +1632,28 @@ const App: React.FC = () => {
         /* ignore */
       }
       await loadLocalData(true);
+      localBootDoneRef.current = true;
       setAppState('READY');
     };
     void initBoot();
     if (!isCloudEnabled()) return;
     let unsubRealtime: (() => void) | null = null;
     const unsubAuth = onAuthChange((user) => {
-      if (unsubRealtime) {
-        unsubRealtime();
-        unsubRealtime = null;
-      }
       setAuthUser(user);
       setAuthReady(true);
       if (!user) {
+        if (unsubRealtime) {
+          unsubRealtime();
+          unsubRealtime = null;
+        }
+        cloudReconcileUserIdRef.current = null;
+        cloudReconcileDoneRef.current = false;
+        cloudReconcileInFlightRef.current = false;
         initialWriteDoneRef.current = false;
         threeDPrintCloudSeededRef.current = false;
         cloudHydratedRef.current = !isCloudEnabled();
         setCloudHydrated(!isCloudEnabled());
-        ebayOrderIndexPulledRef.current = false;
-        ebayTxReportsPulledRef.current = false;
+        ebayCloudHydrateTriedRef.current = false;
         ebayListingDailyRefreshTriedRef.current = false;
         kaListingDailyRefreshTriedRef.current = false;
         setSyncState(prev => ({ ...prev, status: 'idle', message: undefined }));
@@ -1366,69 +1662,60 @@ const App: React.FC = () => {
       if (isSupabaseConfigured()) {
         const uid = user.id || (user as any).uid;
         if (uid) {
+          if (cloudReconcileUserIdRef.current === uid && cloudReconcileDoneRef.current) {
+            if (!unsubRealtime) {
+              unsubRealtime = subscribeToSupabaseRealtime(uid, (delta) => {
+                applyRealtimeDeltaRef.current?.(delta);
+              });
+            }
+            return;
+          }
+          if (cloudReconcileInFlightRef.current && cloudReconcileUserIdRef.current === uid) {
+            return;
+          }
+          if (unsubRealtime) {
+            unsubRealtime();
+            unsubRealtime = null;
+          }
+          cloudReconcileUserIdRef.current = uid;
+          cloudReconcileInFlightRef.current = true;
+
           void (async () => {
             try {
-              // Cache-first, then reconcile. A warm IndexedDB cache renders
-              // immediately (no blocking spinner), but the cloud pull still runs
-              // right after in the background — skipping it entirely meant a
-              // device that had been open on another machine never saw those
-              // edits until someone pressed Refresh, and its own next write then
-              // pushed stale rows over the newer ones. mergeInventoryWithLocal
-              // decides the winner per item, so reconciling is safe here.
+              while (!localBootDoneRef.current) {
+                await new Promise((r) => setTimeout(r, 25));
+              }
               const hasWarmCache = (itemsRef.current?.length || 0) > 0;
+              const manifest = await readInventoryCloudManifest();
+              const coldStart = manifest.size === 0 && !hasWarmCache;
 
-              if (!hasWarmCache) {
+              if (coldStart) {
                 setSyncState({ status: 'syncing', lastSynced: null, message: 'Downloading from Supabase…' });
                 setIsSyncing(true);
                 setSyncProgress(25);
                 setSyncStepLabel('Connecting to Supabase…');
                 setSyncProgress(55);
-                setSyncStepLabel('Fetching initial inventory from cloud…');
               }
-              const sbSnapshot = await fetchSupabaseSnapshotDirect(uid);
-              if (!hasWarmCache) {
-                setSyncProgress(85);
-                setSyncStepLabel(`Processing ${sbSnapshot?.items?.length || 0} items…`);
+
+              await reconcileCloudFromSupabaseRef.current(uid, (label) => {
+                if (coldStart) setSyncStepLabel(label);
+              });
+              cloudReconcileDoneRef.current = true;
+
+              if (coldStart) {
+                setSyncProgress(100);
+                setSyncStepLabel('Synced');
               }
-              if (sbSnapshot) {
-                const payload = {
-                  inventory: sbSnapshot.items,
-                  trash: sbSnapshot.trash,
-                  expenses: sbSnapshot.expenses,
-                  recurringExpenses: sbSnapshot.recurringExpenses,
-                  categories: sbSnapshot.categories,
-                  categoryFields: sbSnapshot.categoryFields,
-                  settings: sbSnapshot.businessSettings,
-                  goals: { monthly: sbSnapshot.monthlyGoal },
-                  dashboard: sbSnapshot.dashboardPrefs,
-                  actionHistory: sbSnapshot.actionHistory,
-                  bulkImports: sbSnapshot.bulkImports,
-                  updatedAt: new Date().toISOString()
-                };
-                applyRemoteData(payload as any);
-                markCloudHydrated();
-                pendingCloudFlushRef.current = false;
-                initialWriteDoneRef.current = true;
-                setSyncState({ status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED });
-              } else {
-                markCloudHydrated();
-                pendingCloudFlushRef.current = false;
-                initialWriteDoneRef.current = true;
-                setSyncState({ status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED });
-              }
-              setSyncProgress(100);
-              setSyncStepLabel('Synced');
             } catch (err) {
               console.error('[supabase] Initial fetch failed:', err);
               markCloudHydrated();
               setSyncState({ status: 'error', message: 'Supabase sync error' });
             } finally {
+              cloudReconcileInFlightRef.current = false;
               setTimeout(() => setIsSyncing(false), 600);
             }
           })();
 
-          // Live cross-device sync. Row deltas only — see subscribeToSupabaseRealtime
-          // for why this must never trigger a full snapshot refetch.
           unsubRealtime = subscribeToSupabaseRealtime(uid, (delta) => {
             applyRealtimeDeltaRef.current?.(delta);
           });
@@ -1439,7 +1726,9 @@ const App: React.FC = () => {
       if (unsubRealtime) unsubRealtime();
       if (unsubAuth) unsubAuth();
     };
-  }, [applyRemoteData, getSyncSnapshot, shouldApplyRemoteSnapshot]);
+    // Auth + cloud reconcile subscribe once; handlers read latest logic via refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /**
    * `applyPendingPatches` (boot only): the tiny synchronous localStorage log written by
@@ -1453,21 +1742,42 @@ const App: React.FC = () => {
     if (applyPendingPatches) {
       const pending = readPendingItemPatches();
       if (pending.length) {
-        const byId = new Map(baseItems.map((i) => [i.id, i]));
-        for (const patch of pending) byId.set(patch.id, patch);
-        effectiveItems = Array.from(byId.values());
-        hasUnsavedChanges.current = true;
+        if (isCloudEnabled()) {
+          // Cloud reconcile is authoritative on boot — stale WAL must not mark the session
+          // "dirty" or replay Sold snapshots over a restocked Active row in Supabase.
+          hasPendingItemCloudPushRef.current = true;
+        } else {
+          const excluded = readLocallyDeletedIds();
+          const byId = new Map(baseItems.map((i) => [i.id, i]));
+          for (const patch of pending) {
+            if (!excluded.has(patch.id)) byId.set(patch.id, patch);
+          }
+          effectiveItems = Array.from(byId.values());
+          hasUnsavedChanges.current = true;
+        }
       }
     }
     const migrated = effectiveItems.map(migrateContainerItem);
     const taxMode = businessSettingsRef.current.taxMode;
-    const canonical = canonicalizeInventoryItems(migrated, taxMode);
+    let itemsForCanonical = migrated;
+    let staleSoldHealIds: string[] = [];
+    {
+      const healed = healStaleRestockedSoldRows(migrated);
+      if (healed.healedIds.length > 0) {
+        itemsForCanonical = healed.items;
+        staleSoldHealIds = healed.healedIds;
+      }
+    }
+    const canonical = canonicalizeInventoryItems(itemsForCanonical, taxMode);
     if (canonical.changed) {
       hasUnsavedChanges.current = true;
     }
     // Preserve object identity for rows nothing actually changed — see
     // mergeItemsPreservingReferences for why a wholesale replace here is expensive.
     setItems(mergeItemsPreservingReferences(itemsRef.current, canonical.items));
+    if (staleSoldHealIds.length > 0) {
+      await writeInventoryItemsToDB(canonical.items);
+    }
     const localTrash = JSON.parse(localStorage.getItem('inventory_trash') || '[]') as InventoryItem[];
     setTrash(localTrash.map(migrateContainerItem));
     setExpenses(JSON.parse(localStorage.getItem('inventory_expenses') || '[]'));
@@ -1536,8 +1846,8 @@ const App: React.FC = () => {
     if (!stamped.changed) return;
     setItems(stamped.items);
     hasUnsavedChanges.current = true;
-    requestFastCloudFlush();
-  }, [appState, authUser, cloudHydrated, items.length, bulkImports.length, requestFastCloudFlush]);
+    void pushItemChangesToCloud(stamped.items);
+  }, [appState, authUser, cloudHydrated, items.length, bulkImports.length, pushItemChangesToCloud]);
 
   // One-time migration: merge Peripherals > Optical Drives into Components > Optical Drives, then remove Optical Drives from Peripherals
   const OPTICAL_DRIVES_MIGRATION_KEY = 'migration_optical_drives_to_components';
@@ -1590,49 +1900,44 @@ const App: React.FC = () => {
     setCategories(next.categories);
     setCategoryFields(next.categoryFields);
     hasUnsavedChanges.current = true;
+    hasPendingMetaCloudSyncRef.current = true;
     localStorage.setItem(GPU_SUBCATEGORY_MIGRATION_KEY, '1');
   }, [appState, items, categories, categoryFields]);
 
   // First Supabase snapshot (from subscribeToData) hydrates or seeds cloud.
   // A second getDocs pull used to download the same ~1.5MiB pack and freeze the tab.
 
-  // Re-hydrate eBay caches after the UI is quiet so this never freezes scrolling.
+  // Supabase-first eBay hydrate: load order index + Abrechnung from cloud before any API writes.
   useEffect(() => {
-    if (!authUser || !isCloudEnabled() || ebayOrderIndexPulledRef.current) return;
-    ebayOrderIndexPulledRef.current = true;
+    if (!authUser || !isCloudEnabled() || ebayCloudHydrateTriedRef.current) return;
+    ebayCloudHydrateTriedRef.current = true;
     scheduleBackgroundWork(() => {
-      void pullOrderIndexFromCloud().catch((e) => console.warn('eBay order index cloud pull failed:', e));
+      void ensureEbayCloudDataLoaded().catch((e) => console.warn('eBay cloud hydrate failed:', e));
       void pullPurchaseIndexFromCloud().catch((e) => console.warn('eBay purchase index cloud pull failed:', e));
       void pullListingIndexFromCloud().catch((e) => console.warn('eBay listing index cloud pull failed:', e));
     });
   }, [authUser]);
 
+  // Local dev: RuName Accept URL is production — after Connect there, pull OAuth from cloud.
   useEffect(() => {
-    if (!authUser || !isCloudEnabled() || ebayTxReportsPulledRef.current) return;
-    ebayTxReportsPulledRef.current = true;
-    scheduleBackgroundWork(() => {
-      void runEbayTxCloudSyncOnce();
-    });
+    if (!authUser || !isCloudEnabled()) return;
+    void ensureMarketplaceCredentialsFromCloud().catch((e) =>
+      console.warn('[ebay] cloud credential hydrate failed:', e)
+    );
   }, [authUser]);
 
-  // Pull new eBay orders via the API on every visit, not just when the Abrechnung page
-  // happens to be open — used to require actually going there first. Runs once per
-  // session, fully silently (no banner — that was tried before and was distracting on
-  // every panel page); Abrechnung's own "Sync eBay orders" button still force-refreshes
-  // on demand. Safe to call runEbayTxCloudSyncOnce() again here even though the effect
-  // above already does — it's memoized and everyone just awaits the same in-flight pull.
+  // After cloud hydrate + baseline reports exist, pull new orders via API (once per session).
   useEffect(() => {
     if (appState !== 'READY' || ebayApiOrderSyncTriedRef.current) return;
     ebayApiOrderSyncTriedRef.current = true;
     scheduleBackgroundWork(async () => {
       try {
-        await runEbayTxCloudSyncOnce();
+        await ensureEbayCloudDataLoaded();
         const outcome = await syncNewEbayOrdersOnAppVisit();
         if (outcome.status === 'ok' && outcome.added > 0) {
           console.info(`[ebay-order-sync] ${outcome.added} new order(s) pulled in the background.`);
         }
       } catch (e) {
-        // Never surface as a blocking error — Abrechnung's own Sync button retries on demand.
         console.warn('[ebay-order-sync] Background sync failed:', e);
       }
     });
@@ -1733,49 +2038,37 @@ const App: React.FC = () => {
     return () => clearTimeout(t);
   }, [authUser, appState, items.length, getSyncSnapshot]);
 
-  // Periodic 5-minute cloud auto-backup
+  // Drain audit entries collected during the last committed items update.
+  // Runs after commit, so the updater stays a pure state computation and the
+  // entries are guaranteed to exist by the time this reads them.
   useEffect(() => {
-    if (!isCloudEnabled() || appState !== 'READY' || items.length === 0) return;
+    if (!auditBufferRef.current.length) return;
+    const uid = authUserRef.current?.id;
+    // No user id yet (session still restoring): keep the entries buffered rather
+    // than clearing them. authUser is in the deps, so this re-runs and drains
+    // them as soon as auth lands. Clearing first and checking after would drop
+    // every edit made during the restore window.
+    if (!uid) return;
+    const batch = auditBufferRef.current;
+    auditBufferRef.current = [];
+    recordItemAudit(batch, uid);
+  }, [items, trash, authUser]);
 
-    const runBackup = () => {
-      const snap = getSyncSnapshot();
-      if (!snap.items.length) return;
-      scheduleBackgroundWork(async () => {
-        try {
-          const result = await runPeriodic5MinBackup({
-            inventory: snap.items,
-            trash: snap.trash,
-            expenses: snap.expenses,
-            recurringExpenses: snap.recurringExpenses,
-            categories: snap.categories,
-            categoryFields: snap.categoryFields,
-            settings: snap.businessSettings,
-            goals: { monthly: snap.monthlyGoal },
-            dashboard: snap.dashboardPrefs,
-            actionHistory: snap.actionHistory,
-            bulkImports: snap.bulkImports,
-          });
-          if (result.ran) {
-            console.info(
-              `[backup-5min] Auto-saved ${result.fileName} (${Math.round(result.bytes / 1024)} KB) to Supabase Storage`
-            );
-          }
-        } catch (e) {
-          console.warn('[backup-5min] 5-minute auto-backup failed:', e);
-        }
-      });
+  // Drain the audit queue once signed in, and again when the tab is hidden.
+  // Entries are written to a durable local queue at edit time, so nothing is
+  // lost if a flush fails — this just makes sure it is retried promptly rather
+  // than waiting for the next edit.
+  useEffect(() => {
+    if (!authUser) return;
+    void flushItemAudit().catch(() => undefined);
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') void flushItemAudit().catch(() => undefined);
     };
+    document.addEventListener('visibilitychange', onHide);
+    return () => document.removeEventListener('visibilitychange', onHide);
+  }, [authUser]);
 
-    const initialTimer = setTimeout(runBackup, 10000);
-    const interval = setInterval(runBackup, 5 * 60 * 1000);
-
-    return () => {
-      clearTimeout(initialTimer);
-      clearInterval(interval);
-    };
-  }, [appState, items.length, getSyncSnapshot]);
-
-  // Shared by both triggers below: the on-open timer and the tab-close/hide listener.
+  // Drain the audit queue once signed in, and again when the tab is hidden.
   // runDailyGitHubBackupIfDue's own localStorage-dated gate ("already pushed today") is
   // the real throttle — whichever trigger fires first each day wins, the other is a no-op.
   // The in-flight ref only prevents two overlapping pushes racing (e.g. rapid tab-switching)
@@ -2009,6 +2302,7 @@ const App: React.FC = () => {
         const existingIds = new Set(workingExpenses.map(e => e.id));
         const uniqueNew = newExpenses.filter(e => !existingIds.has(e.id));
         hasUnsavedChanges.current = true;
+        hasPendingMetaCloudSyncRef.current = true;
         requestFastCloudFlush();
         return [...workingExpenses, ...uniqueNew];
       }
@@ -2052,9 +2346,7 @@ const App: React.FC = () => {
     };
     try {
       if (isSupabaseConfigured()) {
-        await writeFullAppStateToSupabase({
-          items: snap.items,
-          trash: snap.trash,
+        await writeAppMetaToSupabase({
           expenses: snap.expenses,
           recurringExpenses: snap.recurringExpenses,
           categories: snap.categories,
@@ -2062,14 +2354,13 @@ const App: React.FC = () => {
           businessSettings: snap.businessSettings,
           monthlyGoal: snap.monthlyGoal,
           dashboardPrefs: snap.dashboardPrefs,
-          actionHistory: snap.actionHistory,
-          bulkImports: snap.bulkImports,
         });
       } else {
         const cloudSyncTimeoutMs = Math.min(60000, Math.max(20000, snap.items.length * 20));
         await withTimeout(writeToCloud(payload), cloudSyncTimeoutMs, 'Cloud sync');
       }
       hasUnsavedChanges.current = false;
+      hasPendingMetaCloudSyncRef.current = false;
       lastLocalPushAtRef.current = Date.now();
       suppressRemoteApplyUntilRef.current = Date.now() + REMOTE_APPLY_SUPPRESS_MS;
       setSyncState({ status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED });
@@ -2088,19 +2379,27 @@ const App: React.FC = () => {
     }
   }, [authUser, getSyncSnapshot]);
 
-  // When remote merge kept local-only rows (sold ahead of cloud, bulk history), push immediately.
+  // When remote merge kept local-only rows, push just those items once cloud is ready.
   useEffect(() => {
-    if (!pendingCloudPushAfterRemoteRef.current) return;
-    if (!authUser || !isCloudEnabled() || !cloudHydratedRef.current) return;
-    pendingCloudPushAfterRemoteRef.current = false;
-    hasUnsavedChanges.current = true;
-    requestFastCloudFlush();
-    if (writeDebounceRef.current) clearTimeout(writeDebounceRef.current);
-    writeDebounceRef.current = setTimeout(() => {
-      writeDebounceRef.current = null;
-      void runSilentCloudSync();
-    }, FAST_CLOUD_FLUSH_MS);
-  }, [bulkImports, items, trash, authUser, requestFastCloudFlush, runSilentCloudSync]);
+    if (!cloudHydrated || !authUser || !isCloudEnabled()) return;
+    if (pendingCloudPushAfterRemoteRef.current) {
+      pendingCloudPushAfterRemoteRef.current = false;
+      const ahead = inventoryItemsNeedingCloudPush(itemsRef.current, lastRemoteInventoryRef.current);
+      if (ahead.length) {
+        void pushItemChangesToCloud(ahead);
+      }
+    }
+    if (hasPendingItemCloudPushRef.current) {
+      void flushPendingInventoryPatchesToCloud();
+    }
+    if (hasPendingMetaCloudSyncRef.current) {
+      if (writeDebounceRef.current) clearTimeout(writeDebounceRef.current);
+      writeDebounceRef.current = setTimeout(() => {
+        writeDebounceRef.current = null;
+        void runSilentCloudSync();
+      }, FAST_CLOUD_FLUSH_MS);
+    }
+  }, [cloudHydrated, authUser, pushItemChangesToCloud, runSilentCloudSync, flushPendingInventoryPatchesToCloud]);
 
   useEffect(() => {
     runSilentCloudSyncRef.current = runSilentCloudSync;
@@ -2114,6 +2413,7 @@ const App: React.FC = () => {
         dashboardPrefsRef.current = next;
         persistDashboardPreferencesToLocalStorage(next);
         hasUnsavedChanges.current = true;
+        hasPendingMetaCloudSyncRef.current = true;
         if (dashboardCloudDebounceRef.current) clearTimeout(dashboardCloudDebounceRef.current);
         dashboardCloudDebounceRef.current = setTimeout(() => {
           dashboardCloudDebounceRef.current = null;
@@ -2138,13 +2438,12 @@ const App: React.FC = () => {
     );
   }, [authUser, getSyncSnapshot]);
 
-  // 2. Local persistence (debounced, chunked) + silent background Supabase write
+  // Local persistence (debounced) — includes inventory; independent of Supabase meta sync.
   useEffect(() => {
     if (appState !== 'READY') return;
     const remoteApply = isRemoteUpdate.current;
     if (remoteApply) {
       isRemoteUpdate.current = false;
-      // Remote merge can keep local sold rows ahead of cloud — still upload in that case.
       if (!hasUnsavedChanges.current) return;
     }
     if (localPersistDebounceRef.current) clearTimeout(localPersistDebounceRef.current);
@@ -2162,32 +2461,41 @@ const App: React.FC = () => {
           categoryFieldsJson: JSON.stringify(snap.categoryFields),
           recurringExpensesJson: JSON.stringify(snap.recurringExpenses),
           dashboardPrefs: snap.dashboardPrefs,
-          // action_history / bulk_imports are NOT written here — the dedicated
-          // 1.2s-debounced effects below own those two keys, so an ordinary
-          // item edit doesn't re-stringify+write them twice on every save.
         });
-        // Cloud users: the cloud-sync success path is what clears this flag, tracking
-        // "still needs a cloud push" independently of the local save completing. Local-only
-        // mode has no such second consumer — nothing else was ever going to clear it, which
-        // left it stuck true forever after the first edit and permanently blocked the
-        // cross-tab storage listener's "don't clobber my pending edit" guard.
         if (!isCloudEnabled()) {
           hasUnsavedChanges.current = false;
         }
       });
     }, LOCAL_PERSIST_DEBOUNCE_MS);
+    return () => {
+      if (localPersistDebounceRef.current) clearTimeout(localPersistDebounceRef.current);
+    };
+  }, [
+    appState,
+    items,
+    trash,
+    expenses,
+    recurringExpenses,
+    businessSettings,
+    monthlyGoal,
+    categories,
+    categoryFields,
+    dashboardPrefs,
+    getSyncSnapshot,
+  ]);
 
-    if (!isCloudEnabled() || !authUser || !cloudHydratedRef.current || !hasUnsavedChanges.current) {
-      return () => {
-        if (localPersistDebounceRef.current) clearTimeout(localPersistDebounceRef.current);
-      };
+  // Profile / expenses / categories → Supabase only (inventory rows use saveItemChangesToSupabase).
+  useEffect(() => {
+    if (appState !== 'READY') return;
+    if (!isCloudEnabled() || !authUser || !cloudHydratedRef.current || !hasPendingMetaCloudSyncRef.current) {
+      return;
     }
     if (writeDebounceRef.current) clearTimeout(writeDebounceRef.current);
     const delay = resolveCloudFlushDelay(
       preferredCloudFlushMsRef.current,
-      inventoryCloudDebounceMs(itemsRef.current.length)
+      WRITE_DEBOUNCE_MS
     );
-    preferredCloudFlushMsRef.current = inventoryCloudDebounceMs(itemsRef.current.length);
+    preferredCloudFlushMsRef.current = WRITE_DEBOUNCE_MS;
     setSyncState((prev) => {
       if (prev.status === 'syncing' || prev.status === 'pending') return prev;
       if (prev.status === 'error') {
@@ -2205,9 +2513,19 @@ const App: React.FC = () => {
     }, delay);
     return () => {
       if (writeDebounceRef.current) clearTimeout(writeDebounceRef.current);
-      if (localPersistDebounceRef.current) clearTimeout(localPersistDebounceRef.current);
     };
-  }, [appState, authUser, items, trash, expenses, recurringExpenses, businessSettings, monthlyGoal, categories, categoryFields, getSyncSnapshot, runSilentCloudSync]);
+  }, [
+    appState,
+    authUser,
+    expenses,
+    recurringExpenses,
+    businessSettings,
+    monthlyGoal,
+    categories,
+    categoryFields,
+    dashboardPrefs,
+    runSilentCloudSync,
+  ]);
 
   // Emergency synchronous local save on tab hide/close — independent of cloud. Items
   // themselves don't need handling here: handleUpdate writes each edit synchronously to
@@ -2240,11 +2558,11 @@ const App: React.FC = () => {
     };
   }, [getSyncSnapshot]);
 
-  // Flush pending cloud writes when leaving the tab / unloading so other devices see changes sooner.
+  // Flush pending meta cloud writes when leaving the tab.
   useEffect(() => {
     if (!isCloudEnabled()) return;
     const flushNow = () => {
-      if (!hasUnsavedChanges.current && !pendingCloudFlushRef.current) return;
+      if (!hasPendingMetaCloudSyncRef.current && !pendingCloudFlushRef.current) return;
       if (writeDebounceRef.current) {
         clearTimeout(writeDebounceRef.current);
         writeDebounceRef.current = null;
@@ -2289,6 +2607,7 @@ const App: React.FC = () => {
     businessSettingsRef.current = next;
     setBusinessSettings(next);
     hasUnsavedChanges.current = true;
+    hasPendingMetaCloudSyncRef.current = true;
     requestFastCloudFlush();
     try {
       localStorage.setItem('business_settings', JSON.stringify(next));
@@ -2327,8 +2646,25 @@ const App: React.FC = () => {
     };
     try {
       cloudSyncInFlightRef.current = true;
-      const forcePushTimeoutMs = Math.min(60000, Math.max(20000, snap.items.length * 20));
-      await withTimeout(writeToCloud(payload, { allowEmptyOverwrite: true }), forcePushTimeoutMs, 'Cloud sync');
+      if (isSupabaseConfigured()) {
+        await writeFullAppStateToSupabase(
+          {
+            items: snap.items,
+            trash: snap.trash,
+            expenses: snap.expenses,
+            recurringExpenses: snap.recurringExpenses,
+            categories: snap.categories,
+            categoryFields: snap.categoryFields,
+            businessSettings: snap.businessSettings,
+            monthlyGoal: snap.monthlyGoal,
+            dashboardPrefs: snap.dashboardPrefs,
+          },
+          { allowEmptyOverwrite: true, includeInventory: true }
+        );
+      } else {
+        const forcePushTimeoutMs = Math.min(60000, Math.max(20000, snap.items.length * 20));
+        await withTimeout(writeToCloud(payload, { allowEmptyOverwrite: true }), forcePushTimeoutMs, 'Cloud sync');
+      }
       hasUnsavedChanges.current = false;
       lastLocalPushAtRef.current = Date.now();
       suppressRemoteApplyUntilRef.current = Date.now() + REMOTE_APPLY_SUPPRESS_MS;
@@ -2410,51 +2746,47 @@ const App: React.FC = () => {
   }, []);
   
   const handleUpdate = useCallback((updatedItems: InventoryItem[], deleteIds?: string[], options?: ItemUpdateOptions) => {
-    // Synchronous and tiny — durable the instant this call returns, before React has even
-    // committed the state update. This is what makes a refresh mid-edit safe: the debounced
-    // IndexedDB write below can lag by a few seconds, but this can't.
-    appendPendingItemPatches(updatedItems);
-    if (isSupabaseConfigured()) {
-      void saveItemChangesToSupabase(updatedItems, deleteIds).catch(err => {
-        console.warn('[supabase] Incremental item push failed (non-fatal, will retry):', err);
-      });
+    if (deleteIds?.length) {
+      addLocallyDeletedIds(deleteIds);
+      removePendingItemPatchIds(deleteIds);
     }
     const recordAction = !options?.skipActionLog;
     const recordUndo = !options?.skipUndo;
-    const disposed = (s: ItemStatus | undefined) =>
-      s === ItemStatus.SOLD || s === ItemStatus.TRADED || s === ItemStatus.GIFTED;
-    const current = itemsRef.current;
-    const currentById = new Map(current.map((i) => [i.id, i]));
-    let createdContainers = false;
-    let statusTransition = false;
-    for (const u of updatedItems) {
-      const oldItem = currentById.get(u.id);
-      if (!oldItem && (u.isPC || u.isBundle)) createdContainers = true;
-      if (oldItem && oldItem.status !== u.status && (disposed(u.status) || disposed(oldItem.status))) {
-        statusTransition = true;
-      }
-    }
-    if (
-      shouldFlushCloudSoon({
-        flushCloud: options?.flushCloud,
-        deleteIds,
-        createdContainers,
-        statusTransition,
-      })
-    ) {
-      requestFastCloudFlush();
-    }
 
     const preserveMissingFields = !options?.skipFieldPreserve;
     const itemsToApply = updatedItems;
     let pendingActionEntries: ActionHistoryEntry[] = [];
     /** Ids removed inside the updater that Supabase has not been told about yet. */
     let pendingRemovedIds: string[] = [];
+    /** Final merged rows to upsert — computed inside the synchronous state updater. */
+    let postMergeCloudPush: InventoryItem[] = [];
+    /** Audit entries collected inside the updater.
+     *
+     *  Collected into a ref rather than a local, because setItems does not run
+     *  its updater synchronously — React invokes it during the following render,
+     *  so anything read straight after the setItems call is still empty. They are
+     *  drained by an effect once the new items have actually committed.
+     *
+     *  Double-collection under StrictMode is harmless: each entry carries a
+     *  unique id which is the audit table's primary key, and the flush upserts
+     *  on it, so a repeat cannot duplicate a row. */
+    const collectAudit = (e: { item: { id?: string; name?: string }; entry: ItemHistoryEntry }) => {
+      auditBufferRef.current.push(e);
+    };
 
+    flushSync(() => {
     setItems(currentItems => {
         let nextItems = currentItems.slice();
         const indexById = new Map<string, number>();
         for (let i = 0; i < nextItems.length; i++) indexById.set(nextItems[i].id, i);
+        const currentById = new Map<string, InventoryItem>();
+        for (const item of currentItems) {
+          if (item?.id) currentById.set(item.id, item);
+        }
+        const pendingById = new Map<string, InventoryItem>();
+        for (const item of itemsToApply) {
+          if (item?.id) pendingById.set(item.id, item);
+        }
         const actionEntries: ActionHistoryEntry[] = [];
         const trashBefore = trashRef.current;
         let nextTrash = trashBefore;
@@ -2490,7 +2822,7 @@ const App: React.FC = () => {
           final = recordMembershipChangeIfAny(oldItem, final, (bundleId) => {
             const bundleIdx = indexById.get(bundleId);
             if (bundleIdx != null && nextItems[bundleIdx]) return nextItems[bundleIdx].name;
-            return currentById.get(bundleId)?.name;
+            return pendingById.get(bundleId)?.name ?? currentById.get(bundleId)?.name;
           });
           if (final.status === ItemStatus.SOLD || final.status === ItemStatus.TRADED || final.status === ItemStatus.GIFTED) {
             final = { ...final, storeVisible: false };
@@ -2498,6 +2830,10 @@ const App: React.FC = () => {
           // Compute rich structured diff for item timeline and global action history
           const { historyEntry, actionEntry } = computeItemHistoryDiff(oldItem, final, options?.actionNote);
           final = appendItemHistoryEntry(final, historyEntry);
+          // Same entry also goes to the permanent audit log. item.history is
+          // capped at 100 and dies with the item; the audit log is neither, and
+          // is queryable across items (every refund in a period, and so on).
+          collectAudit({ item: { id: final.id, name: final.name }, entry: historyEntry });
 
           if (idx >= 0) {
             nextItems[idx] = final;
@@ -2617,8 +2953,26 @@ const App: React.FC = () => {
           pushUndoSnapshot(currentItems, nextItems, trashBefore, nextTrash);
         }
         hasUnsavedChanges.current = true;
+        postMergeCloudPush = collectItemsForIncrementalCloudPush(currentItems, nextItems);
         return nextItems;
     });
+    });
+
+    // Durable the instant this call returns — uses the fully merged rows (restock nesting,
+    // membership repair, container totals), not the raw patch list.
+    appendPendingItemPatches(postMergeCloudPush.length ? postMergeCloudPush : updatedItems);
+    if (isSupabaseConfigured() && (postMergeCloudPush.length || deleteIds?.length)) {
+      if (options?.restockCloudSync) {
+        (window as unknown as { __inventoryDev?: { suppressCloudPull?: (ms?: number) => void } })
+          .__inventoryDev?.suppressCloudPull?.(RESTOCK_REMOTE_SUPPRESS_MS);
+      }
+      void pushItemChangesToCloud(postMergeCloudPush, deleteIds, {
+        suppressMs: options?.restockCloudSync ? RESTOCK_REMOTE_SUPPRESS_MS : undefined,
+      });
+    }
+    if (options?.flushCloud) {
+      requestFastCloudFlush();
+    }
     if (pendingActionEntries.length > 0) {
       addActionEntries(pendingActionEntries);
     }
@@ -2627,7 +2981,7 @@ const App: React.FC = () => {
         console.error('[supabase] Auto-removal delete failed:', err)
       );
     }
-  }, [addActionEntries, businessSettings.taxMode, pushUndoSnapshot, requestFastCloudFlush]);
+  }, [addActionEntries, businessSettings.taxMode, pushUndoSnapshot, pushItemChangesToCloud, requestFastCloudFlush]);
 
   /** Strip false Abrechnung link sale history (e.g. mistaken unlink archives). */
   useEffect(() => {
@@ -2648,29 +3002,33 @@ const App: React.FC = () => {
   }, [appState, authUser, cloudHydrated, handleUpdate, items]);
 
   const handleRestoreItems = useCallback((updatedItems: InventoryItem[]) => {
-    setItems(updatedItems);
+    const before = itemsRef.current;
+    const merged = mergeItemsPreservingReferences(before, updatedItems);
+    const pushItems = collectItemsForIncrementalCloudPush(before, merged);
+    setItems(merged);
     hasUnsavedChanges.current = true;
-    requestFastCloudFlush();
-  }, [requestFastCloudFlush]);
+    appendPendingItemPatches(pushItems.length ? pushItems : updatedItems);
+    void pushItemChangesToCloud(pushItems);
+  }, [pushItemChangesToCloud]);
 
   const handleImportBatch = useCallback((newItems: InventoryItem[], replace: boolean) => {
     if (replace) {
-       requestFastCloudFlush();
-       setItems(newItems);
-       hasUnsavedChanges.current = true;
+      setItems(newItems);
+      hasUnsavedChanges.current = true;
+      void pushItemChangesToCloud(newItems);
     } else {
-       handleUpdate(newItems, undefined, { flushCloud: true });
+      handleUpdate(newItems, undefined, { flushCloud: true });
     }
-  }, [handleUpdate, requestFastCloudFlush]);
+  }, [handleUpdate, pushItemChangesToCloud]);
 
   const showUndoRef = useRef<(msg: string, onUndo: () => void) => void>(() => {});
   const handleDelete = useCallback((id: string) => {
     const item = items.find((i) => i.id === id);
     if (!item) return;
     handleUpdate([], [id], { flushCloud: true });
-    void deleteInventoryItemsPermanentlyFromSupabase([id]).catch((err) =>
-      console.error('[supabase] Delete error:', err)
-    );
+    void deleteInventoryItemsPermanentlyFromSupabase([id])
+      .then(() => removeLocallyDeletedIds([id]))
+      .catch((err) => console.error('[supabase] Delete error:', err));
     showUndoRef.current('Item permanently deleted', () => {
       handleUpdate([item], undefined, {
         skipUndo: true,
@@ -2685,12 +3043,18 @@ const App: React.FC = () => {
     const newIndex = idx - 1;
     const snapshot = historyRef.current[newIndex];
     if (!snapshot) return;
+    const before = itemsRef.current;
     historyIndexRef.current = newIndex;
-    setItems(snapshot.items);
-    trashRef.current = snapshot.trash;
-    setTrash(snapshot.trash);
+    flushSync(() => {
+      setItems(snapshot.items);
+      trashRef.current = snapshot.trash;
+      setTrash(snapshot.trash);
+    });
+    const pushItems = collectItemsForIncrementalCloudPush(before, snapshot.items);
+    const removedIds = collectDeletedInventoryIds(before, snapshot.items);
     hasUnsavedChanges.current = true;
-    requestFastCloudFlush();
+    appendPendingItemPatches(pushItems);
+    void pushItemChangesToCloud(pushItems, removedIds.length ? removedIds : undefined);
     addActionEntries([makeActionEntry('Undo action')]);
   };
   const handleRedo = () => {
@@ -2699,12 +3063,18 @@ const App: React.FC = () => {
     const newIndex = idx + 1;
     const snapshot = historyRef.current[newIndex];
     if (!snapshot) return;
+    const before = itemsRef.current;
     historyIndexRef.current = newIndex;
-    setItems(snapshot.items);
-    trashRef.current = snapshot.trash;
-    setTrash(snapshot.trash);
+    flushSync(() => {
+      setItems(snapshot.items);
+      trashRef.current = snapshot.trash;
+      setTrash(snapshot.trash);
+    });
+    const pushItems = collectItemsForIncrementalCloudPush(before, snapshot.items);
+    const removedIds = collectDeletedInventoryIds(before, snapshot.items);
     hasUnsavedChanges.current = true;
-    requestFastCloudFlush();
+    appendPendingItemPatches(pushItems);
+    void pushItemChangesToCloud(pushItems, removedIds.length ? removedIds : undefined);
     addActionEntries([makeActionEntry('Redo action')]);
   };
   const handleAddExpense = (expense: Expense) => {
@@ -2796,7 +3166,6 @@ const App: React.FC = () => {
   const handlePermanentDelete = (ids: string[]) => {
     if (!ids.length) return;
     hasUnsavedChanges.current = true;
-    requestFastCloudFlush();
     void deleteInventoryItemsPermanentlyFromSupabase(ids).catch((err) =>
       console.error('[supabase] Permanent delete error:', err)
     );
@@ -2923,8 +3292,7 @@ const App: React.FC = () => {
       return next;
     });
     hasUnsavedChanges.current = true;
-    requestFastCloudFlush();
-  }, [requestFastCloudFlush]);
+  }, []);
 
   const handleUpdateBulkImport = useCallback((record: BulkImportRecord) => {
     setBulkImports((prev) => {
@@ -2937,8 +3305,7 @@ const App: React.FC = () => {
       return next;
     });
     hasUnsavedChanges.current = true;
-    requestFastCloudFlush();
-  }, [requestFastCloudFlush]);
+  }, []);
 
   const handleDeleteBulkImport = useCallback(
     (importId: string) => {
@@ -2958,10 +3325,9 @@ const App: React.FC = () => {
         );
       } else {
         hasUnsavedChanges.current = true;
-        requestFastCloudFlush();
       }
     },
-    [items, handleUpdate, requestFastCloudFlush]
+    [items, handleUpdate]
   );
 
   const handleRefreshCloud = useCallback(async () => {
@@ -2972,29 +3338,11 @@ const App: React.FC = () => {
     setSyncProgress(25);
     setSyncStepLabel('Connecting to Supabase…');
     try {
+      clearPendingItemPatches();
+      hasUnsavedChanges.current = false;
       setSyncProgress(50);
-      setSyncStepLabel('Fetching inventory & sales history…');
-      const sbSnapshot = await fetchSupabaseSnapshotDirect(uid);
-      setSyncProgress(85);
-      setSyncStepLabel(`Processing ${sbSnapshot?.items?.length || 0} items…`);
-      if (sbSnapshot) {
-        applyRemoteData({
-          inventory: sbSnapshot.items,
-          trash: sbSnapshot.trash,
-          expenses: sbSnapshot.expenses,
-          recurringExpenses: sbSnapshot.recurringExpenses,
-          categories: sbSnapshot.categories,
-          categoryFields: sbSnapshot.categoryFields,
-          settings: sbSnapshot.businessSettings,
-          goals: { monthly: sbSnapshot.monthlyGoal },
-          dashboard: sbSnapshot.dashboardPrefs,
-          actionHistory: sbSnapshot.actionHistory,
-          bulkImports: sbSnapshot.bulkImports,
-          updatedAt: new Date().toISOString()
-        } as any);
-        markCloudHydrated();
-        setSyncState({ status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED });
-      }
+      await reconcileCloudFromSupabase(uid, (label) => setSyncStepLabel(label));
+      hasUnsavedChanges.current = false;
       setSyncProgress(100);
       setSyncStepLabel('Synced');
     } catch (e) {
@@ -3003,7 +3351,7 @@ const App: React.FC = () => {
     } finally {
       setTimeout(() => setIsSyncing(false), 900);
     }
-  }, [authUser, applyRemoteData, markCloudHydrated]);
+  }, [authUser, reconcileCloudFromSupabase]);
 
   const handleRevertSale = useCallback(
     (entry: ActionHistoryEntry) => {
@@ -3018,8 +3366,7 @@ const App: React.FC = () => {
         refundOrders: loadRefundOrdersForRestock(),
       });
       handleUpdate(updates, deleteIds.length ? deleteIds : undefined, {
-        flushCloud: true,
-        skipFieldPreserve: true,
+        ...RESTOCK_CLOUD_SYNC_OPTIONS,
         actionNote: {
           action: 'Sale reverted',
           details: 'Restored to In Stock from action history.',
@@ -3181,10 +3528,6 @@ const App: React.FC = () => {
                   setBackupBannerDismissed(true);
                 }}
                 tabDataStale={tabDataStale}
-                items={items}
-                expenses={expenses}
-                businessSettings={businessSettings}
-                onUpdateItems={handleUpdate}
               />
               <SettingsModalHost
                 items={items}
@@ -3249,16 +3592,6 @@ const App: React.FC = () => {
               />
             }
           />
-          <Route
-            path="combo-lab"
-            element={
-              <ComboLabPage
-                items={items}
-                businessSettings={businessSettings}
-                onUpdate={handleUpdate}
-              />
-            }
-          />
           <Route path="add" element={<AddHubPage />} />
           <Route
             path="add/item"
@@ -3275,8 +3608,6 @@ const App: React.FC = () => {
           <Route path="add-bulk" element={<BulkItemForm onSave={handleUpdate} onBulkImportComplete={handleBulkImportComplete} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
           <Route path="edit/:id" element={<EditItemRoute onSave={handleUpdate} items={items} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
           <Route path="builder" element={<BuilderEntry items={items} onSave={handleUpdate} />} />
-          <Route path="3d-print" element={<ThreeDPrintPage items={items} onSave={handleUpdate} onRemoveItems={(ids) => handleUpdate([], ids)} categories={categories} onAddExpense={handleAddExpense} isAdmin={isAdminUser} />} />
-          <Route path="sell-today" element={<SellTodayPage items={items} onUpdate={handleUpdate} />} />
           <Route
             path="ebay-abrechnung"
             element={
@@ -3335,6 +3666,9 @@ const App: React.FC = () => {
             }
           />
           <Route path="import" element={<SheetsImport onImport={handleImportBatch} onClearData={handleWipeData} />} />
+          <Route path="sell-today" element={<Navigate to="/panel/dashboard" replace />} />
+          <Route path="combo-lab" element={<Navigate to="/panel/dashboard" replace />} />
+          <Route path="3d-print" element={<Navigate to="/panel/dashboard" replace />} />
           <Route path="trash" element={<Navigate to="/panel/inventory" replace />} />
           <Route path="store-management" element={<StoreManagementPage items={items} categories={categories} categoryFields={categoryFields} onUpdate={handleUpdate} onPublishCatalog={publishStoreCatalogNow} />} />
           <Route path="storefront-configurator" element={<StorefrontConfiguratorPage />} />
