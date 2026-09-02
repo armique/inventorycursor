@@ -7,6 +7,43 @@ import { handleEbayOrderSyncCron } from '../lib/apiHandlers/ebayOrderSyncHandler
 
 import { createHash, createPrivateKey, sign as cryptoSign } from 'node:crypto';
 
+/** eBay Fulfillment/Finances reject windows ending at/after server "now" — stay ~2 min in the past. */
+function ebaySafeNowMs() {
+  return Date.now() - 120_000;
+}
+
+function parseEbayDateOnlyUtc(d) {
+  return new Date(`${String(d).slice(0, 10)}T00:00:00.000Z`);
+}
+
+function buildEbayCreationDateFilter(fromDate, toDate, defaultLookbackDays = 7) {
+  const ebayNow = ebaySafeNowMs();
+  const to = toDate
+    ? new Date(Math.min(parseEbayDateOnlyUtc(toDate).getTime() + 86400000 - 1, ebayNow))
+    : new Date(ebayNow);
+  let from = fromDate
+    ? parseEbayDateOnlyUtc(fromDate)
+    : new Date(to.getTime() - defaultLookbackDays * 86400000);
+  if (from.getTime() > to.getTime()) {
+    from = new Date(to.getTime() - defaultLookbackDays * 86400000);
+  }
+  return `creationdate:[${from.toISOString()}..${to.toISOString()}]`;
+}
+
+function buildEbayTransactionDateFilter(fromDate, toDate, defaultLookbackDays = 14) {
+  const ebayNow = ebaySafeNowMs();
+  const to = toDate
+    ? new Date(Math.min(parseEbayDateOnlyUtc(toDate).getTime() + 86400000 - 1, ebayNow))
+    : new Date(ebayNow);
+  let from = fromDate
+    ? parseEbayDateOnlyUtc(fromDate)
+    : new Date(to.getTime() - defaultLookbackDays * 86400000);
+  if (from.getTime() > to.getTime()) {
+    from = new Date(to.getTime() - defaultLookbackDays * 86400000);
+  }
+  return `transactionDate:[${from.toISOString()}..${to.toISOString()}]`;
+}
+
 function getTokenFromRequest(req) {
   if (req.method === 'POST') {
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
@@ -982,14 +1019,7 @@ async function handleEbayOrders(req, res) {
   }
   if (!token) return res.status(400).json({ error: 'Missing token.' });
 
-  const now = new Date();
-  // A date-only toDate (e.g. "2026-08-27") must mean END of that day, not start of it —
-  // `new Date(toDate)` parses to 00:00:00 UTC, which silently excluded every order created
-  // later that same day from every routine sync until the next day's run finally covered it.
-  // Clamp to `now` too: eBay's Fulfillment API rejects a window that ends in the future.
-  const to = toDate ? new Date(Math.min(new Date(`${toDate}T23:59:59.999Z`).getTime(), now.getTime())) : now;
-  const from = fromDate ? new Date(fromDate) : new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  const filter = `creationdate:[${from.toISOString()}..${to.toISOString()}]`;
+  const filter = buildEbayCreationDateFilter(fromDate, toDate, 7);
   const allOrders = [];
   let offset = 0;
   const limit = 100;
@@ -1062,12 +1092,7 @@ async function handleEbayFinances(req, res) {
   }
   if (!token) return res.status(400).json({ error: 'Missing token.' });
 
-  const now = new Date();
-  const to = toDate ? new Date(`${toDate}T23:59:59.999Z`) : now;
-  const from = fromDate
-    ? new Date(`${fromDate}T00:00:00.000Z`)
-    : new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
-  const filter = `transactionDate:[${from.toISOString()}..${to.toISOString()}]`;
+  const filter = buildEbayTransactionDateFilter(fromDate, toDate, 14);
   const all = [];
   let offset = 0;
   const limit = 200;
