@@ -19,6 +19,7 @@
   ],
   "redirects": [{ "source": "/panel", "destination": "/panel/dashboard", "permanent": false }],
   "crons": [
-    { "path": "/api/github-oauth?route=daily-backup", "schedule": "0 3 * * *" }
+    { "path": "/api/github-oauth?route=daily-backup", "schedule": "0 3 * * *" },
+    { "path": "/api/ebay?route=order-sync-cron", "schedule": "0 4 * * *" }
   ]
 }

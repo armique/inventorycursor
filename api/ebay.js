@@ -1,8 +1,9 @@
 /**
  * Unified eBay API proxy (single function for Hobby plan limit).
  * Legacy: /api/ebay-order → ?route=order, /api/ebay-orders → ?route=orders
- * Routes: order | orders | listings
+ * Routes: order | orders | listings | order-sync-cron (Vercel Cron)
  */
+import { handleEbayOrderSyncCron } from '../lib/apiHandlers/ebayOrderSyncHandler.js';
 
 import { createHash, createPrivateKey, sign as cryptoSign } from 'node:crypto';
 
@@ -1415,5 +1416,6 @@ export default async function handler(req, res) {
   if (route === 'account_policies') return handleEbayAccountPolicies(req, res);
   if (route === 'account_locations') return handleEbayAccountLocations(req, res);
   if (route === 'taxonomy_suggest') return handleEbayTaxonomySuggest(req, res);
+  if (route === 'order-sync-cron') return handleEbayOrderSyncCron(req, res);
   return handleEbayOrder(req, res);
 }
