@@ -21,7 +21,6 @@ const LABELS: Record<string, string> = {
   trash: 'Trash',
   'store-management': 'Store',
   'storefront-configurator': 'Storefront configurator',
-  '3d-print': '3D Print',
   settings: 'Settings',
 };
 

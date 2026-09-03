@@ -6,7 +6,6 @@ import {
   Package,
   Boxes,
   Layers,
-  Printer,
   CloudUpload,
   ChevronRight,
   ArrowLeft,
@@ -61,14 +60,6 @@ export const ADD_OPTIONS: AddOption[] = [
     hint: 'Any parts',
     to: '/panel/builder?mode=mixed',
     icon: <Boxes size={22} strokeWidth={1.75} />,
-    group: 'create',
-  },
-  {
-    id: 'print3d',
-    label: '3D print',
-    hint: 'Cost & stock',
-    to: '/panel/3d-print',
-    icon: <Printer size={22} strokeWidth={1.75} />,
     group: 'create',
   },
   {

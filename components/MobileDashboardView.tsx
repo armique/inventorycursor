@@ -5,10 +5,8 @@ import {
   Package,
   Plus,
   Zap,
-  ShoppingBag,
   Receipt,
   ScanBarcode,
-  Clock,
   ArrowUpRight,
   Sparkles,
   ChevronRight,
@@ -69,13 +67,6 @@ export const MobileDashboardView: React.FC<MobileDashboardViewProps> = ({
       return dateB.localeCompare(dateA);
     });
     return sorted.slice(0, 5);
-  }, [items]);
-
-  // Count items ready for sale
-  const readyToSellCount = useMemo(() => {
-    return items.filter(
-      (i) => !i.is_trash && i.status === ItemStatus.IN_STOCK && (i.images?.length || 0) > 0
-    ).length;
   }, [items]);
 
   // SVG Circular progress radius
@@ -220,27 +211,7 @@ export const MobileDashboardView: React.FC<MobileDashboardViewProps> = ({
             <span className="text-[10px] font-medium text-slate-400 mt-0.5">Camera & AI Autofill</span>
           </button>
 
-          {/* Action 2: Sell Today Queue */}
-          <button
-            type="button"
-            onClick={() => navigate('/panel/sell-today')}
-            className="flex flex-col items-start p-3.5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-slate-700 active:scale-[0.98] transition-all text-left shadow-md"
-          >
-            <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center mb-2 shadow-inner">
-              <Clock size={20} />
-            </div>
-            <div className="flex items-center justify-between w-full">
-              <span className="text-xs font-black text-white">Sell Today</span>
-              {readyToSellCount > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                  {readyToSellCount}
-                </span>
-              )}
-            </div>
-            <span className="text-[10px] font-medium text-slate-400 mt-0.5">Ready for listing</span>
-          </button>
-
-          {/* Action 3: eBay Abrechnung Matcher */}
+          {/* Action 2: eBay Abrechnung Matcher */}
           <button
             type="button"
             onClick={() => navigate('/panel/ebay-abrechnung')}
@@ -253,7 +224,7 @@ export const MobileDashboardView: React.FC<MobileDashboardViewProps> = ({
             <span className="text-[10px] font-medium text-slate-400 mt-0.5">Reconcile & Payouts</span>
           </button>
 
-          {/* Action 4: Expense Log */}
+          {/* Action 3: Expense Log */}
           <button
             type="button"
             onClick={() => navigate('/panel/expenses')}

@@ -5,7 +5,7 @@ import {
   TrendingUp, Target, Package, TrendingDown, Trophy, Star, Crown, Zap,
   Edit3, Check, CalendarDays, ArrowRight, CheckCircle2, Plus, X, Activity, AlertCircle,
   Settings2, ChevronUp, ChevronDown, ChevronRight, Download, Sparkles, BarChart3, LayoutDashboard,
-  Gift, ArrowRightLeft, Layers, History, Radar, ShoppingBag, Percent,
+  Gift, ArrowRightLeft, Layers, History, Radar, Percent,
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import ItemLink from './ItemLink';
@@ -957,15 +957,6 @@ const Dashboard: React.FC<Props> = ({
               onClick={() => navigate('/panel/add-bulk')}
               className="!py-2 !px-2 min-w-[5.5rem]"
             />
-            <button
-              type="button"
-              onClick={() => navigate('/panel/sell-today')}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-black uppercase tracking-wide text-slate-700 hover:bg-slate-50 shadow-sm"
-              title="What to sell today — age, margin, photos"
-            >
-              <ShoppingBag size={14} />
-              Sell today
-            </button>
             <button
               type="button"
               onClick={() => navigate('/panel/bulk-imports')}

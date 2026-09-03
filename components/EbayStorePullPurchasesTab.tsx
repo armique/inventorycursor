@@ -383,7 +383,7 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({
       return;
     }
     if (paid <= 0) {
-      alert('Purchase has no price — enter manually in 3D Print → Filament stock.');
+      alert('Purchase has no price — enter filament cost on the item manually.');
       return;
     }
 
@@ -518,11 +518,7 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({
               Durable purchase library: each sync saves lines locally
               {cloudReady ? ' and to your cloud account' : ''} so they remain after eBay’s ~{EBAY_PURCHASE_MAX_DAYS}-day
               API window. Prefer <strong>Sync new</strong> (incremental). Classify by type in the library below.
-              Amazon still needs manual entry on{' '}
-              <Link to="/panel/3d-print" className="text-indigo-600 font-bold hover:underline">
-                3D Print → Filament stock
-              </Link>
-              .
+              Amazon still needs manual entry — enter filament cost on the item.
             </p>
           </div>
           <div className="flex flex-wrap gap-2 text-center">
@@ -818,9 +814,9 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({
                   <div className="text-right shrink-0">
                     <p className="text-lg font-black text-slate-900">€{formatEUR(p.totalPaid ?? 0)}</p>
                     {p.filamentSpoolId && (
-                      <Link to="/panel/3d-print" className="text-[10px] font-bold text-indigo-600 hover:underline">
-                        View spool →
-                      </Link>
+                      <p className="text-[10px] font-bold text-indigo-600">
+                        Linked to filament spool
+                      </p>
                     )}
                     {p.inventoryItemId && (
                       <Link
@@ -957,7 +953,7 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({
                     </div>
                     <p className="sm:col-span-4 text-[11px] text-indigo-800">
                       Creates a <strong>{FILAMENT_STOCK_EXPENSE_CATEGORY}</strong> expense (not Betriebsausgabe) and a
-                      spool in 3D Print stock — COGS hits when you print.
+                      filament spool — COGS hits when you print. Enter filament cost on the item if needed.
                     </p>
                   </div>
                 )}

@@ -3,8 +3,8 @@ import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
   Package, Settings, RefreshCw, Trash2, CloudUpload, LayoutDashboard,
   Loader2, Cloud, CheckCircle2, X, Receipt, History, Globe, Layers,
-  Printer, LayoutTemplate, ChevronDown, ChevronLeft, ChevronRight, Plus, Images,
-  CircuitBoard, Radar, Coins, ShoppingBag, FileSpreadsheet, MoreHorizontal, Zap,
+  LayoutTemplate, ChevronDown, ChevronLeft, ChevronRight, Plus, Images,
+  Radar, Coins, FileSpreadsheet, MoreHorizontal, Zap,
 } from 'lucide-react';
 import PanelBreadcrumbs from './PanelBreadcrumbs';
 import { usePanelLocale } from '../context/PanelLocaleContext';
@@ -117,7 +117,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
 
   /** Inventory/trash use internal scroll + docked bulk bar; EST / bulk entry use full-width workspace layout. */
   const isDockedPanelPage =
-    /^\/panel\/(inventory|trash|ebay-abrechnung|est|dealwatch|add-bulk|3d-print)(\/|$)/.test(location.pathname);
+    /^\/panel\/(inventory|trash|ebay-abrechnung|est|dealwatch|add-bulk)(\/|$)/.test(location.pathname);
   /** Stock list: no breadcrumb / locale / settings strip — ACTIVE|SOLD|INBOX is the first row. */
   const hidePanelChrome = location.pathname.startsWith('/panel/inventory');
 
@@ -387,12 +387,9 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
       label: 'Inventory',
       warnCount: staleDealCount,
     },
-    { to: '/panel/sell-today', icon: <ShoppingBag size={18} />, label: 'Sell today' },
     { to: '/panel/ebay-abrechnung', icon: <FileSpreadsheet size={18} />, label: 'eBay Abrechnung' },
-    { to: '/panel/3d-print', icon: <Printer size={18} />, label: '3D Print' },
     { to: '/panel/dealwatch', icon: <Radar size={18} />, label: 'Dealwatch' },
     { to: '/panel/reinvest', icon: <Coins size={18} />, label: 'Reinvest' },
-    { to: '/panel/combo-lab', icon: <CircuitBoard size={18} />, label: 'Combo Lab' },
     { to: '/panel/bulk-imports', icon: <History size={18} />, label: 'Bulk imports' },
     { to: '/panel/card-gallery', icon: <Images size={18} />, label: 'Card gallery' },
     { action: 'settings', icon: <Settings size={18} />, label: 'Settings', alert: !isCloudEnabled },
@@ -626,7 +623,6 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
         {!location.pathname.startsWith('/panel/inventory') &&
           !location.pathname.startsWith('/panel/edit') &&
           !location.pathname.startsWith('/panel/dealwatch') &&
-          !location.pathname.startsWith('/panel/3d-print') &&
           !location.pathname.startsWith('/panel/ebay-abrechnung') && (
           <div className="md:hidden mb-4">
             <ConnectedGlobalSearch />

@@ -7,7 +7,7 @@ import { getTimeGaugeRow, resolveContainerChildItems, stressToRgb, timeGaugeSort
 import { createPortal } from 'react-dom';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { 
-  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Camera, Gift, User, Images, Scissors, GripVertical, RefreshCw, Calculator, Inbox, MessageSquare, ExternalLink, Bookmark, Link2, CheckCircle2
+  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Camera, Gift, User, Images, Scissors, GripVertical, RefreshCw, Calculator, Inbox, MessageSquare, ExternalLink, Bookmark, Link2, CheckCircle2
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo, BulkImportRecord } from '../types';
 import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
@@ -1258,8 +1258,8 @@ const InventoryList: React.FC<Props> = ({
     return () => mq.removeEventListener('change', sync);
   }, []);
 
-  // Visibility toggle for orphan "In Composition" items (container children always nest under parent)
-  const [showInComposition, setShowInComposition] = useState<boolean>(() => loadState<boolean>('show_in_composition', false));
+  // Orphan "In Composition" rows stay hidden (no UI toggle — it did nothing useful).
+  const showInComposition = false;
   /** When on, every sell cell also shows ads / eBay fee. Hub and screenshot sales always show those lines. */
   const [showPriceBreakdown, setShowPriceBreakdown] = useState<boolean>(() => loadState<boolean>('show_price_breakdown', false));
   /** When on, the sell cell drops every deduction line (shipping, refund, eBay/ad/other fees) —
@@ -1783,7 +1783,6 @@ const InventoryList: React.FC<Props> = ({
       localStorage.setItem(`${k}_amount_filter`, JSON.stringify(amountFilter));
       localStorage.setItem(`${k}_spec_filters`, JSON.stringify(specFilters));
       localStorage.setItem(`${k}_spec_range_filters`, JSON.stringify(specRangeFilters));
-      localStorage.setItem(`${k}_show_in_composition`, JSON.stringify(showInComposition));
       localStorage.setItem(`${k}_show_price_breakdown`, JSON.stringify(showPriceBreakdown));
       localStorage.setItem(`${k}_hide_sell_deductions`, JSON.stringify(hideSellDeductions));
       localStorage.setItem(`${k}_column_order`, JSON.stringify(columnOrder));
@@ -1796,7 +1795,7 @@ const InventoryList: React.FC<Props> = ({
     };
   }, [
     searchTerm, timeFilter, statusFilter, categoryFilter, subCategoryFilter, sortConfig, columnWidths,
-    manualWidthColumns, excludedPlatforms, salePaymentFilter, amountFilter, specFilters, specRangeFilters, showInComposition,
+    manualWidthColumns, excludedPlatforms, salePaymentFilter, amountFilter, specFilters, specRangeFilters,
     showPriceBreakdown, hideSellDeductions, columnOrder, hiddenColumnIds, splitView, quickCategoryPins, persistenceKey,
   ]);
 
@@ -3225,7 +3224,6 @@ const InventoryList: React.FC<Props> = ({
       setTimeFilter('ALL');
       setCategoryFilter('ALL');
       setSubCategoryFilter('');
-      setShowInComposition(false);
       if (isRealizedDisposal(parent)) {
         setStatusFilter('SOLD');
       } else if (parent.isDraft) {
@@ -3260,7 +3258,6 @@ const InventoryList: React.FC<Props> = ({
     setTimeFilter('ALL');
     setCategoryFilter('ALL');
     setSubCategoryFilter('');
-    setShowInComposition(false);
     if (isRealizedDisposal(target)) {
       setStatusFilter('SOLD');
     } else if (target.isDraft) {
@@ -4698,7 +4695,6 @@ const InventoryList: React.FC<Props> = ({
     setAmountFilter(EMPTY_AMOUNT_FILTER);
     setSpecFilters({});
     setSpecRangeFilters({});
-    setShowInComposition(true);
   };
 
   const revealItemInList = useCallback((item: InventoryItem) => {
@@ -4708,7 +4704,6 @@ const InventoryList: React.FC<Props> = ({
     setTimeFilter('ALL');
     setCategoryFilter('ALL');
     setSubCategoryFilter('');
-    setShowInComposition(true);
     if (isRealizedDisposal(item)) {
       setStatusFilter('SOLD');
     } else if (item.isDraft) {
@@ -5704,23 +5699,6 @@ const InventoryList: React.FC<Props> = ({
                <option value="THIS_YEAR">This year</option>
                <option value="LAST_YEAR">Last year</option>
             </select>
-            <button
-               type="button"
-               onClick={() => setShowInComposition(prev => !prev)}
-               className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[10px] font-semibold uppercase tracking-wide ${
-                 showInComposition
-                   ? 'border-slate-200 text-slate-600 bg-white hover:bg-slate-50'
-                   : 'border-blue-500 text-blue-600 bg-blue-50'
-               }`}
-               title={
-                 showInComposition
-                   ? 'Hide orphan in-composition items (bundle/PC parts always nest under their parent)'
-                   : 'Show orphan in-composition items (bundle/PC parts always nest under their parent)'
-               }
-            >
-               <Hourglass size={11} />
-               {showInComposition ? 'Orphans: shown' : 'Orphans: hidden'}
-            </button>
             {(splitView || (statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS')) && (
                <>
                   <div className="relative flex items-center" ref={platformFilterPanelRef}>
@@ -6396,16 +6374,6 @@ const InventoryList: React.FC<Props> = ({
               </button>
             ))}
           </div>
-          <button
-            type="button"
-            onClick={() => setShowInComposition((prev) => !prev)}
-            className={`w-full inline-flex items-center justify-center gap-2 px-3 py-3 rounded-xl border text-[11px] font-black uppercase ${
-              showInComposition ? 'border-slate-200 text-slate-700 bg-white' : 'border-blue-500 text-blue-700 bg-blue-50'
-            }`}
-          >
-            <Hourglass size={14} />
-            {showInComposition ? 'Orphans: shown' : 'Orphans: hidden'}
-          </button>
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
