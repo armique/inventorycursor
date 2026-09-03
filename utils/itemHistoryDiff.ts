@@ -1,5 +1,6 @@
 import type { InventoryItem, ActionHistoryEntry } from '../types';
 import { ItemStatus } from '../types';
+import { diffStates, getActiveOperation, stampOperationFields } from '../services/actionHistoryOps';
 
 export type ItemHistoryActionType =
   | 'created'
@@ -65,6 +66,15 @@ export function computeItemHistoryDiff(
     action = 'created';
     title = 'Item created';
     const initDetails = `EK: ${formatEur(newItem.buyPrice)}, VK: ${formatEur(newItem.sellPrice)}, Status: ${newItem.status}`;
+    const full = diffStates(null, {
+      id: newItem.id,
+      name: newItem.name,
+      buyPrice: newItem.buyPrice,
+      sellPrice: newItem.sellPrice,
+      status: newItem.status,
+      parentContainerId: newItem.parentContainerId ?? null,
+      componentIds: newItem.componentIds || [],
+    }, { fullSnapshot: true });
     return {
       historyEntry: {
         id: `hist-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -74,14 +84,19 @@ export function computeItemHistoryDiff(
         details: initDetails,
         actor: 'manual',
       },
-      actionEntry: {
+      actionEntry: stampOperationFields({
         id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         timestamp: now,
         action: 'Item created',
+        actionType: 'created',
         itemId: newItem.id,
         itemName: newItem.name || 'Unnamed item',
         details: initDetails,
-      },
+        notes: initDetails,
+        previousState: full.previous_state,
+        newState: full.new_state,
+        relatedItemIds: [],
+      }),
     };
   }
 
@@ -210,6 +225,17 @@ export function computeItemHistoryDiff(
     });
     detailParts.push(`IO Shield: ${newItem.hasIOShield ? 'Present' : 'Missing'}`);
   }
+  if (oldItem.isDefective !== newItem.isDefective) {
+    action = 'condition_changed';
+    title = newItem.isDefective ? 'Marked defective / for parts' : 'Cleared defective flag';
+    diffs.push({
+      field: 'isDefective',
+      from: oldItem.isDefective,
+      to: newItem.isDefective,
+      label: `Defective: ${oldItem.isDefective ? 'Yes' : 'No'} → ${newItem.isDefective ? 'Yes' : 'No'}`,
+    });
+    detailParts.push(title);
+  }
 
   // 9. Name or Category Edit
   if (oldItem.name !== newItem.name) {
@@ -231,6 +257,27 @@ export function computeItemHistoryDiff(
   }
 
   const finalDetails = detailParts.join(' · ') || 'Details modified';
+  const moneyDiff = diffStates(
+    {
+      buyPrice: oldItem.buyPrice,
+      sellPrice: oldItem.sellPrice,
+      status: oldItem.status,
+      parentContainerId: oldItem.parentContainerId ?? null,
+      componentIds: oldItem.componentIds || [],
+      isDefective: Boolean(oldItem.isDefective),
+      name: oldItem.name,
+    },
+    {
+      buyPrice: newItem.buyPrice,
+      sellPrice: newItem.sellPrice,
+      status: newItem.status,
+      parentContainerId: newItem.parentContainerId ?? null,
+      componentIds: newItem.componentIds || [],
+      isDefective: Boolean(newItem.isDefective),
+      name: newItem.name,
+    }
+  );
+  const op = getActiveOperation();
 
   return {
     historyEntry: {
@@ -242,14 +289,21 @@ export function computeItemHistoryDiff(
       actor: 'manual',
       diffs: diffs.length > 0 ? diffs : undefined,
     },
-    actionEntry: {
+    actionEntry: stampOperationFields({
       id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       timestamp: now,
       action: customActionNote?.action || title,
+      actionType: action,
       itemId: newItem.id,
       itemName: newItem.name || 'Unnamed item',
       details: finalDetails,
-    },
+      notes: finalDetails,
+      previousState: moneyDiff.previous_state,
+      newState: moneyDiff.new_state,
+      relatedItemIds: [],
+      operationId: op?.operationId,
+      operationLabel: op?.operationLabel,
+    }),
   };
 }
 

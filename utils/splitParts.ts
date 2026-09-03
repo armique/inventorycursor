@@ -20,6 +20,8 @@ export type SplitPartPresetId =
   | 'radiator'
   | 'controller'
   | 'cable'
+  | 'ram_stick'
+  | 'psu_main'
   | 'identical'
   /** Synthetic, never user-selectable — see buildSplitDrafts. */
   | 'remainder';
@@ -88,6 +90,23 @@ export const SPLIT_PART_PRESETS: SplitPartPreset[] = [
     weight: 5,
     category: 'Misc',
     subCategory: 'Cables',
+  },
+  {
+    id: 'ram_stick',
+    label: 'RAM stick',
+    shortLabel: 'Stick',
+    weight: 50,
+    category: 'Components',
+    subCategory: 'RAM',
+    hasQty: true,
+  },
+  {
+    id: 'psu_main',
+    label: 'PSU body',
+    shortLabel: 'PSU',
+    weight: 70,
+    category: 'Components',
+    subCategory: 'PSU',
   },
 ];
 
@@ -269,10 +288,17 @@ export type SplitPartDraft = {
   nameLocked?: boolean;
 };
 
-/** Weighted allocation in cents so sums match totalBuy exactly. */
+/** Weighted allocation in cents so sums match totalBuy exactly (Part C Rule 2). */
 export function allocateBuyAcrossParts(
   totalBuy: number,
-  parts: Array<{ key: string; weight: number; buyLocked?: boolean; buyPrice?: number }>
+  parts: Array<{
+    key: string;
+    weight: number;
+    buyLocked?: boolean;
+    buyPrice?: number;
+    /** Remainder with locked €0 must not join equal-split (Rule 3). */
+    isRemainder?: boolean;
+  }>
 ): Record<string, number> {
   const out: Record<string, number> = {};
   if (!parts.length) return out;
@@ -302,18 +328,40 @@ export function allocateBuyAcrossParts(
     return out;
   }
 
-  const weights = free.map((p) => Math.max(p.weight, 0.5));
-  const sumW = weights.reduce((a, b) => a + b, 0);
-  const raw = weights.map((w) => (remaining * w) / sumW);
+  const freeParts = free.filter((p) => !p.isRemainder);
+  const freeRemainder = free.filter((p) => p.isRemainder);
+  const remainderLockedZero = locked.some(
+    (p) => p.isRemainder && Math.round((Number(p.buyPrice) || 0) * 100) === 0
+  );
+  const noPositiveWeights = freeParts.every((p) => !(p.weight > 0));
+  // Rule 3: when parts have no value, equal-split among parts only — skip remainder at €0.
+  let pool = free;
+  if (noPositiveWeights && (remainderLockedZero || freeRemainder.length)) {
+    pool = freeParts.length ? freeParts : free.filter((p) => !p.isRemainder);
+    for (const r of freeRemainder) out[r.key] = 0;
+  }
+
+  if (!pool.length) {
+    for (const p of free) if (out[p.key] == null) out[p.key] = 0;
+    return out;
+  }
+
+  const useEqual = pool.every((p) => !(p.weight > 0));
+  const weights = pool.map((p) => (useEqual ? 1 : Math.max(p.weight, 0)));
+  const sumW = weights.reduce((a, b) => a + b, 0) || pool.length;
+  const raw = weights.map((w) => (remaining * (w || 1)) / sumW);
   const floors = raw.map((x) => Math.floor(x));
   let diff = remaining - floors.reduce((a, b) => a + b, 0);
-  const fracs = raw.map((x, i) => ({ i, f: x - floors[i] }));
-  fracs.sort((a, b) => b.f - a.f);
+  const fracs = raw.map((x, i) => ({ i, f: x - floors[i], line: floors[i] }));
+  fracs.sort((a, b) => b.f - a.f || b.line - a.line);
   const cents = [...floors];
   for (let k = 0; k < diff; k++) cents[fracs[k % fracs.length].i] += 1;
-  free.forEach((p, i) => {
+  pool.forEach((p, i) => {
     out[p.key] = cents[i] / 100;
   });
+  for (const p of free) {
+    if (out[p.key] == null) out[p.key] = 0;
+  }
   return out;
 }
 
@@ -333,6 +381,13 @@ export function defaultSplitSelection(
     item.subCategory === 'Cooling' ||
     item.category === 'Cooling' ||
     /cool|aio|wak[uü]|lüfter|fan/i.test(item.name || '');
+  const ramish =
+    item.subCategory === 'RAM' ||
+    /\bram\b|\bdd[r]?[345]\b|\bdimm\b|\bsodimm\b|\b\d+\s*[x×]\s*\d+\s*gb\b/i.test(item.name || '');
+  const psuish =
+    item.subCategory === 'PSU' ||
+    item.category === 'PSU' ||
+    /\bpsu\b|netzteil|power\s*supply|modular/i.test(item.name || '');
 
   const enabled = {
     ovp: coolingish ? item.hasOVP === true : false,
@@ -340,20 +395,28 @@ export function defaultSplitSelection(
     fans: coolingish,
     radiator: coolingish,
     controller: coolingish,
-    cable: coolingish,
+    cable: coolingish || psuish,
+    ram_stick: ramish,
+    psu_main: psuish,
+    identical: false,
+    remainder: false,
   } as Record<SplitPartPresetId, boolean>;
 
   if (coolingish && !hints.likelyLcd) {
     enabled.lcd = false;
   }
 
+  const ramQtyHint = detectIdenticalQtyHint(item.name || '') || 2;
+
   return {
     enabled,
-    fanQty: Math.min(6, Math.max(1, hints.defaultFanQty)),
+    fanQty: ramish
+      ? Math.min(8, Math.max(2, ramQtyHint))
+      : Math.min(6, Math.max(1, hints.defaultFanQty)),
     // Pre-load every cable type at qty 0 so the user only has to bump the ones actually
     // present instead of adding each type by hand — a 0-qty line is dropped entirely by
     // buildSplitDrafts, so unused types never turn into real inventory rows.
-    cables: coolingish
+    cables: coolingish || psuish
       ? CABLE_TYPE_OPTIONS.map((opt, i) => ({ id: `c${i}`, type: opt.id, qty: 0 }))
       : [],
   };
@@ -375,23 +438,26 @@ export function buildSplitDrafts(
     if (preset.id === 'cable') continue; // multi-line — handled separately below
     if (!selection.enabled[preset.id]) continue;
 
-    if (preset.id === 'fans') {
-      const qty = Math.min(6, Math.max(1, selection.fanQty || 1));
-      const key = 'fans';
+    if (preset.id === 'fans' || preset.id === 'ram_stick') {
+      const qty =
+        preset.id === 'ram_stick'
+          ? Math.min(8, Math.max(1, selection.fanQty || 2))
+          : Math.min(6, Math.max(1, selection.fanQty || 1));
+      const key = preset.id;
       const prev = prevByKey.get(key);
+      const labelBase = preset.id === 'ram_stick' ? 'Stick' : 'Fan';
       drafts.push({
         key,
-        presetId: 'fans',
-        label: qty > 1 ? `Fans ×${qty}` : 'Fan',
+        presetId: preset.id,
+        label: qty > 1 ? `${labelBase}s ×${qty}` : labelBase,
         name:
           prev?.name ||
-          buildPartName(source.name, 'Fans', {
+          buildPartName(source.name, labelBase, {
             qty,
             radiatorMm: hints.radiatorMm,
-            shortLabel: 'Fans',
+            shortLabel: preset.shortLabel,
           }),
         buyPrice: prev?.buyLocked ? prev.buyPrice : 0,
-        // Scale fan weight with qty so 3 fans get a fairer share of cost.
         weight: preset.weight * qty,
         category: preset.category,
         subCategory: preset.subCategory,
@@ -494,6 +560,7 @@ export function buildSplitDrafts(
       weight: d.weight,
       buyLocked: d.buyLocked,
       buyPrice: d.buyPrice,
+      isRemainder: d.presetId === 'remainder',
     }))
   );
 
@@ -687,6 +754,7 @@ export function buildIdenticalCopyDrafts(
       weight: d.weight,
       buyLocked: d.buyLocked,
       buyPrice: d.buyPrice,
+      isRemainder: d.presetId === 'remainder',
     }))
   );
 

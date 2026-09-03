@@ -12,6 +12,7 @@ import {
   Filter,
 } from 'lucide-react';
 import ItemLink from './ItemLink';
+import { canUndo } from '../services/actionHistoryOps';
 
 interface Props {
   entries: ActionHistoryEntry[];
@@ -291,6 +292,7 @@ const ActionHistoryPage: React.FC<Props> = ({ entries, items, onClear, onRevertT
                       isTradeCompleted || isSale ? items.find((i) => i.id === e.itemId) : undefined;
                     const canRevertTrade = outgoing?.status === ItemStatus.TRADED;
                     const canRevertSale = outgoing?.status === ItemStatus.SOLD;
+                    const undoGuard = canUndo(e, sorted, items);
 
                     return (
                       <tr
@@ -334,21 +336,37 @@ const ActionHistoryPage: React.FC<Props> = ({ entries, items, onClear, onRevertT
                         </td>
 
                         <td className="px-4 py-3.5">
-                          {e.details ? (
-                            <p className="text-sm font-medium text-slate-700 leading-relaxed break-words" title={e.details}>
-                              {e.details}
+                          {e.details || e.notes ? (
+                            <p className="text-sm font-medium text-slate-700 leading-relaxed break-words" title={e.notes || e.details}>
+                              {e.notes || e.details}
                             </p>
                           ) : (
                             <span className="text-sm text-slate-300">—</span>
                           )}
+                          {e.operationLabel ? (
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mt-1">
+                              Op: {e.operationLabel}
+                            </p>
+                          ) : null}
+                          {!undoGuard.ok ? (
+                            <p className="text-[11px] font-semibold text-amber-700 mt-1.5 leading-snug">
+                              {undoGuard.reason}
+                            </p>
+                          ) : null}
                         </td>
 
                         <td className="px-4 py-3.5 text-right whitespace-nowrap">
                           {isTradeCompleted && onRevertTrade && (
                             <button
                               type="button"
-                              disabled={!canRevertTrade}
-                              title={canRevertTrade ? 'Undo this trade' : 'Item is no longer in Traded status'}
+                              disabled={!canRevertTrade || !undoGuard.ok}
+                              title={
+                                !undoGuard.ok
+                                  ? undoGuard.reason
+                                  : canRevertTrade
+                                    ? 'Undo this trade'
+                                    : 'Item is no longer in Traded status'
+                              }
                               onClick={() => onRevertTrade(e)}
                               className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold border border-purple-200 bg-purple-50 text-purple-800 hover:bg-purple-100 disabled:opacity-40"
                             >
@@ -359,8 +377,14 @@ const ActionHistoryPage: React.FC<Props> = ({ entries, items, onClear, onRevertT
                           {isSale && onRevertSale && (
                             <button
                               type="button"
-                              disabled={!canRevertSale}
-                              title={canRevertSale ? 'Undo this sale' : 'Item is no longer in Sold status'}
+                              disabled={!canRevertSale || !undoGuard.ok}
+                              title={
+                                !undoGuard.ok
+                                  ? undoGuard.reason
+                                  : canRevertSale
+                                    ? 'Undo this sale'
+                                    : 'Item is no longer in Sold status'
+                              }
                               onClick={() => onRevertSale(e)}
                               className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 disabled:opacity-40"
                             >

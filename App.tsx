@@ -70,6 +70,7 @@ import {
 import { runWeeklyPhotoPruneIfDue } from './services/photoPruneService';
 import { computeItemHistoryDiff, appendItemHistoryEntry, type ItemHistoryEntry } from './utils/itemHistoryDiff';
 import { recordItemAudit, flushItemAudit } from './services/itemAuditLog';
+import { mergeActionHistoryById, runOperation, stampOperationFields } from './services/actionHistoryOps';
 import { withTimeout } from './utils/withTimeout';
 import { runDailyBackupIfDue } from './services/backupService';
 import { pullPurchaseIndexFromCloud } from './services/ebayPurchaseIndex';
@@ -1189,16 +1190,7 @@ const App: React.FC = () => {
   }, []);
 
   const mergeActionHistoryFromLocal = useCallback((remoteList: ActionHistoryEntry[], localList: ActionHistoryEntry[]): ActionHistoryEntry[] => {
-    if (!localList?.length) return [...(remoteList || [])].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-    if (!remoteList?.length) return [...(localList || [])].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-    const byId = new Map<string, ActionHistoryEntry>();
-    localList.forEach((e) => {
-      if (e?.id) byId.set(e.id, e);
-    });
-    remoteList.forEach((e) => {
-      if (e?.id) byId.set(e.id, e);
-    });
-    return Array.from(byId.values()).sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    return mergeActionHistoryById(remoteList || [], localList || []);
   }, []);
 
   const applyRemoteData = useCallback((data: any) => {
@@ -2354,6 +2346,8 @@ const App: React.FC = () => {
           businessSettings: snap.businessSettings,
           monthlyGoal: snap.monthlyGoal,
           dashboardPrefs: snap.dashboardPrefs,
+          actionHistory: snap.actionHistory.slice(-ACTION_HISTORY_LIMIT),
+          bulkImports: snap.bulkImports.slice(0, BULK_IMPORTS_LIMIT),
         });
       } else {
         const cloudSyncTimeoutMs = Math.min(60000, Math.max(20000, snap.items.length * 20));
@@ -2729,9 +2723,10 @@ const App: React.FC = () => {
 
   const addActionEntries = useCallback((entries: ActionHistoryEntry[]) => {
     if (!entries.length) return;
+    const stamped = entries.map((e) => stampOperationFields(e));
     setActionHistory((prev) => {
       const recent = prev.slice(-20);
-      const newEntries = entries.filter((e) => {
+      const newEntries = stamped.filter((e) => {
         return !recent.some(
           (r) =>
             r.action === e.action &&
@@ -2746,6 +2741,7 @@ const App: React.FC = () => {
   }, []);
   
   const handleUpdate = useCallback((updatedItems: InventoryItem[], deleteIds?: string[], options?: ItemUpdateOptions) => {
+    runOperation(options?.actionNote?.action || 'Inventory update', () => {
     if (deleteIds?.length) {
       addLocallyDeletedIds(deleteIds);
       removePendingItemPatchIds(deleteIds);
@@ -2981,6 +2977,7 @@ const App: React.FC = () => {
         console.error('[supabase] Auto-removal delete failed:', err)
       );
     }
+    });
   }, [addActionEntries, businessSettings.taxMode, pushUndoSnapshot, pushItemChangesToCloud, requestFastCloudFlush]);
 
   /** Strip false Abrechnung link sale history (e.g. mistaken unlink archives). */

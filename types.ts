@@ -774,9 +774,20 @@ export interface ActionHistoryEntry {
   id: string;
   timestamp: string; // ISO datetime
   action: string;
+  /** Machine verb (ArmikTech ItemHistoryActionType / rollback). Optional for legacy rows. */
+  actionType?: string;
   itemId?: string;
   itemName?: string;
   details?: string;
+  /** Plain-language sentence; falls back to details when absent. */
+  notes?: string;
+  /** Changed fields only (full snapshot for create/delete). */
+  previousState?: Record<string, unknown>;
+  newState?: Record<string, unknown>;
+  relatedItemIds?: string[];
+  /** Groups every entry from one user action (split, compose, …). */
+  operationId?: string;
+  operationLabel?: string;
   /** For "Trade completed" rows: ids of items received in that trade (used to revert). */
   tradeReceivedIds?: string[];
 }

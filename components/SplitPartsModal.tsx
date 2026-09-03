@@ -566,7 +566,7 @@ const SplitPartsModal: React.FC<Props> = ({ item, items, onClose, onApply }) => 
 
         <div className="shrink-0 px-3.5 py-2 border-t border-slate-100 bg-white space-y-1.5">
           <div className="flex items-center justify-between text-xs font-bold">
-            <span className="text-slate-500">Allocated</span>
+            <span className="text-slate-500">Same as you paid</span>
             <span
               className={
                 Math.abs(delta) < 0.009 ? 'text-emerald-700' : 'text-amber-700'
