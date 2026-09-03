@@ -700,9 +700,43 @@ export type InventoryDelta = {
   serverIds: string[];
   /** Rows skipped because they were already current locally. */
   unchangedCount: number;
+  /** Full server id → updated_at map (for local IndexedDB cache). */
+  manifestMap: Map<string, string>;
 };
 
 const DELTA_BODY_CHUNK = 200;
+
+/** Lightweight id → updated_at map from Supabase (no row bodies). */
+export async function fetchInventoryCloudManifestFromServer(
+  userId: string,
+  clientOverride?: SupabaseClient
+): Promise<Map<string, string>> {
+  const sb = clientOverride ?? getSupabase();
+  if (!sb) throw new Error('Supabase is not configured.');
+
+  const effectiveId = userId && !userId.startsWith('dev-owner') ? userId : PRIMARY_OWNER_UID;
+  const PAGE_SIZE = 1000;
+  const manifestMap = new Map<string, string>();
+
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await sb
+      .from('inventory_items')
+      .select('id,updated_at')
+      .eq('user_id', effectiveId)
+      .order('id', { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) {
+      throw new Error(`Incomplete inventory manifest at offset ${from}: ${error.message}`);
+    }
+    if (!data || data.length === 0) break;
+    for (const row of data as Array<{ id: string; updated_at: string }>) {
+      manifestMap.set(String(row.id), String(row.updated_at));
+    }
+    if (data.length < PAGE_SIZE) break;
+  }
+
+  return manifestMap;
+}
 
 export async function fetchInventoryDelta(
   userId: string,
@@ -715,37 +749,19 @@ export async function fetchInventoryDelta(
   if (!sb) throw new Error('Supabase is not configured.');
 
   const effectiveId = userId && !userId.startsWith('dev-owner') ? userId : PRIMARY_OWNER_UID;
-  const PAGE_SIZE = 1000;
 
-  // --- manifest -----------------------------------------------------------
-  const manifest: Array<{ id: string; updated_at: string }> = [];
-  for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await sb
-      .from('inventory_items')
-      .select('id,updated_at')
-      .eq('user_id', effectiveId)
-      .order('id', { ascending: true })
-      .range(from, from + PAGE_SIZE - 1);
-    if (error) {
-      throw new Error(`Incomplete inventory manifest at offset ${from}: ${error.message}`);
-    }
-    if (!data || data.length === 0) break;
-    manifest.push(...(data as Array<{ id: string; updated_at: string }>));
-    if (data.length < PAGE_SIZE) break;
-  }
-
-  const serverIds = manifest.map((r) => String(r.id));
+  const manifestMap = await fetchInventoryCloudManifestFromServer(effectiveId, sb);
+  const serverIds = [...manifestMap.keys()];
 
   // --- what actually needs fetching ---------------------------------------
   const staleIds: string[] = [];
   let unchangedCount = 0;
-  for (const row of manifest) {
-    const id = String(row.id);
+  for (const [id, updated_at] of manifestMap) {
     const seen = known.get(id);
     // No local copy, or the server's row is a different revision. String
     // comparison is deliberate: these are the server's own timestamps echoed
     // back, so equality means "same revision" without any clock arithmetic.
-    if (seen === undefined || seen !== String(row.updated_at)) staleIds.push(id);
+    if (seen === undefined || seen !== String(updated_at)) staleIds.push(id);
     else unchangedCount++;
   }
 
@@ -773,7 +789,7 @@ export async function fetchInventoryDelta(
     changed.push(...(data as Record<string, unknown>[]).map(mapRowToItem));
   }
 
-  return { changed, deletedIds, serverIds, unchangedCount };
+  return { changed, deletedIds, serverIds, unchangedCount, manifestMap };
 }
 
 export async function fetchSupabaseSnapshotDirect(userId: string): Promise<SupabaseSyncSnapshot | null> {
@@ -2002,11 +2018,21 @@ export interface EbayTxCloudState {
   meta: any;
 }
 
-export async function waitForAuthReady(): Promise<void> {
+export async function waitForAuthReady(timeoutMs = 12000): Promise<boolean> {
   const sb = getSupabase();
-  if (!sb) return;
-  const { data: { session } } = await sb.auth.getSession();
-  if (session) return;
+  if (!sb) return false;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const {
+      data: { session },
+    } = await sb.auth.getSession();
+    if (session?.user) return true;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  const {
+    data: { session },
+  } = await sb.auth.getSession();
+  return Boolean(session?.user);
 }
 
 export async function fetchEbayOrdersFromCloud(): Promise<{ orders: any[]; meta: any } | null> {

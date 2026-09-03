@@ -304,3 +304,11 @@ export function applyUnsoldRestock(
 
   return { updates: [...changed.values()], deleteIds };
 }
+
+/** Shared handleUpdate flags for restock / return / unsold flows. */
+export const RESTOCK_CLOUD_SYNC_OPTIONS = {
+  flushCloud: true,
+  skipFieldPreserve: true,
+  skipContainerSaleMetaSync: true,
+  restockCloudSync: true,
+} as const satisfies Partial<import('../types').ItemUpdateOptions>;

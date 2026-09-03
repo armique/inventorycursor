@@ -325,43 +325,62 @@ function delay(ms: number): Promise<void> {
 export async function syncEbayTxReportsWithCloud(): Promise<void> {
   if (!isCloudEnabled()) return;
   const remote = await fetchEbayTxReportsFromCloud();
-  if (!remote || !remote.reports || remote.reports.length === 0) {
-    // Cloud is empty: clean local storage so browser never revives old reports
-    await clearEbayTransactionReport();
-    notifyEbayTxReportUpdated();
+  // Fetch failed — never wipe local on ambiguous errors.
+  if (remote === null) {
+    console.warn('[ebay-cloud] Abrechnung pull failed — keeping local cache');
     return;
   }
-  // Cloud has reports: apply cloud state to local
+  if (!remote.reports || remote.reports.length === 0) {
+    // Confirmed empty cloud: only clear local when the user explicitly cleared Abrechnung.
+    if (readEbayTxClearedAt()) {
+      await clearEbayTransactionReport();
+      notifyEbayTxReportUpdated();
+    }
+    return;
+  }
   await applyEbayTxCloudState(remote, false);
 }
 
-let inFlightCloudSync: Promise<void> | null = null;
+let inFlightCloudHydration: Promise<void> | null = null;
+let ebayCloudHydrated = false;
+
+/** True after the first successful Supabase pull for eBay data this session. */
+export function isEbayCloudHydrated(): boolean {
+  return ebayCloudHydrated || !isCloudEnabled();
+}
 
 /**
- * Memoized wrapper around syncEbayTxReportsWithCloud() — the first caller (normally App.tsx,
- * on auth) kicks off the real Supabase pull; anyone else (the Abrechnung page's own auto-sync)
- * just awaits the same in-flight promise instead of racing it. That race was the actual cause
- * of orders doubling on a fresh device/browser: the page's own `loading` flag only reflects an
- * (empty, near-instant) local IndexedDB read, while this pull is deliberately deferred via
- * requestIdleCallback and can take seconds — plenty of time for the API auto-sync to run first,
- * see zero CSV-covered orders, and dump the entire order history in as "new".
- *
- * Also waits for Supabase's own auth-ready signal first (see waitForAuthReady) — the Abrechnung
- * page can call this before App.tsx's own authUser-gated effect ever runs, and
- * fetchEbayTxReportsFromCloud() reads auth.currentUser directly, which is still null during
- * that window even on a device that IS signed in. Without this wait, the very first call could
- * silently run against "not signed in yet", get treated as "no cloud data", and — being
- * memoized — never retry for the rest of the session.
+ * Load eBay order index + Abrechnung reports from Supabase before any local mutations.
+ * Memoized — every caller awaits the same in-flight pull.
  */
-export function runEbayTxCloudSyncOnce(): Promise<void> {
-  if (!inFlightCloudSync) {
-    inFlightCloudSync = waitForAuthReady()
-      .then(() => syncEbayTxReportsWithCloud())
+export async function ensureEbayCloudDataLoaded(): Promise<void> {
+  if (!isCloudEnabled()) return;
+  if (ebayCloudHydrated) return;
+  if (!inFlightCloudHydration) {
+    inFlightCloudHydration = (async () => {
+      const authed = await waitForAuthReady();
+      if (!authed) {
+        console.warn('[ebay-cloud] Auth not ready — skipping cloud hydrate (local cache kept)');
+        return;
+      }
+      const { pullOrderIndexFromCloud } = await import('./ebayOrderIndex');
+      await pullOrderIndexFromCloud();
+      await syncEbayTxReportsWithCloud();
+      ebayCloudHydrated = true;
+    })()
       .catch((e) => {
-        console.warn('eBay Abrechnung cloud sync failed:', e);
+        console.warn('eBay cloud hydrate failed:', e);
+      })
+      .finally(() => {
+        inFlightCloudHydration = null;
       });
   }
-  return inFlightCloudSync;
+  await inFlightCloudHydration;
+}
+
+/** Memoized Supabase-first hydrate — safe to await from App, Abrechnung, and push paths. */
+export function runEbayTxCloudSyncOnce(): Promise<void> {
+  return ensureEbayCloudDataLoaded();
 }
 
 export type { EbayTxCloudStats, EbayTxLibrary };

@@ -19,6 +19,9 @@ export const STORE_CATALOG_DEBOUNCE_MS = 1500;
 /** Ignore remote snapshots briefly after a successful local push (echo suppression). */
 export const REMOTE_APPLY_SUPPRESS_MS = 2000;
 
+/** After a restock/return, hold off stale sold snapshots from other tabs longer. */
+export const RESTOCK_REMOTE_SUPPRESS_MS = 90_000;
+
 /** Longer debounce for large inventories so cloud I/O does not block the UI. */
 export function inventoryCloudDebounceMs(itemCount: number): number {
   if (itemCount > 1500) return 2500;

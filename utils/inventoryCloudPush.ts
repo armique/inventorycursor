@@ -24,6 +24,24 @@ function saleSignature(item: InventoryItem): string {
   ].join(':');
 }
 
+/** Local rows that differ from the last cloud snapshot and should be upserted. */
+export function inventoryItemsNeedingCloudPush(
+  localList: InventoryItem[],
+  remoteList: InventoryItem[]
+): InventoryItem[] {
+  const remoteById = new Map<string, InventoryItem>();
+  for (const row of remoteList) {
+    if (row?.id) remoteById.set(row.id, row);
+  }
+  const out: InventoryItem[] = [];
+  for (const local of localList) {
+    if (!local?.id) continue;
+    const remote = remoteById.get(local.id);
+    if (!remote || !itemContentUnchanged(local, remote)) out.push(local);
+  }
+  return out;
+}
+
 /** True when local has sold/traded/gifted rows cloud still treats as active or missing. */
 export function localInventoryAheadOfRemote(
   remoteList: InventoryItem[],
@@ -60,7 +78,9 @@ function itemContentUnchanged(a: InventoryItem, b: InventoryItem): boolean {
   if (a.buyDate !== b.buyDate) return false;
   if (a.ebayOrderId !== b.ebayOrderId) return false;
   if (a.parentContainerId !== b.parentContainerId) return false;
-  if ((a.componentIds?.length || 0) !== (b.componentIds?.length || 0)) return false;
+  const aComps = [...(a.componentIds || [])].sort().join(',');
+  const bComps = [...(b.componentIds || [])].sort().join(',');
+  if (aComps !== bComps) return false;
   if ((a.imageUrl || '') !== (b.imageUrl || '')) return false;
   if (numOrNull(a.sellPrice) !== numOrNull(b.sellPrice)) return false;
   if (numOrNull(a.buyPrice) !== numOrNull(b.buyPrice)) return false;
@@ -74,6 +94,34 @@ function itemContentUnchanged(a: InventoryItem, b: InventoryItem): boolean {
   if (numOrNull(ap?.adFeeEur) !== numOrNull(bp?.adFeeEur)) return false;
   if (numOrNull(ap?.shippingLabelEur) !== numOrNull(bp?.shippingLabelEur)) return false;
   return true;
+}
+
+/** Rows that changed during handleUpdate and should be upserted to Supabase. */
+export function collectItemsForIncrementalCloudPush(
+  before: InventoryItem[],
+  after: InventoryItem[],
+  _explicitTouchedIds?: Iterable<string>
+): InventoryItem[] {
+  const beforeById = new Map(before.map((i) => [i.id, i]));
+  const out: InventoryItem[] = [];
+  for (const item of after) {
+    const prev = beforeById.get(item.id);
+    if (!prev) {
+      out.push(item);
+      continue;
+    }
+    // New object reference from handleUpdate means this row was touched (directly or by cascade).
+    if (prev !== item || !itemContentUnchanged(item, prev)) {
+      out.push(item);
+    }
+  }
+  return out;
+}
+
+/** Item ids present before an edit but removed afterward (explicit deletes only). */
+export function collectDeletedInventoryIds(before: InventoryItem[], after: InventoryItem[]): string[] {
+  const afterIds = new Set(after.map((i) => i.id));
+  return before.filter((i) => i.id && !afterIds.has(i.id)).map((i) => i.id);
 }
 
 /**

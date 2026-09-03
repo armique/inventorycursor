@@ -1,6 +1,13 @@
 import type { BusinessSettings } from '../types';
-import { getEbayUsername, saveEbayConfig, getEbayToken, getEbayConfig } from '../services/ebayService';
+import {
+  getEbayUsername,
+  saveEbayConfig,
+  getEbayToken,
+  getEbayConfig,
+  hasEbayRefreshToken,
+} from '../services/ebayService';
 import { loadKaProfileUrl, saveKaProfileUrl } from './listingPresence';
+import { getCurrentUser, getSupabase, isCloudEnabled } from '../services/supabaseService';
 
 function readLocalEbayConfig(): {
   token: string;
@@ -179,4 +186,29 @@ export function withLocalEbayOAuthOnSettings(settings: BusinessSettings): Busine
     return settings;
   }
   return next;
+}
+
+/** Pull eBay OAuth from Supabase when local dev has no refresh token (e.g. after Connect on production RuName). */
+export async function ensureMarketplaceCredentialsFromCloud(): Promise<void> {
+  if (!isCloudEnabled() || hasEbayRefreshToken()) return;
+  const user = await getCurrentUser();
+  if (!user) return;
+  const sb = getSupabase();
+  if (!sb) return;
+  const { data: prof, error } = await sb
+    .from('user_profiles')
+    .select(
+      'ebay_oauth_refresh_token, ebay_oauth_token, ebay_oauth_expires_at, ebay_oauth_refresh_expires_at, ebay_seller_username, kleinanzeigen_profile_url'
+    )
+    .eq('id', user.id)
+    .maybeSingle();
+  if (error || !prof?.ebay_oauth_refresh_token?.trim()) return;
+  hydrateMarketplaceCredentialsFromSettings({
+    ebaySellerUsername: prof.ebay_seller_username || undefined,
+    ebayOAuthToken: prof.ebay_oauth_token || undefined,
+    ebayOAuthRefreshToken: prof.ebay_oauth_refresh_token || undefined,
+    ebayOAuthExpiresAt: prof.ebay_oauth_expires_at ?? undefined,
+    ebayOAuthRefreshExpiresAt: prof.ebay_oauth_refresh_expires_at ?? undefined,
+    kleinanzeigenProfileUrl: prof.kleinanzeigen_profile_url || undefined,
+  } as BusinessSettings);
 }

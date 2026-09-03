@@ -888,6 +888,11 @@ export type ItemUpdateOptions = {
   /** Push to cloud on the fast path (~0.4s) instead of the default debounce. */
   flushCloud?: boolean;
   /**
+   * Restock/return path: longer remote-apply suppress + optional DevTools pull mute
+   * so a stale Sold snapshot cannot overwrite the restocked row.
+   */
+  restockCloudSync?: boolean;
+  /**
    * Skip AI attribution/diff logging even inside an open AI session.
    * Used by Revert (which is a manual action) and by internal cascades.
    */
