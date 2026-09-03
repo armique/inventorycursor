@@ -6,6 +6,7 @@ import { InventoryItem, ItemStatus, TaxMode } from '../types';
 import { isRealizedDisposal } from '../utils/itemDisposition';
 import { calculateSaleProfit } from '../utils/saleProfit';
 import { netPayoutAfterRefund, saleProceedsFeeTotal, saleColumnSplit, isTrustedEbayProceeds } from '../utils/saleProceeds';
+import { childIdsOf } from '../utils/childIdsOf';
 
 export function roundMoney(n: number): number {
   const x = Number(n);
@@ -52,15 +53,15 @@ export function getChildren(
   items: InventoryItem[],
   lookup?: InventoryLookup
 ): InventoryItem[] {
-  const byIds = (container.componentIds || [])
-    .map((id) => (lookup ? lookup.itemById.get(id) : items.find((i) => i.id === id)))
-    .filter((x): x is InventoryItem => !!x)
-    // Stale componentIds on an older shell must not steal parts that now belong
-    // to another PC/bundle (historical compose ran twice on the same sale).
-    .filter((c) => !c.parentContainerId || c.parentContainerId === container.id);
-  if (byIds.length > 0) return byIds;
-  if (lookup) return lookup.childrenByParentId.get(container.id) || [];
-  return items.filter((i) => i.parentContainerId === container.id);
+  const ids = childIdsOf(container, items);
+  const out: InventoryItem[] = [];
+  for (const id of ids) {
+    const c = lookup ? lookup.itemById.get(id) : items.find((i) => i.id === id);
+    if (!c) continue;
+    if (c.parentContainerId && c.parentContainerId !== container.id) continue;
+    out.push(c);
+  }
+  return out;
 }
 
 /** Sold bundle/PC where sell price & profit live on each component. */
@@ -412,6 +413,15 @@ export function shouldSkipForAggregatedSaleLine(item: InventoryItem, allItems: I
 export function shouldSkipForInventoryCostLine(item: InventoryItem, allItems: InventoryItem[]): boolean {
   if (item.isDraft) return true;
   return shouldSkipCompositionChild(item, allItems);
+}
+
+/**
+ * Part C Rule 5 — single predicate for "counts on its own" capital/revenue.
+ * ArmikTech: children under a live container are skipped; the container holds the purchase.
+ * Prefer this name at call sites that reason about money totals.
+ */
+export function countsAsStandaloneInventoryCost(item: InventoryItem, allItems: InventoryItem[]): boolean {
+  return !shouldSkipForInventoryCostLine(item, allItems);
 }
 
 /**

@@ -10,7 +10,7 @@ import {
   Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Camera, Gift, User, Images, Scissors, GripVertical, RefreshCw, Calculator, Inbox, MessageSquare, ExternalLink, Bookmark, Link2, CheckCircle2
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo, BulkImportRecord } from '../types';
-import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
+import { planEjectFromContainer } from '../utils/ejectFromContainer';
 import { computeSoldTabMargin, getChildren, getItemDisplayShippingAmount, getSoldContainerDisplayTotals, healRealizedProfitsFromSaleProceeds, POCKET_PROFIT_TAX_MODE, shouldHideContainerChildInList, containerOrChildMatchesSearch, shouldSurfaceSoldContainerPartInList, itemMatchesActiveInventoryTab, soldContainerPartDispositionDate, matchesInventoryCategoryPin, inventorySubcategoryAliasesMatch, roundMoney, buildInventoryLookup, type InventoryLookup } from '../services/financialAggregation';
 import { SaleProceedsTrigger } from './SaleProceedsPopover';
 import { SellSplitLedger } from './SellSplitLedger';
@@ -3093,59 +3093,12 @@ const InventoryList: React.FC<Props> = ({
   const handleRemoveFromContainer = useCallback(
     (child: InventoryItem, parent: InventoryItem) => {
       if (!parent || child.id === parent.id) return;
-      const remaining = items.filter(
-        (i) =>
-          i.id !== child.id &&
-          (((parent.componentIds || []).includes(i.id) || i.parentContainerId === parent.id) &&
-            !i.isPC &&
-            !i.isBundle)
-      );
-      const buyTotal = Math.round(remaining.reduce((s, i) => s + Number(i.buyPrice || 0), 0) * 100) / 100;
-      const restoreAsSold = isRealizedDisposal(parent) || parent.subCategory === 'Retro Bundle';
-      // The leaving part keeps its own sale value — the container's sell total must shrink
-      // by the same amount, or that value gets counted twice (once on the now-standalone
-      // item, once still baked into the container's unchanged total).
-      const sellTotal = restoreAsSold
-        ? Math.round(remaining.reduce((s, i) => s + Number(i.sellPrice || 0), 0) * 100) / 100
-        : undefined;
-      const restored: InventoryItem = restoreAsSold
-        ? { ...child, parentContainerId: undefined, isSplitRemainder: undefined, status: ItemStatus.SOLD }
-        : {
-            ...child,
-            parentContainerId: undefined,
-            isSplitRemainder: undefined,
-            status: ItemStatus.IN_STOCK,
-            sellPrice: undefined,
-            sellDate: undefined,
-            profit: undefined,
-            paymentType: undefined,
-            platformSold: undefined,
-            containerSoldDate: undefined,
-          };
-      let updatedParent: InventoryItem = {
-        ...parent,
-        componentIds: remaining.map((p) => p.id),
-        buyPrice: buyTotal,
-        ...(sellTotal != null ? { sellPrice: sellTotal } : {}),
-        comment2: remaining
-          .map((i) => `- ${i.name}${i.isDefective ? ' [defekt]' : ''}`)
-          .join('\n')
-          .slice(0, 2000),
-      };
-      // Drop removed hardware from name/marketTitle so listing AI matches remaining parts.
-      const kind = getContainerKind(updatedParent);
-      if (kind) {
-        updatedParent = withRebuiltContainerTitle(updatedParent, kind, remaining);
-      }
-      if (remaining.length === 0) {
-        onUpdate([restored], [parent.id]);
-        setToast(`Removed “${child.name}” · last part · container removed`);
-      } else {
-        onUpdate([updatedParent, restored]);
-        setToast(
-          `Removed “${child.name}” → active · title updated · €${formatEUR(buyTotal)}`
-        );
-      }
+      const plan = planEjectFromContainer(child, parent, items);
+      onUpdate(plan.updates, plan.deleteIds.length ? plan.deleteIds : undefined);
+      const kept = plan.deleteIds.includes(parent.id)
+        ? 'last part · container removed'
+        : `€${formatEUR(Number(plan.updates.find((i) => i.id === parent.id)?.buyPrice) || 0)}`;
+      setToast(`Removed “${child.name}” → active · ${kept}`);
       setTimeout(() => setToast(null), 2400);
     },
     [items, onUpdate]

@@ -955,10 +955,17 @@ export async function fetchSupabaseSnapshotDirect(userId: string): Promise<Supab
   const actionHistory: ActionHistoryEntry[] = (actRes || []).map((r: any) => ({
     id: String(r.id),
     action: String(r.action),
-    timestamp: String(r.timestamp),
+    actionType: r.action_type ? String(r.action_type) : undefined,
+    timestamp: String(r.timestamp || r.created_at),
     itemId: r.item_id ? String(r.item_id) : undefined,
     itemName: r.item_name ? String(r.item_name) : undefined,
     details: r.details ? String(r.details) : undefined,
+    notes: r.notes ? String(r.notes) : undefined,
+    previousState: r.previous_state && typeof r.previous_state === 'object' ? r.previous_state : undefined,
+    newState: r.new_state && typeof r.new_state === 'object' ? r.new_state : undefined,
+    relatedItemIds: Array.isArray(r.related_item_ids) ? r.related_item_ids.map(String) : undefined,
+    operationId: r.operation_id ? String(r.operation_id) : undefined,
+    operationLabel: r.operation_label ? String(r.operation_label) : undefined,
   }));
 
   const bulkImports: BulkImportRecord[] = (bulkRes || []).map((r: any) => r.import_data as BulkImportRecord);
@@ -1064,10 +1071,17 @@ export async function fetchFullAppStateFromSupabase(): Promise<SupabaseSyncSnaps
   const actionHistory: ActionHistoryEntry[] = (actRes || []).map((r: any) => ({
     id: String(r.id),
     action: String(r.action),
-    timestamp: String(r.timestamp),
+    actionType: r.action_type ? String(r.action_type) : undefined,
+    timestamp: String(r.timestamp || r.created_at),
     itemId: r.item_id ? String(r.item_id) : undefined,
     itemName: r.item_name ? String(r.item_name) : undefined,
     details: r.details ? String(r.details) : undefined,
+    notes: r.notes ? String(r.notes) : undefined,
+    previousState: r.previous_state && typeof r.previous_state === 'object' ? r.previous_state : undefined,
+    newState: r.new_state && typeof r.new_state === 'object' ? r.new_state : undefined,
+    relatedItemIds: Array.isArray(r.related_item_ids) ? r.related_item_ids.map(String) : undefined,
+    operationId: r.operation_id ? String(r.operation_id) : undefined,
+    operationLabel: r.operation_label ? String(r.operation_label) : undefined,
   }));
 
   const bulkImports: BulkImportRecord[] = (bulkRes || []).map((r: any) => r.import_data as BulkImportRecord);
@@ -1246,6 +1260,242 @@ export async function writeFullAppStateToSupabase(
     }));
     const { error } = await sb.from('recurring_expenses').upsert(recRows, { onConflict: 'id' });
     if (error) throw error;
+  }
+}
+
+function mapActionHistoryRow(r: any): ActionHistoryEntry {
+  return {
+    id: String(r.id),
+    action: String(r.action),
+    actionType: r.action_type ? String(r.action_type) : undefined,
+    timestamp: String(r.timestamp || r.created_at),
+    itemId: r.item_id ? String(r.item_id) : undefined,
+    itemName: r.item_name ? String(r.item_name) : undefined,
+    details: r.details ? String(r.details) : undefined,
+    notes: r.notes ? String(r.notes) : undefined,
+    previousState: r.previous_state && typeof r.previous_state === 'object' ? r.previous_state : undefined,
+    newState: r.new_state && typeof r.new_state === 'object' ? r.new_state : undefined,
+    relatedItemIds: Array.isArray(r.related_item_ids) ? r.related_item_ids.map(String) : undefined,
+    operationId: r.operation_id ? String(r.operation_id) : undefined,
+    operationLabel: r.operation_label ? String(r.operation_label) : undefined,
+  };
+}
+
+function actionHistoryToRow(e: ActionHistoryEntry, userId: string): Record<string, unknown> {
+  return {
+    id: e.id,
+    user_id: userId,
+    action: e.action,
+    action_type: e.actionType || null,
+    item_id: e.itemId || null,
+    item_name: e.itemName || null,
+    details: e.details || null,
+    notes: e.notes || e.details || null,
+    previous_state: e.previousState || {},
+    new_state: e.newState || {},
+    related_item_ids: e.relatedItemIds || [],
+    operation_id: e.operationId || null,
+    operation_label: e.operationLabel || null,
+    timestamp: e.timestamp,
+    created_at: e.timestamp,
+  };
+}
+
+export type AppMetaSnapshot = {
+  expenses: Expense[];
+  recurringExpenses: RecurringExpense[];
+  categories: Record<string, string[]>;
+  categoryFields: Record<string, unknown>;
+  businessSettings: BusinessSettings;
+  monthlyGoal: number;
+  dashboardPrefs: DashboardPreferences;
+  actionHistory?: ActionHistoryEntry[];
+  bulkImports?: BulkImportRecord[];
+};
+
+/** Settings, expenses, action history, bulk imports — no inventory bodies. */
+export async function fetchAppMetaFromSupabase(userId: string): Promise<AppMetaSnapshot | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+  const effectiveId = userId && !userId.startsWith('dev-owner') ? userId : PRIMARY_OWNER_UID;
+
+  const [expRows, recExpRows, profRes, actRes, bulkRes] = await Promise.all([
+    fetchPaginatedTable('expenses', effectiveId, 'date'),
+    fetchPaginatedTable('recurring_expenses', effectiveId),
+    sb.from('user_profiles').select('*').eq('id', effectiveId).maybeSingle(),
+    fetchPaginatedTable('action_history', effectiveId, 'timestamp'),
+    fetchPaginatedTable('bulk_imports', effectiveId, 'imported_at'),
+  ]);
+
+  const prof = profRes.data || {};
+  const businessSettings: BusinessSettings = {
+    companyName: String(prof.company_name || ''),
+    ownerName: String(prof.owner_name || ''),
+    address: String(prof.address || ''),
+    phone: String(prof.phone || ''),
+    taxId: String(prof.tax_id || ''),
+    vatId: prof.vat_id ? String(prof.vat_id) : undefined,
+    iban: String(prof.iban || ''),
+    bic: String(prof.bic || ''),
+    bankName: String(prof.bank_name || ''),
+    taxMode: (prof.tax_mode as BusinessSettings['taxMode']) || 'SmallBusiness',
+    ebayPostalCode: prof.ebay_postal_code ? String(prof.ebay_postal_code) : undefined,
+    ebayPaypalEmail: prof.ebay_paypal_email ? String(prof.ebay_paypal_email) : undefined,
+    ebayDispatchTime: prof.ebay_dispatch_time ?? 1,
+    ebayReturnPolicy: (prof.ebay_return_policy as BusinessSettings['ebayReturnPolicy']) || 'ReturnsAccepted',
+    ebaySellerUsername: prof.ebay_seller_username ? String(prof.ebay_seller_username) : undefined,
+    ebayOAuthToken: prof.ebay_oauth_token ? String(prof.ebay_oauth_token) : undefined,
+    ebayOAuthRefreshToken: prof.ebay_oauth_refresh_token ? String(prof.ebay_oauth_refresh_token) : undefined,
+    ebayOAuthExpiresAt: prof.ebay_oauth_expires_at ?? undefined,
+    ebayOAuthRefreshExpiresAt: prof.ebay_oauth_refresh_expires_at ?? undefined,
+    kleinanzeigenProfileUrl: prof.kleinanzeigen_profile_url ? String(prof.kleinanzeigen_profile_url) : undefined,
+  };
+
+  return {
+    expenses: expRows.map((r: any) => ({
+      id: String(r.id),
+      description: String(r.description),
+      amount: Number(r.amount),
+      date: String(r.date),
+      category: String(r.category),
+      recurringExpenseId: r.recurring_expense_id ? String(r.recurring_expense_id) : undefined,
+      attachmentUrl: r.attachment_url ? String(r.attachment_url) : undefined,
+    })),
+    recurringExpenses: recExpRows.map((r: any) => ({
+      id: String(r.id),
+      description: String(r.description),
+      monthlyAmount: Number(r.monthly_amount),
+      startDate: String(r.start_date),
+      category: String(r.category),
+      lastGeneratedDate: r.last_generated_date ? String(r.last_generated_date) : undefined,
+    })),
+    categories: (prof.categories as Record<string, string[]>) || {},
+    categoryFields: (prof.category_fields as Record<string, unknown>) || {},
+    businessSettings,
+    monthlyGoal: Number(prof.monthly_goal) || 0,
+    dashboardPrefs: (prof.dashboard_prefs as DashboardPreferences) || ({} as DashboardPreferences),
+    actionHistory: (actRes || []).map(mapActionHistoryRow),
+    bulkImports: (bulkRes || []).map((r: any) => r.import_data as BulkImportRecord),
+  };
+}
+
+/**
+ * Persist profile + expenses (+ optional action_history / bulk_imports).
+ * action_history is append-only: insert new ids only (RLS blocks updates).
+ */
+export async function writeAppMetaToSupabase(
+  meta: Partial<AppMetaSnapshot> & {
+    expenses?: Expense[];
+    recurringExpenses?: RecurringExpense[];
+    categories?: Record<string, string[]>;
+    categoryFields?: Record<string, unknown>;
+    businessSettings?: BusinessSettings;
+    monthlyGoal?: number;
+    dashboardPrefs?: DashboardPreferences;
+    actionHistory?: ActionHistoryEntry[];
+    bulkImports?: BulkImportRecord[];
+  }
+): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) throw new Error('Supabase is not configured');
+  const user = await getCurrentSupabaseUser();
+  const userId = user?.id || PRIMARY_OWNER_UID;
+  const BATCH = 200;
+
+  if (meta.businessSettings || meta.categories || meta.categoryFields || meta.monthlyGoal != null || meta.dashboardPrefs) {
+    const s = meta.businessSettings;
+    await sb.from('user_profiles').upsert({
+      id: userId,
+      email: user?.email,
+      ...(s
+        ? {
+            company_name: s.companyName || '',
+            owner_name: s.ownerName || '',
+            address: s.address || '',
+            phone: s.phone || '',
+            tax_id: s.taxId || '',
+            vat_id: s.vatId || null,
+            iban: s.iban || '',
+            bic: s.bic || '',
+            bank_name: s.bankName || '',
+            tax_mode: s.taxMode || 'SmallBusiness',
+            ebay_postal_code: s.ebayPostalCode || null,
+            ebay_paypal_email: s.ebayPaypalEmail || null,
+            ebay_dispatch_time: s.ebayDispatchTime ?? 1,
+            ebay_return_policy: s.ebayReturnPolicy || 'ReturnsAccepted',
+            ebay_seller_username: s.ebaySellerUsername || null,
+            ebay_oauth_token: s.ebayOAuthToken || null,
+            ebay_oauth_refresh_token: s.ebayOAuthRefreshToken || null,
+            ebay_oauth_expires_at: s.ebayOAuthExpiresAt ?? null,
+            ebay_oauth_refresh_expires_at: s.ebayOAuthRefreshExpiresAt ?? null,
+            kleinanzeigen_profile_url: s.kleinanzeigenProfileUrl || null,
+          }
+        : {}),
+      ...(meta.monthlyGoal != null ? { monthly_goal: meta.monthlyGoal } : {}),
+      ...(meta.categories ? { categories: meta.categories } : {}),
+      ...(meta.categoryFields ? { category_fields: meta.categoryFields } : {}),
+      ...(meta.dashboardPrefs ? { dashboard_prefs: meta.dashboardPrefs } : {}),
+    });
+  }
+
+  if (meta.expenses?.length) {
+    const expRows = meta.expenses.map((e) => ({
+      id: e.id,
+      user_id: userId,
+      description: e.description,
+      amount: e.amount,
+      date: e.date,
+      category: e.category,
+      recurring_expense_id: e.recurringExpenseId || null,
+      attachment_url: e.attachmentUrl || null,
+    }));
+    for (let i = 0; i < expRows.length; i += BATCH) {
+      const { error } = await sb.from('expenses').upsert(expRows.slice(i, i + BATCH), { onConflict: 'id' });
+      if (error) throw error;
+    }
+  }
+
+  if (meta.recurringExpenses?.length) {
+    const recRows = meta.recurringExpenses.map((r) => ({
+      id: r.id,
+      user_id: userId,
+      description: r.description,
+      monthly_amount: r.monthlyAmount,
+      start_date: r.startDate,
+      category: r.category,
+      last_generated_date: r.lastGeneratedDate || null,
+    }));
+    const { error } = await sb.from('recurring_expenses').upsert(recRows, { onConflict: 'id' });
+    if (error) throw error;
+  }
+
+  if (meta.actionHistory?.length) {
+    // Append-only: skip ids that already exist so we never UPDATE under RLS.
+    const ids = meta.actionHistory.map((e) => e.id);
+    const existing = new Set<string>();
+    for (let i = 0; i < ids.length; i += BATCH) {
+      const chunk = ids.slice(i, i + BATCH);
+      const { data } = await sb.from('action_history').select('id').eq('user_id', userId).in('id', chunk);
+      for (const row of data || []) existing.add(String((row as { id: string }).id));
+    }
+    const fresh = meta.actionHistory.filter((e) => !existing.has(e.id)).map((e) => actionHistoryToRow(e, userId));
+    for (let i = 0; i < fresh.length; i += BATCH) {
+      const { error } = await sb.from('action_history').insert(fresh.slice(i, i + BATCH));
+      if (error) throw error;
+    }
+  }
+
+  if (meta.bulkImports?.length) {
+    const rows = meta.bulkImports.map((b) => ({
+      id: b.id,
+      user_id: userId,
+      import_data: b,
+      imported_at: b.createdAt || new Date().toISOString(),
+    }));
+    for (let i = 0; i < rows.length; i += BATCH) {
+      const { error } = await sb.from('bulk_imports').upsert(rows.slice(i, i + BATCH), { onConflict: 'id' });
+      if (error) throw error;
+    }
   }
 }
 
