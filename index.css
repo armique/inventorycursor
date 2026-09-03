@@ -18,21 +18,82 @@ body,
 }
 
 /*
- * Inventory virtual list: while scrolling, hide non-essential under-name chrome
- * (price-analyzer chips, sale-cycle badges) so paint stays cheap.
- * PC / Bundle / Mixed type badges stay visible — they must not flicker mid-scroll.
- * Only defer heavy under-name widgets — do not block the whole tbody (that made scroll feel dead).
+ * Inventory virtual list: scroll-defer / content-visibility on rows caused blank bands.
+ * Keep these rules inert — evening final uses data-scrolling pointer-events only.
  */
-/* Only hide heavy history strips while scrolling — bundle parts and row content stay visible. */
 tbody.inv-is-scrolling [data-scroll-defer-heavy] {
-  visibility: hidden;
-  pointer-events: none;
+  /* intentionally inert */
 }
 
-/* Performance scroll mode — hide heavy under-name widgets even when not scrolling. */
 [data-inv-perf='true'] [data-scroll-defer-heavy],
 [data-inv-perf='true'] [data-perf-hide] {
   display: none !important;
+}
+
+/* Inventory table scroll container — reduce scroll jank on long lists. */
+[data-inv-scroll] {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  overflow-anchor: none;
+  contain: layout style;
+}
+
+/* During active scroll: no hover churn or accidental clicks on flag buttons. */
+[data-inv-scroll][data-scrolling] [data-inventory-table] tbody > tr {
+  pointer-events: none;
+}
+
+/* Inventory table — ArmikTech system font stack, +1 Tailwind type step. */
+[data-inventory-table] {
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+}
+
+[data-inventory-table] .font-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
+}
+
+[data-inventory-table] .text-\[8px\] {
+  font-size: 0.75rem; /* 12px */
+  line-height: 1.2;
+}
+[data-inventory-table] .text-\[9px\] {
+  font-size: 0.8125rem; /* 13px */
+  line-height: 1.25;
+}
+[data-inventory-table] .text-\[9\.5px\] {
+  font-size: 0.8125rem;
+  line-height: 1.25;
+}
+[data-inventory-table] .text-\[10px\] {
+  font-size: 0.875rem; /* 14px */
+  line-height: 1.25;
+}
+[data-inventory-table] .text-\[11px\] {
+  font-size: 0.875rem; /* 14px */
+  line-height: 1.3;
+}
+[data-inventory-table] .text-\[0\.8125rem\] {
+  font-size: 0.9375rem;
+  line-height: 1.35;
+}
+[data-inventory-table] .text-xs {
+  font-size: 0.875rem !important; /* 14px */
+  line-height: 1.3;
+}
+[data-inventory-table] .text-sm {
+  font-size: 1rem !important; /* 16px */
+  line-height: 1.35;
+}
+[data-inventory-table] .text-base {
+  font-size: 1.125rem !important;
+  line-height: 1.4;
+}
+
+[data-inventory-table] thead th {
+  font-size: 0.8125rem; /* ~13px */
+  letter-spacing: 0.05em;
 }
 
 /* Home-indicator / notch padding — used by bottom nav, sheets, sale modal, etc. */
@@ -57,4 +118,3 @@ tbody.inv-is-scrolling [data-scroll-defer-heavy] {
     zoom: 1;
   }
 }
-

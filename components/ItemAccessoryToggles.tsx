@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Package, Shield } from 'lucide-react';
+import { Package, Shield, type LucideIcon } from 'lucide-react';
 import type { InventoryItem } from '../types';
 import {
   accessoryToggleLabel,
@@ -33,6 +33,10 @@ interface Props {
   mini?: boolean;
   /** Show OVP / IO labels next to the icon (forms / toolbars). Inventory uses icons only. */
   labeled?: boolean;
+  /** Fixed-width Flags column slots — always OVP + IO (IO ghost when N/A). */
+  flags?: boolean;
+  iconBtnClass?: string;
+  renderGhost?: (Icon: LucideIcon) => React.ReactNode;
 }
 
 function AccessoryIcon({ id, size }: { id: AccessoryToggleId; size: number }) {
@@ -50,14 +54,35 @@ function toneClasses(state: AccessoryTriState): string {
   return 'bg-violet-500 text-white border-violet-600 shadow-sm shadow-violet-500/40 ring-1 ring-violet-600/50 hover:bg-violet-600';
 }
 
+function flagToneClasses(state: AccessoryTriState): string {
+  if (state === 'present') {
+    return 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100';
+  }
+  if (state === 'missing') {
+    return 'border-red-300 bg-red-50 text-red-700 hover:bg-red-100';
+  }
+  return 'border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100';
+}
+
 const FLUSH_MS = 280;
 
 /**
  * OVP / IO Blende chips. Optimistic local state + debounced persist so rapid clicks
  * don't flood inventory updates / undo history / re-renders.
  */
-const ItemAccessoryToggles: React.FC<Props> = ({ item, children, onPatch, dense, mini, labeled }) => {
+const ItemAccessoryToggles: React.FC<Props> = ({
+  item,
+  children,
+  onPatch,
+  dense,
+  mini,
+  labeled,
+  flags = false,
+  iconBtnClass = 'h-7 w-7',
+  renderGhost,
+}) => {
   const ids = accessoryTogglesForItem(item, children);
+  const ioRelevant = ids.includes('io');
   const iconSize = mini ? 12 : dense ? 11 : 12;
   const chip =
     labeled
@@ -69,6 +94,8 @@ const ItemAccessoryToggles: React.FC<Props> = ({ item, children, onPatch, dense,
         : dense
           ? 'h-5 min-w-[1.25rem] px-1 rounded-md'
           : 'h-6 min-w-[1.5rem] px-1.5 rounded-lg';
+
+  const flagChip = `${iconBtnClass} shrink-0 inline-flex items-center justify-center rounded-lg border transition-colors`;
 
   const [draft, setDraft] = useState<{ hasOVP?: boolean; hasIOShield?: boolean } | null>(null);
   const pendingRef = useRef<Partial<InventoryItem>>({});
@@ -133,7 +160,43 @@ const ItemAccessoryToggles: React.FC<Props> = ({ item, children, onPatch, dense,
     flushSoon();
   };
 
-  if (!ids.length) return null;
+  if (!ids.length && !flags) return null;
+
+  const renderToggle = (id: AccessoryToggleId) => {
+    const state = accessoryToggleState(effective, id);
+    const label = accessoryToggleLabel(id);
+    return (
+      <button
+        key={id}
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          handleClick(id);
+        }}
+        className={`${flags ? flagChip : `inline-flex items-center justify-center border transition-colors ${chip}`} ${flags ? flagToneClasses(state) : toneClasses(state)}`}
+        title={accessoryToggleTitle(id, state)}
+        aria-label={`${label}: ${state}`}
+        aria-pressed={state === 'present' ? true : state === 'missing' ? false : undefined}
+      >
+        <AccessoryIcon id={id} size={flags ? 13 : iconSize} />
+        {labeled ? (
+          <span className="text-[9px] font-black uppercase tracking-wide leading-none">
+            {label}
+          </span>
+        ) : null}
+      </button>
+    );
+  };
+
+  if (flags) {
+    const ghost = renderGhost ?? (() => null);
+    return (
+      <>
+        {renderToggle('ovp')}
+        {ioRelevant ? renderToggle('io') : ghost(Shield)}
+      </>
+    );
+  }
 
   return (
     <div
@@ -141,31 +204,7 @@ const ItemAccessoryToggles: React.FC<Props> = ({ item, children, onPatch, dense,
       onClick={(e) => e.stopPropagation()}
       onDoubleClick={(e) => e.stopPropagation()}
     >
-      {ids.map((id) => {
-        const state = accessoryToggleState(effective, id);
-        const label = accessoryToggleLabel(id);
-        return (
-          <button
-            key={id}
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleClick(id);
-            }}
-            className={`inline-flex items-center justify-center border transition-colors ${chip} ${toneClasses(state)}`}
-            title={accessoryToggleTitle(id, state)}
-            aria-label={`${label}: ${state}`}
-            aria-pressed={state === 'present' ? true : state === 'missing' ? false : undefined}
-          >
-            <AccessoryIcon id={id} size={iconSize} />
-            {labeled ? (
-              <span className="text-[9px] font-black uppercase tracking-wide leading-none">
-                {label}
-              </span>
-            ) : null}
-          </button>
-        );
-      })}
+      {ids.map((id) => renderToggle(id))}
     </div>
   );
 };

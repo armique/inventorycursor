@@ -7,8 +7,11 @@ import { getContainerKind } from '../utils/containerMembership';
 import { hasEbaySaleSignals, resolveSalePlatform } from '../utils/salePlatform';
 import { getEbayPublishReadiness } from '../utils/ebayListingReadiness';
 
-/** Icon slots implemented in Flags — bump when adding a new flag button. */
-export const PRESENCE_FLAG_SLOT_COUNT = 19;
+/** Icons always shown inline in Flags (before the ⋯ menu). */
+export const INLINE_PRESENCE_FLAG_MAX = 6;
+
+/** Legacy full strip count — overflow actions live in the ⋯ menu now. */
+export const PRESENCE_FLAG_SLOT_COUNT = 21;
 
 function shouldShowEbayOrderLinkInFlags(item: InventoryItem): boolean {
   if (item.status !== ItemStatus.SOLD && item.status !== ItemStatus.TRADED) return false;
@@ -21,7 +24,20 @@ function shouldShowEbayOrderLinkInFlags(item: InventoryItem): boolean {
   return platform === 'ebay.de' || hasEbaySaleSignals(item);
 }
 
-/** Count visible Flags icons for one row — drives auto column width. */
+/** Count inline Flags icons for one row — drives auto column width. */
+export function countInlinePresenceFlagsForItem(item: InventoryItem): number {
+  let n = 0;
+  if (!item.parentContainerId && (item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED)) {
+    n += 1; // sell
+  }
+  if (!item.parentContainerId) n += 1; // delete (ghost when N/A keeps slot)
+  n += 1; // presence cycle
+  n += 2; // OVP + IO (IO slot always shown; ghost when N/A)
+  n += 1; // ⋯ more menu
+  return n;
+}
+
+/** @deprecated Prefer countInlinePresenceFlagsForItem — full overflow strip is behind ⋯. */
 export function countPresenceFlagsForItem(
   item: InventoryItem,
   items: InventoryItem[],
@@ -79,14 +95,14 @@ export function countPresenceFlagsForItem(
   return n;
 }
 
-/** Widest row in the sample. */
+/** Widest row in the sample (inline strip only). */
 export function maxPresenceFlagsInItems(items: InventoryItem[]): number {
   if (!items.length) return 4;
   let max = 0;
   for (const item of items) {
-    max = Math.max(max, countPresenceFlagsForItem(item, items));
+    max = Math.max(max, countInlinePresenceFlagsForItem(item));
   }
-  return Math.min(PRESENCE_FLAG_SLOT_COUNT, Math.max(1, max));
+  return Math.min(INLINE_PRESENCE_FLAG_MAX, Math.max(1, max));
 }
 
 export function presenceColWidthFromFlagCount(
@@ -97,7 +113,7 @@ export function presenceColWidthFromFlagCount(
   const iconPx = dense ? 24 : 28;
   const gapPx = dense ? 0 : 1;
   const hPad = dense ? 6 : 8;
-  const count = Math.max(1, Math.min(PRESENCE_FLAG_SLOT_COUNT, flagCount));
+  const count = Math.max(1, Math.min(INLINE_PRESENCE_FLAG_MAX, flagCount));
   const strip =
     count * iconPx + Math.max(0, count - 1) * gapPx + (options?.lotBadge ? 10 : 0);
   return strip + hPad;

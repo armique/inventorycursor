@@ -23,6 +23,7 @@ import {
   User,
   RotateCcw,
   AlertCircle,
+  AlertTriangle,
 } from 'lucide-react';
 import type { InventoryItem, TaxMode } from '../types';
 import { ItemStatus } from '../types';
@@ -30,7 +31,7 @@ import { formatEUR } from '../utils/formatMoney';
 import { BuyPriceBumpBadge } from './BuyPriceHistory';
 import { canEditManualSellerShipping, shouldShowSellCellMarketplaceFees } from '../utils/saleProceeds';
 import { resolveSellColumnSplit } from '../utils/sellColumnDisplay';
-import { POCKET_PROFIT_TAX_MODE } from '../services/financialAggregation';
+import { buildInventoryLookup, getChildren, POCKET_PROFIT_TAX_MODE } from '../services/financialAggregation';
 import { SellerShippingEditorDialog } from './SaleProceedsPopover';
 import { SellSplitLedger } from './SellSplitLedger';
 import { getItemPresenceCycleState, getItemUserPhotoCount } from '../utils/imageImport';
@@ -41,6 +42,7 @@ import ItemAccessoryToggles from './ItemAccessoryToggles';
 import { resolveComponentPartTone, componentPartPillProps } from '../utils/componentPartTone';
 import { canSplitItem, resolveIdenticalLotQty } from '../utils/splitParts';
 import { buildEbayItemUrl } from '../utils/sourceLinks';
+import { getFaultyRowMeta } from '../utils/inventoryFaulty';
 
 export interface MobileStockCardActions {
   onEdit: (item: InventoryItem) => void;
@@ -146,11 +148,18 @@ export const MobileStockCard: React.FC<{
       ? 'Add parts to this bundle'
       : 'Make Bundle / Mixed Bundle';
 
+  const lookupItems = allItems.length ? allItems : [item];
+  const faultyMeta = getFaultyRowMeta(item, lookupItems, buildInventoryLookup(lookupItems));
+
   return (
     <>
       <article
-        className={`rounded-2xl border bg-slate-900/90 border-slate-800 px-3 py-2.5 shadow-lg shadow-black/30 transition-all ${
-          item.isPC
+        className={`rounded-2xl border bg-slate-900/90 px-3 py-2.5 shadow-lg shadow-black/30 transition-all ${
+          faultyMeta.selfFaulty
+            ? 'border-red-500/60 shadow-[inset_4px_0_0_0_#ef4444]'
+            : faultyMeta.faultyChildCount > 0
+              ? 'border-red-500/40 shadow-[inset_4px_0_0_0_rgba(239,68,68,0.55)]'
+              : item.isPC
             ? 'border-indigo-500/50 shadow-[inset_4px_0_0_0_#6366f1]'
             : item.isBundle
               ? 'border-violet-500/50 shadow-[inset_4px_0_0_0_#8b5cf6]'
@@ -234,6 +243,25 @@ export const MobileStockCard: React.FC<{
                 {item.ebayOrderId && (
                   <span className="text-[9px] font-black text-amber-400 bg-amber-500/10 px-1 py-0.2 rounded border border-amber-500/20">
                     ⚡ eBay
+                  </span>
+                )}
+
+                {faultyMeta.selfFaulty && (
+                  <span
+                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-red-500/15 text-red-400 border border-red-500/35"
+                    title="Marked as defective / for parts"
+                  >
+                    <AlertTriangle size={9} strokeWidth={2.5} />
+                    DEFEKT
+                  </span>
+                )}
+                {!faultyMeta.selfFaulty && faultyMeta.faultyChildCount > 0 && (
+                  <span
+                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-red-500/10 text-red-400/90 border border-red-500/25"
+                    title={`${faultyMeta.faultyChildCount} defective part(s) in this container`}
+                  >
+                    <AlertTriangle size={9} strokeWidth={2.5} />
+                    {faultyMeta.faultyChildCount} defekt
                   </span>
                 )}
               </div>

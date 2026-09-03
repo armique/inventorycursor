@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, useLayoutEffect, useRef, useDeferredValue, startTransition } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
+import { useInventoryVirtualRows } from '../hooks/useInventoryVirtualRows';
+import { useDesktopInventoryViewport, useIdleReady } from '../hooks/useDesktopInventoryViewport';
 import { pickEssentialSpecOptions, mergeAiSpecsIntoEssential, resolveEssentialSpecKeys } from '../services/essentialSpecFields';
 import { formatEUR, parseLocaleMoney, parseLocaleNumber } from '../utils/formatMoney';
 import { toLocalCalendarDateKey, averageDateKey, formatInventoryDisplayDate } from '../utils/calendarDate';
@@ -68,15 +69,9 @@ import { MobileSheetShell } from './MobileBottomSheets';
 import { generateMarketplaceListing } from '../services/marketplaceListingAI';
 import {
   buildSuggestedEbayMap,
-  resolveSuggestedEbayList,
-  suggestionPatchFromPrice,
   type SuggestedEbayPrice,
 } from '../utils/flipInsights';
 import { loadFlipFees } from '../utils/flipCoach';
-import {
-  computePriceAnalyzer,
-  type PriceAnalyzerAction,
-} from '../utils/listingWatch';
 import {
   enqueueProductCardBackgroundJob,
   isItemProductCardJobActive,
@@ -84,10 +79,9 @@ import {
   type ProductCardBgJob,
 } from '../services/productCardBackgroundQueue';
 import {
-  countPresenceFlagsForItem,
-  maxPresenceFlagsInItems,
+  countInlinePresenceFlagsForItem,
   presenceColWidthFromFlagCount,
-  PRESENCE_FLAG_SLOT_COUNT,
+  INLINE_PRESENCE_FLAG_MAX,
   sampleHasSplitLotBadge,
 } from '../utils/inventoryPresenceFlagCount';
 import {
@@ -100,6 +94,7 @@ import {
   canMarkSaleReady,
 } from '../utils/listingPrepChecklist';
 import { scheduleBackgroundWork } from '../services/backgroundPersistence';
+import { getFaultyRowMeta, inventoryItemIsFaulty, type FaultyRowMeta } from '../utils/inventoryFaulty';
 
 const ebaySoldSearchUrl = (query: string) =>
   `https://www.ebay.de/sch/i.html?_nkw=${encodeURIComponent(query)}&LH_Sold=1&LH_Complete=1`;
@@ -120,7 +115,6 @@ import QuickBundleAddModal from './QuickBundleAddModal';
 import SplitPartsModal from './SplitPartsModal';
 import { canSplitItem, resolveIdenticalLotQty } from '../utils/splitParts';
 import EditItemModal from './EditItemModal';
-import ItemListPhotoChip from './ItemListPhotoChip';
 import InvoiceView from './InvoiceView';
 import InventoryAISpecsPanel from './InventoryAISpecsPanel';
 import AddPhotosModal, { type AddPhotosApplyOptions } from './AddPhotosModal';
@@ -154,7 +148,7 @@ import {
 import { resolveTradeReceivedItems, resolveTradeSourceItem } from '../utils/tradeLinks';
 import { formatPlatformBoughtLabel } from '../utils/purchaseSource';
 import TradeLinkBadge from './TradeLinkBadge';
-import { resolveComponentPartTone, componentPartRowAccentClass, componentPartPillProps } from '../utils/componentPartTone';
+import { resolveComponentPartTone, componentPartPillProps } from '../utils/componentPartTone';
 import { useInventoryPurchases } from './InventoryPurchasesPanel';
 import {
   isPurchasePreviewId,
@@ -364,31 +358,41 @@ function containerRowClassName(
   item: InventoryItem,
   isSelected: boolean,
   highlighted: boolean,
+  faulty?: FaultyRowMeta,
+  containerChildCount = 0,
 ): string {
-  const parts = ['group/row transition-colors'];
+  const parts = ['group/row align-top border-b border-slate-200/80'];
   if (highlighted) {
     parts.push('ring-2 ring-amber-400 ring-inset bg-amber-50/40 animate-pulse');
     return parts.join(' ');
   }
-  if (isSelected) {
-    parts.push('bg-blue-50/35');
+  const isContainerWithParts =
+    containerChildCount > 0 && (item.isPC || item.isBundle);
+  if (faulty?.showRowIndicator) {
+    if (faulty.selfFaulty) {
+      parts.push('border-l-[3px] border-l-red-500/80');
+      if (!isSelected) parts.push('bg-red-50/30');
+    } else if (faulty.faultyChildCount > 0) {
+      parts.push('border-l-[3px] border-l-red-400/50');
+      if (!isSelected) parts.push('bg-red-50/15');
+    }
+  } else if (isContainerWithParts) {
+    if (item.isPC) {
+      parts.push('border-l-[3px] border-l-indigo-400/70');
+      if (!isSelected) parts.push('bg-indigo-50/15');
+    } else {
+      parts.push('border-l-[3px] border-l-violet-400/70');
+      if (!isSelected) parts.push('bg-violet-50/15');
+    }
   }
-  if (item.isPC) {
-    parts.push(
-      isSelected
-        ? 'bg-indigo-100/50 hover:bg-indigo-100/70 shadow-[inset_3px_0_0_0_#4f46e5]'
-        : 'bg-indigo-50/55 hover:bg-indigo-50/90 shadow-[inset_3px_0_0_0_#6366f1]'
-    );
-  } else if (isInventoryContainer(item)) {
-    parts.push(
-      isSelected
-        ? 'bg-violet-100/50 hover:bg-violet-100/70 shadow-[inset_3px_0_0_0_#7c3aed]'
-        : 'bg-violet-50/60 hover:bg-violet-50/95 shadow-[inset_3px_0_0_0_#8b5cf6]'
-    );
+  if (isSelected) {
+    parts.push('bg-emerald-50/50');
+  } else if (!faulty?.showRowIndicator && !isContainerWithParts) {
+    parts.push('hover:bg-slate-50/80');
+  } else if (!faulty?.showRowIndicator && isContainerWithParts) {
+    parts.push(item.isPC ? 'hover:bg-indigo-50/30' : 'hover:bg-violet-50/25');
   } else {
-    const accent = componentPartRowAccentClass(item);
-    if (accent) parts.push(accent);
-    if (!isSelected) parts.push('hover:bg-slate-50/50');
+    parts.push('hover:bg-red-50/40');
   }
   return parts.join(' ');
 }
@@ -485,7 +489,7 @@ const BUNDLE_PART_FIN_GRID = 'w-[12.5rem]';
 const DEFAULT_WIDTHS: Record<string, number> = {
   select: 36,
   item: 168,
-  presence: presenceColWidthFromFlagCount(6),
+  presence: presenceColWidthFromFlagCount(INLINE_PRESENCE_FLAG_MAX),
   parseSpecs: 148,
   category: 104,
   status: 68,
@@ -608,7 +612,7 @@ function clampAutoColumnWidth(colId: ColumnId, w: number): number {
   const absoluteMax = ['buyPrice', 'sellPrice', 'storePrice', 'profit'].includes(colId)
     ? 1600
     : colId === 'presence'
-      ? presenceColWidthFromFlagCount(PRESENCE_FLAG_SLOT_COUNT, { lotBadge: true }) + 48
+      ? presenceColWidthFromFlagCount(INLINE_PRESENCE_FLAG_MAX, { lotBadge: true }) + 48
     : colId === 'salePlatform'
       ? 200
     : colId === 'actions'
@@ -783,7 +787,7 @@ function computeAutoColumnWidths(
       : visibleItems.filter((_, idx) => idx % Math.ceil(visibleItems.length / 120) === 0).slice(0, 120);
 
   for (const item of sample) {
-    maxFlags = Math.max(maxFlags, countPresenceFlagsForItem(item, allItems, resolveBulkImportId));
+    maxFlags = Math.max(maxFlags, countInlinePresenceFlagsForItem(item));
     if (item.category) {
       categoryW = Math.max(categoryW, measureTextWidth(ctx, item.category.toUpperCase(), '900 11px Inter, sans-serif'));
     }
@@ -830,11 +834,11 @@ function computeAutoColumnWidths(
 
   timeGaugeW = Math.max(timeGaugeW, 64);
 
-  if (maxFlags < 1) maxFlags = maxPresenceFlagsInItems(sample.length ? sample : visibleItems);
+  if (maxFlags < 1) maxFlags = INLINE_PRESENCE_FLAG_MAX;
   const lotBadge = sampleHasSplitLotBadge(sample.length ? sample : visibleItems);
   presenceW = Math.max(
     presenceW,
-    presenceColWidthFromFlagCount(maxFlags, { dense, lotBadge })
+    presenceColWidthFromFlagCount(INLINE_PRESENCE_FLAG_MAX, { dense, lotBadge })
   );
 
   // Never narrower than the full header label + header chrome (padding + sort chevron).
@@ -1312,8 +1316,8 @@ const InventoryList: React.FC<Props> = ({
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
     const saved = loadState<Record<string, number>>('widths', DEFAULT_WIDTHS);
     const merged = { ...DEFAULT_WIDTHS, ...saved };
-    if ((merged.presence ?? 0) > presenceColWidthFromFlagCount(PRESENCE_FLAG_SLOT_COUNT, { lotBadge: true }) + 8) {
-      merged.presence = presenceColWidthFromFlagCount(6);
+    if ((merged.presence ?? 0) > presenceColWidthFromFlagCount(INLINE_PRESENCE_FLAG_MAX, { lotBadge: true }) + 8) {
+      merged.presence = presenceColWidthFromFlagCount(INLINE_PRESENCE_FLAG_MAX);
     }
     if ((merged.parseSpecs ?? 0) < DEFAULT_WIDTHS.parseSpecs) merged.parseSpecs = DEFAULT_WIDTHS.parseSpecs;
     if ((merged.category ?? 0) < DEFAULT_WIDTHS.category) merged.category = DEFAULT_WIDTHS.category;
@@ -1396,11 +1400,8 @@ const InventoryList: React.FC<Props> = ({
   }, [statusFilter]);
 
   type ListDensity = 'comfortable' | 'compact';
-  const [listDensity, setListDensity] = useState<ListDensity>(() => {
-    const global = localStorage.getItem('panel_list_density');
-    if (global === 'comfortable' || global === 'compact') return global;
-    return loadState<ListDensity>('list_density', 'compact');
-  });
+  /** Compact is the fixed evening default — no toolbar toggle. */
+  const [listDensity] = useState<ListDensity>('compact');
   useEffect(() => {
     localStorage.setItem(`${persistenceKey}_list_density`, JSON.stringify(listDensity));
     localStorage.setItem('panel_list_density', listDensity);
@@ -1813,6 +1814,14 @@ const InventoryList: React.FC<Props> = ({
 
   /** QW7: O(1) id/parent/child maps for the filter — replaces per-item full-array scans. */
   const inventoryLookup = useMemo(() => buildInventoryLookup(items), [items]);
+
+  const getFaultyRowMetaForRow = useCallback(
+    (item: InventoryItem) => getFaultyRowMeta(item, items, inventoryLookup),
+    [items, inventoryLookup],
+  );
+
+  const isDesktopViewport = useDesktopInventoryViewport();
+  const autoWidthsReady = useIdleReady(800);
 
   // Ensure matching nested bundles reopen if the user had collapsed them
   useEffect(() => {
@@ -2333,6 +2342,7 @@ const InventoryList: React.FC<Props> = ({
     () =>
       visibleColumns.filter(
         (id) =>
+          id !== 'presence' &&
           id !== 'status' &&
           id !== 'sellPrice' &&
           id !== 'suggestedHubSplit' &&
@@ -2342,6 +2352,19 @@ const InventoryList: React.FC<Props> = ({
       ),
     [visibleColumns]
   );
+
+  /** Inline flags in item column — no separate Flags column. */
+  const compactInventoryColumns = useMemo(
+    () => visibleColumns.filter((id) => id !== 'presence'),
+    [visibleColumns]
+  );
+
+  const desktopTableColumns = useMemo(() => {
+    if (splitView) return visibleColumns;
+    if (statusFilter === 'ACTIVE') return activeInventoryColumns;
+    if (statusFilter === 'SOLD' || statusFilter === 'ALL') return compactInventoryColumns;
+    return compactInventoryColumns;
+  }, [splitView, statusFilter, visibleColumns, activeInventoryColumns, compactInventoryColumns]);
 
   const [draggingColumnId, setDraggingColumnId] = useState<ColumnId | null>(null);
   const [dragOverColumnId, setDragOverColumnId] = useState<ColumnId | null>(null);
@@ -2592,14 +2615,16 @@ const InventoryList: React.FC<Props> = ({
 
   const autoColumnWidthsRaw = useMemo(
     () =>
-      computeAutoColumnWidths(
-        autoWidthSourceItems,
-        items,
-        listDensity,
-        resolveItemBulkImportId,
-        sortConfig.key
-      ),
-    [autoWidthSourceItems, items, fontsReadyTick, listDensity, resolveItemBulkImportId, sortConfig.key]
+      autoWidthsReady
+        ? computeAutoColumnWidths(
+            autoWidthSourceItems,
+            items,
+            listDensity,
+            resolveItemBulkImportId,
+            sortConfig.key
+          )
+        : ({} as Partial<Record<ColumnId, number>>),
+    [autoWidthsReady, autoWidthSourceItems, items, fontsReadyTick, listDensity, resolveItemBulkImportId, sortConfig.key]
   );
   // QW2: keep a stable identity while the computed values are unchanged (typing in search
   // recomputes this every keystroke, but the numbers almost never differ).
@@ -2672,7 +2697,7 @@ const InventoryList: React.FC<Props> = ({
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const activeTableRef = useRef<HTMLDivElement>(null);
   const soldTableRef = useRef<HTMLDivElement>(null);
-  const rowHeightEstimate = listDensity === 'compact' ? 97 : 113;
+  const rowHeightEstimate = listDensity === 'compact' ? 56 : 64;
 
   const snapshotInventoryScrollTops = useCallback((): Map<HTMLDivElement, number> => {
     const tops = new Map<HTMLDivElement, number>();
@@ -3607,7 +3632,14 @@ const InventoryList: React.FC<Props> = ({
      setSelectedIds([]);
   };
 
-  const renderCell = (item: InventoryItem, id: ColumnId, isSelected: boolean, _itemFlexWidth?: number | null, paneScrollPerf = false) => {
+  const renderCell = (
+    item: InventoryItem,
+    id: ColumnId,
+    isSelected: boolean,
+    rowColumns: ColumnId[],
+    _itemFlexWidth?: number | null,
+    paneScrollPerf = false,
+  ) => {
     const width = effectiveColumnWidths[id] || columnWidths[id] || DEFAULT_WIDTHS[id];
     const itemLocked = id === 'item' && manualWidthColumns.has('item');
     const style =
@@ -3615,6 +3647,23 @@ const InventoryList: React.FC<Props> = ({
         ? { minWidth: `${width}px`, width: 'auto' as const, maxWidth: 'none' as const }
         : { width: `${width}px`, minWidth: `${width}px`, maxWidth: `${width}px` };
     const dense = paneScrollPerf || listDensity === 'compact';
+    const flagsInline = !rowColumns.includes('presence');
+
+    const flagsCellNode = (
+      <InventoryFlagsCell
+        item={item}
+        dense={dense}
+        items={items}
+        inventoryLookup={inventoryLookup}
+        bulkImportFilterId={bulkImportFilterId}
+        activeBgCardItemIds={activeBgCardItemIds}
+        bgCardJobs={bgCardJobs}
+        itemAiCardCounts={itemAiCardCounts}
+        aiCardRegenConfirmId={aiCardRegenConfirmId}
+        actions={flagsCellActions}
+      />
+    );
+
     switch (id) {
       case 'select':
         return (
@@ -3625,10 +3674,11 @@ const InventoryList: React.FC<Props> = ({
           </td>
         );
       case 'presence':
+        if (flagsInline) return null;
         return (
           <td
             key={id}
-            className="inv-col-icons border-r border-slate-100/90 align-middle overflow-visible"
+            className="inv-col-icons border-r border-slate-100/90 align-top overflow-visible"
             style={{
               width: `${width}px`,
               minWidth: `${width}px`,
@@ -3637,18 +3687,7 @@ const InventoryList: React.FC<Props> = ({
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <InventoryFlagsCell
-              item={item}
-              dense={dense}
-              items={items}
-              inventoryLookup={inventoryLookup}
-              bulkImportFilterId={bulkImportFilterId}
-              activeBgCardItemIds={activeBgCardItemIds}
-              bgCardJobs={bgCardJobs}
-              itemAiCardCounts={itemAiCardCounts}
-              aiCardRegenConfirmId={aiCardRegenConfirmId}
-              actions={flagsCellActions}
-            />
+            {flagsCellNode}
           </td>
         );
       case 'item':
@@ -3679,6 +3718,8 @@ const InventoryList: React.FC<Props> = ({
         const tradeReceived = resolveTradeReceivedItems(item, itemsById);
         const tradeSource = resolveTradeSourceItem(item, itemsById);
         const quickBundleOpenHere = quickBundleSeed?.id === item.id;
+        const selfFaulty = inventoryItemIsFaulty(item);
+        const faultyChildCount = childItems.filter(inventoryItemIsFaulty).length;
         return (
           <td
             key={id}
@@ -3690,15 +3731,7 @@ const InventoryList: React.FC<Props> = ({
               handleRowClick(item, isEditingName);
             }}
           >
-             <div className="flex items-start gap-2.5 cursor-pointer group/cell w-full h-full py-0.5">
-                <ItemListPhotoChip
-                  item={item}
-                  dense={dense}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openAddPhotosModal([item.id]);
-                  }}
-                />
+             <div className="flex items-start cursor-pointer group/cell w-full h-full py-0.5">
                 <div className="flex-1 min-w-0 flex flex-col h-full min-h-0">
                    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-1 items-center w-full min-w-0">
                       <div className="flex items-center gap-2 min-w-0">
@@ -3768,7 +3801,30 @@ const InventoryList: React.FC<Props> = ({
                           Split
                         </span>
                       )}
+                      {selfFaulty && (
+                        <span
+                          className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase bg-red-500/10 text-red-600 border border-red-500/40"
+                          title="Marked as defective / for parts"
+                        >
+                          <AlertTriangle size={9} strokeWidth={2.5} />
+                          DEFEKT
+                        </span>
+                      )}
+                      {!selfFaulty && faultyChildCount > 0 && (
+                        <span
+                          className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase bg-red-500/10 text-red-600/90 border border-red-500/30"
+                          title={`${faultyChildCount} defective part(s) in this container`}
+                        >
+                          <AlertTriangle size={9} strokeWidth={2.5} />
+                          {faultyChildCount} defekt
+                        </span>
+                      )}
                       </div>
+                      {flagsInline ? (
+                        <div className="shrink-0 ml-auto pl-1" onClick={(e) => e.stopPropagation()}>
+                          {flagsCellNode}
+                        </div>
+                      ) : (
                       <div className="flex items-center gap-1 shrink-0 justify-self-end">
                             <ItemAccessoryToggles
                               item={item}
@@ -3781,78 +3837,12 @@ const InventoryList: React.FC<Props> = ({
                               }
                             />
                           </div>
+                      )}
                    </div>
                    {(() => {
                      const showContainerKinds = isContainerRow;
-                     const showAnalyzer =
-                       !paneScrollPerf &&
-                       (item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED) &&
-                       !item.parentContainerId;
-                     if (!showContainerKinds && !showAnalyzer) return null;
-                     const analyzerChips =
-                       showAnalyzer
-                         ? (() => {
-                             const sugg = suggestedEbayById.get(item.id) || null;
-                             const analyzer = computePriceAnalyzer(item, sugg, items);
-                             if (!analyzer) return null;
-                             const channelBadgeClass = (
-                               channel: 'KA' | 'EB',
-                               action: PriceAnalyzerAction,
-                             ) => {
-                               if (action === 'drop')
-                                 return 'bg-amber-50 text-amber-950 border-amber-300';
-                               if (action === 'raise')
-                                 return 'bg-sky-50 text-sky-950 border-sky-300';
-                               if (channel === 'KA')
-                                 return 'bg-emerald-100 text-emerald-950 border-emerald-400';
-                               return 'bg-orange-100 text-orange-800 border-orange-300';
-                             };
-                             const shortChannelLabel = (ch: {
-                               action: PriceAnalyzerAction;
-                               channel: string;
-                               suggest: number;
-                               live?: number;
-                             }) => {
-                               if (ch.action === 'drop')
-                                 return `↓${ch.channel} €${Math.round(ch.live || 0)}→€${Math.round(ch.suggest)}`;
-                               if (ch.action === 'raise')
-                                 return `↑${ch.channel} €${Math.round(ch.live || 0)}→€${Math.round(ch.suggest)}`;
-                               if (ch.action === 'ok')
-                                 return `OK ${ch.channel} €${Math.round(ch.live || ch.suggest)}`;
-                               return `${ch.channel} €${Math.round(ch.suggest)}`;
-                             };
-                             const saveSuggest = () => {
-                               const fresh =
-                                 resolveSuggestedEbayList(item, items, loadFlipFees(), childItems) ||
-                                 sugg;
-                               if (!fresh) return;
-                               onUpdate(
-                                 [{ ...item, ...suggestionPatchFromPrice(fresh) }],
-                                 undefined,
-                                 { skipActionLog: true }
-                               );
-                               setToast(
-                                 `Saved price target · Day ${fresh.daysHeld ?? analyzer.daysHeld} · ${Math.round((fresh.targetMargin ?? analyzer.targetMarginPct / 100) * 100)}% · KA €${formatEUR(fresh.kleinList)} · EB €${formatEUR(fresh.ebayList)}`
-                               );
-                               setTimeout(() => setToast(null), 2600);
-                             };
-                             return analyzer.channels.map((ch) => (
-                               <button
-                                 key={ch.channel}
-                                 type="button"
-                                 onClick={saveSuggest}
-                                 title={ch.label}
-                                 className={`inline-flex items-center px-1.5 py-0.5 rounded border text-[9px] font-black uppercase tracking-wide tabular-nums ${channelBadgeClass(ch.channel, ch.action)}`}
-                               >
-                                 {shortChannelLabel(ch)}
-                               </button>
-                             ));
-                           })()
-                         : null;
-                     if (!showContainerKinds && !analyzerChips) return null;
+                     if (!showContainerKinds) return null;
                      return (
-                   <>
-                     {showContainerKinds ? (
                    <div
                      className="flex items-center gap-1 flex-wrap mt-0.5"
                      data-perf-hide=""
@@ -3884,17 +3874,6 @@ const InventoryList: React.FC<Props> = ({
                          );
                        })}
                    </div>
-                     ) : null}
-                     {analyzerChips ? (
-                   <div
-                     className="flex items-center gap-1 flex-wrap mt-0.5"
-                     data-scroll-defer-heavy=""
-                     onClick={(e) => e.stopPropagation()}
-                   >
-                     {analyzerChips}
-                   </div>
-                     ) : null}
-                   </>
                      );
                    })()}
                    <div data-scroll-defer-heavy="" className="mt-0.5 flex flex-wrap items-center gap-1 min-w-0 max-w-full">
@@ -3988,11 +3967,14 @@ const InventoryList: React.FC<Props> = ({
                             const isEditingChildName =
                               editingCell?.itemId === liveChild.id && editingCell?.field === 'item';
                             const childTone = resolveComponentPartTone(liveChild);
+                            const childIsFaulty = inventoryItemIsFaulty(liveChild);
                             return (
                             <div
                               key={`${liveChild.id}:${liveChild.name}`}
                               className={`flex items-center gap-2 py-px pl-1.5 pr-1 rounded-sm transition-colors w-full min-w-0 border-l-[3px] ${
-                                  liveChild.isSplitRemainder
+                                  childIsFaulty
+                                    ? 'bg-red-50/70 hover:bg-red-50/90'
+                                    : liveChild.isSplitRemainder
                                     ? 'bg-violet-100/50 hover:bg-violet-100/80'
                                     : childHit
                                       ? 'bg-amber-100/80 ring-1 ring-amber-200/80'
@@ -4001,7 +3983,9 @@ const InventoryList: React.FC<Props> = ({
                                         : 'hover:bg-violet-100/70'
                                 }`}
                               style={{
-                                borderLeftColor: liveChild.isSplitRemainder
+                                borderLeftColor: childIsFaulty
+                                  ? '#ef4444'
+                                  : liveChild.isSplitRemainder
                                   ? '#7c3aed'
                                   : childTone?.accentHex || (item.isPC ? '#6366f1' : '#8b5cf6'),
                               }}
@@ -4060,12 +4044,22 @@ const InventoryList: React.FC<Props> = ({
                                 <span className={`block text-[11px] truncate ${
                                   liveChild.isSplitRemainder ? 'font-black' : 'font-medium'
                                 } ${
-                                  item.isPC
+                                  childIsFaulty
+                                    ? 'text-red-900 group-hover/child:text-red-950'
+                                    : item.isPC
                                     ? 'text-indigo-900 group-hover/child:text-indigo-950'
                                     : 'text-violet-900 group-hover/child:text-violet-950'
                                 }`}>
                                   {liveChild.name}
                                 </span>
+                                {childIsFaulty && (
+                                  <span
+                                    className="shrink-0 px-1 rounded text-[8px] font-bold bg-red-500/10 text-red-600 border border-red-500/40"
+                                    title="Marked as defective / for parts"
+                                  >
+                                    DEFEKT
+                                  </span>
+                                )}
                               </button>
                               )}
                               {isSoldContainerRow ? (
@@ -4180,58 +4174,6 @@ const InventoryList: React.FC<Props> = ({
                       </div>
                    )}
                    <div className="mt-auto pt-1.5 space-y-1.5 min-w-0 w-full">
-                     {item.status === ItemStatus.SOLD && (() => {
-                        const hasBuyerInfo = Boolean(item.customer?.name || item.ebayUsername || item.ebayOrderId);
-                        const openBuyerEditor = (e: React.MouseEvent) => {
-                          e.stopPropagation();
-                          addRecentItemId(item.id);
-                          setItemToEditBuyer(item);
-                        };
-                        const openOrderFinder = (e: React.MouseEvent) => {
-                          e.stopPropagation();
-                          addRecentItemId(item.id);
-                          setItemToFindOrder(item);
-                        };
-                        return (
-                          <div className="flex items-center gap-1.5 min-w-0 w-full">
-                            <button
-                              type="button"
-                              onClick={openBuyerEditor}
-                              className={`text-[9px] font-bold flex items-center gap-1 rounded-lg border transition-colors min-w-0 flex-1 overflow-hidden ${
-                                hasBuyerInfo
-                                  ? 'text-slate-600 bg-slate-50 px-2 py-1 border-slate-100 hover:bg-slate-100 hover:border-slate-200'
-                                  : 'text-indigo-800 bg-indigo-50 px-2 py-1 border-indigo-200 hover:bg-indigo-100'
-                              }`}
-                              title="Open buyer & eBay order editor — paste order ID, upload screenshot for AI parse, or type manually"
-                            >
-                              {hasBuyerInfo ? (
-                                <>
-                                  <Info size={10} className="text-slate-400 shrink-0" />
-                                  <span className="truncate min-w-0">
-                                    {item.customer?.name || 'Buyer'}
-                                    {item.ebayUsername ? ` · eBay: ${item.ebayUsername}` : ''}
-                                    {item.ebayOrderId ? ` · #${item.ebayOrderId}` : ''}
-                                  </span>
-                                </>
-                              ) : (
-                                <>
-                                  <User size={10} className="shrink-0" />
-                                  <span className="truncate">Add eBay order & buyer</span>
-                                </>
-                              )}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={openOrderFinder}
-                              className="shrink-0 p-1.5 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
-                              title="Find an eBay order from Abrechnung to link to this item"
-                              aria-label="Find eBay order to link"
-                            >
-                              <Search size={10} />
-                            </button>
-                          </div>
-                        );
-                     })()}
                      {item.status !== ItemStatus.SOLD && isRealizedDisposal(item) && (item.customer?.name || item.giftRecipient || item.ebayUsername || item.ebayOrderId) && (
                         <p
                           className="text-[9px] text-slate-600 font-medium flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-lg border border-slate-100"
@@ -4659,11 +4601,18 @@ const InventoryList: React.FC<Props> = ({
   const renderCellRef = useRef(renderCell);
   renderCellRef.current = renderCell;
   const renderRowCells = useCallback(
-    (item: InventoryItem, isSelected: boolean, itemFlexWidth?: number | null, paneScrollPerf = false) =>
-      visibleColumns.map((colId) => renderCellRef.current(item, colId, isSelected, itemFlexWidth, paneScrollPerf)),
-    // InventoryTableRow is React.memo'd and only re-renders when this function's identity
-    // changes (see its comparator) — every toggle that changes what a cell renders, even
-    // via the renderCellRef indirection, has to be listed here or rows go stale until reload.
+    (
+      item: InventoryItem,
+      isSelected: boolean,
+      itemFlexWidth?: number | null,
+      paneScrollPerf = false,
+      rowColumns?: ColumnId[],
+    ) => {
+      const cols = rowColumns ?? visibleColumns;
+      return cols.map((colId) =>
+        renderCellRef.current(item, colId, isSelected, cols, itemFlexWidth, paneScrollPerf),
+      );
+    },
     [visibleColumns, effectiveColumnWidths, showPriceBreakdown, hideSellDeductions, listDensity, scrollPerfMode]
   );
 
@@ -5060,9 +5009,6 @@ const InventoryList: React.FC<Props> = ({
   return (
     <div
       className="inventory-ui flex-1 min-h-0 h-full flex flex-col gap-1 overflow-hidden relative"
-      // 5% smaller across the board (sold + active) — `zoom` scales fonts, padding,
-      // borders and icons together instead of hand-tuning every Tailwind size class.
-      style={{ zoom: 0.95 } as React.CSSProperties}
     >
       <header className="shrink-0 space-y-1">
          {bulkImportFilterId && (
@@ -6452,6 +6398,7 @@ const InventoryList: React.FC<Props> = ({
       )}
 
       {/* Shared list shells — only the inner items swap between Active / Sold / Purchases / Hub orders */}
+      {!isDesktopViewport && (
       <div
         className="lg:hidden flex-1 min-h-0 px-2.5 pt-1 pb-[calc(6rem+env(safe-area-inset-bottom))] overflow-y-auto overscroll-y-contain touch-pan-y custom-scrollbar space-y-2.5 bg-slate-950"
         style={{ WebkitOverflowScrolling: 'touch' }}
@@ -6546,6 +6493,7 @@ const InventoryList: React.FC<Props> = ({
             })
           )}
       </div>
+      )}
 
       {/* Mobile Quick Bundle — desktop embeds the panel in the table row (hidden on phones). */}
       {quickBundleSeed && (
@@ -6604,23 +6552,21 @@ const InventoryList: React.FC<Props> = ({
 
       {/* Table scrolls in remaining height; bulk bar is a separate row below (never overlays rows) */}
       <style>{`
-        [data-inventory-table] { zoom: 1.05; }
         [data-inventory-table] tbody > tr > td { padding: 0.28rem 0.75rem !important; vertical-align: top !important; text-align: center !important; }
         [data-inventory-table] tbody > tr > td.inv-col-money { vertical-align: top !important; }
         [data-inventory-table] tbody > tr > td.inv-col-money { line-height: 1.25 !important; }
         [data-inventory-table] tbody > tr > td.inv-col-item { text-align: left !important; }
-        [data-inventory-table] tbody > tr > td.inv-col-icons { padding: 0.25rem 0.35rem !important; overflow: visible !important; }
+        [data-inventory-table] tbody > tr > td.inv-col-icons { padding: 0.25rem 0.35rem !important; overflow: visible !important; vertical-align: top !important; }
         [data-inventory-table] tbody > tr > td.inv-col-hub-sell { padding-right: 1.15rem !important; }
         [data-inventory-table] tbody > tr > td.inv-col-date { padding-left: 0.55rem !important; padding-right: 0.55rem !important; }
         [data-inventory-table] tbody > tr > td.inv-col-platform { padding-left: 0.5rem !important; padding-right: 0.55rem !important; vertical-align: top !important; }
         [data-inventory-table] thead th.inv-col-hub-sell > div:first-of-type { padding-right: 1.15rem !important; }
         [data-inventory-table] thead th.inv-col-date > div:first-of-type { padding-left: 0.55rem !important; padding-right: 0.55rem !important; }
         [data-inventory-table] thead th.inv-col-platform > div:first-of-type { padding-left: 0.5rem !important; padding-right: 0.55rem !important; }
-        [data-inventory-table] thead th.inv-col-item > div:first-of-type { padding-left: 3.625rem !important; }
         [data-inventory-table] tbody > tr > td.inv-col-soak,
         [data-inventory-table] thead th.inv-col-soak { padding: 0 !important; }
         [data-inventory-table] thead th > div:first-of-type { padding: 0.28rem 0.75rem !important; min-height: 1.65rem !important; }
-        [data-inventory-table] thead th { font-size: 0.625rem; letter-spacing: 0.04em; text-align: center; }
+        [data-inventory-table] thead th { text-align: center; }
         [data-inventory-table] thead th.inv-col-item { text-align: left; }
         [data-density="compact"][data-inventory-table] tbody > tr > td { padding: 0.16rem 0.625rem !important; }
         [data-density="compact"][data-inventory-table] tbody > tr > td.inv-col-icons { padding: 0.14rem 0.3rem !important; }
@@ -6630,11 +6576,7 @@ const InventoryList: React.FC<Props> = ({
         [data-density="compact"][data-inventory-table] thead th.inv-col-hub-sell > div:first-of-type { padding-right: 1rem !important; }
         [data-density="compact"][data-inventory-table] thead th.inv-col-date > div:first-of-type { padding-left: 0.45rem !important; padding-right: 0.45rem !important; }
         [data-density="compact"][data-inventory-table] thead th.inv-col-platform > div:first-of-type { padding-left: 0.4rem !important; padding-right: 0.45rem !important; }
-        [data-density="compact"][data-inventory-table] thead th.inv-col-item > div:first-of-type { padding-left: 3.25rem !important; }
         [data-density="compact"][data-inventory-table] thead th > div:first-of-type { padding: 0.16rem 0.625rem !important; min-height: 1.35rem !important; }
-        [data-density="compact"] .text-sm { font-size: 0.6875rem; line-height: 1.2; }
-        [data-density="compact"] .text-xs { font-size: 0.625rem; line-height: 1.2; }
-        [data-density="comfortable"] .text-sm { line-height: 1.25; }
         [data-bulk-batch] tbody > tr > td:first-child { box-shadow: inset 3px 0 0 #8b5cf6; }
       `}</style>
       {splitView && !isSpecialListTab(statusFilter) ? (
@@ -6665,6 +6607,7 @@ const InventoryList: React.FC<Props> = ({
             selectedIdSet={selectedIdSet}
             renderRowCells={renderRowCells}
             getRowActivityKey={getRowActivityKey}
+            getFaultyRowMetaForRow={getFaultyRowMetaForRow}
             highlightedItemId={highlightedItemId}
             rowHeightEstimate={rowHeightEstimate}
             collapsedBundles={collapsedBundles}
@@ -6677,7 +6620,7 @@ const InventoryList: React.FC<Props> = ({
             paneLabel="Sold"
             paneExtra={null}
             scrollRef={soldTableRef}
-            visibleColumns={visibleColumns}
+            visibleColumns={compactInventoryColumns}
             columnWidths={effectiveColumnWidths}
             manualWidthColumns={manualWidthColumns}
             listDensity={listDensity}
@@ -6696,6 +6639,7 @@ const InventoryList: React.FC<Props> = ({
             selectedIdSet={selectedIdSet}
             renderRowCells={renderRowCells}
             getRowActivityKey={getRowActivityKey}
+            getFaultyRowMetaForRow={getFaultyRowMetaForRow}
             highlightedItemId={highlightedItemId}
             rowHeightEstimate={rowHeightEstimate}
             collapsedBundles={collapsedBundles}
@@ -6724,7 +6668,7 @@ const InventoryList: React.FC<Props> = ({
           paneItems={sortedItems}
           paneStatus={statusFilter}
           scrollRef={tableContainerRef}
-          visibleColumns={visibleColumns}
+          visibleColumns={desktopTableColumns}
           columnWidths={effectiveColumnWidths}
           manualWidthColumns={manualWidthColumns}
           listDensity={listDensity}
@@ -6743,6 +6687,7 @@ const InventoryList: React.FC<Props> = ({
           selectedIdSet={selectedIdSet}
           renderRowCells={renderRowCells}
           getRowActivityKey={getRowActivityKey}
+          getFaultyRowMetaForRow={getFaultyRowMetaForRow}
           highlightedItemId={highlightedItemId}
           rowHeightEstimate={rowHeightEstimate}
           collapsedBundles={collapsedBundles}
@@ -7430,15 +7375,19 @@ const InventoryList: React.FC<Props> = ({
   );
 };
 
-/** Below this count, native table scrolling is smoother than virtualized absolute rows. */
-const INVENTORY_VIRTUAL_THRESHOLD = 40;
-
 type InventoryTableBodyProps = {
   sortedItems: InventoryItem[];
   selectedIdSet: Set<string>;
   visibleColumns: ColumnId[];
-  renderRowCells: (item: InventoryItem, isSelected: boolean, itemFlexWidth?: number | null, paneScrollPerf?: boolean) => React.ReactNode;
+  renderRowCells: (
+    item: InventoryItem,
+    isSelected: boolean,
+    itemFlexWidth?: number | null,
+    paneScrollPerf?: boolean,
+    rowColumns?: ColumnId[],
+  ) => React.ReactNode;
   getRowActivityKey: (item: InventoryItem) => string;
+  getFaultyRowMetaForRow: (item: InventoryItem) => FaultyRowMeta;
   highlightedItemId: string | null;
   scrollElement: HTMLDivElement | null;
   rowHeightEstimate: number;
@@ -7454,82 +7403,32 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
   visibleColumns,
   renderRowCells,
   getRowActivityKey,
+  getFaultyRowMetaForRow,
   highlightedItemId,
   scrollElement,
   rowHeightEstimate,
-  collapsedBundles,
+  collapsedBundles: _collapsedBundles,
   itemFlexWidth,
   soakSpacer = false,
   scrollPerfMode,
 }: InventoryTableBodyProps) {
-  const useVirtual = sortedItems.length > INVENTORY_VIRTUAL_THRESHOLD;
   const staticPaneScrollPerf = scrollPerfMode === 'on';
+  const itemIds = useMemo(() => sortedItems.map((i) => i.id), [sortedItems]);
 
-  // Precompute once per data/edit change — not on every virtualizer scroll frame.
-  const rowActivityKeyById = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const item of sortedItems) {
-      map.set(item.id, getRowActivityKey(item));
-    }
-    return map;
-  }, [sortedItems, getRowActivityKey]);
-
-  const estimateSize = useCallback(
-    (index: number) => {
-      const item = sortedItems[index];
-      if (!item) return rowHeightEstimate;
-      let h = rowHeightEstimate;
-      // Extra under-name rows only (OVP/IO live on the title row now — do not pad every row).
-      if (item.isPC || item.isBundle) h += 16;
-      if (
-        !staticPaneScrollPerf &&
-        (item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED) &&
-        !item.parentContainerId
-      ) {
-        h += 14; // price-analyzer chips
-      }
-      if (
-        isRealizedDisposal(item) &&
-        (item.customer?.name || item.giftRecipient || item.ebayUsername || item.ebayOrderId)
-      ) {
-        h += 18;
-      }
-      if ((item.tradedForIds?.length ?? 0) > 0 || item.tradedFromId) {
-        h += 22;
-      }
-      if (item.parentContainerId || item.status === ItemStatus.IN_COMPOSITION) h += 22;
-      if (!collapsedBundles.has(item.id) && (item.isPC || item.isBundle)) {
-        const childCount = Math.max(1, item.componentIds?.length ?? 3);
-        h += childCount * 18 + 10;
-      }
-      return h;
-    },
-    [sortedItems, rowHeightEstimate, collapsedBundles, staticPaneScrollPerf]
-  );
-
-  const rowVirtualizer = useVirtualizer({
-    count: sortedItems.length,
-    getScrollElement: () => scrollElement,
-    estimateSize,
-    // Fixed estimates only — measureElement during scroll causes layout thrash / jumpy feel.
-    overscan: 12,
-    // Briefly treat scroll as active after the last wheel/touch so deferred chrome stays hidden.
-    isScrollingResetDelay: 120,
-    getItemKey: (index) => sortedItems[index]?.id ?? index,
+  const virtual = useInventoryVirtualRows({
+    ids: itemIds,
+    scrollElement,
+    estimate: rowHeightEstimate,
+    overscan: 6,
+    threshold: 60,
   });
 
-  const itemCount = sortedItems.length;
-  const collapsedSig = useMemo(() => {
-    if (collapsedBundles.size === 0) return '';
-    return Array.from(collapsedBundles).join('\0');
-  }, [collapsedBundles]);
+  const visibleItems = useMemo(
+    () => sortedItems.slice(virtual.start, virtual.end),
+    [sortedItems, virtual.start, virtual.end],
+  );
 
-  useLayoutEffect(() => {
-    if (!useVirtual) return;
-    // Refresh estimated positions after expand/collapse or list length change — never on scroll.
-    rowVirtualizer.measure();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [useVirtual, itemCount, collapsedSig, rowHeightEstimate]);
+  const colCount = visibleColumns.length + (soakSpacer ? 1 : 0);
 
   if (sortedItems.length === 0) {
     return (
@@ -7545,65 +7444,32 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
     );
   }
 
-  if (!useVirtual) {
-    return (
-      <tbody className="divide-y divide-slate-50">
-        {sortedItems.map((item) => (
-          <InventoryTableRow
-            key={item.id}
-            item={item}
-            isSelected={selectedIdSet.has(item.id)}
-            visibleColumns={visibleColumns}
-            renderRowCells={renderRowCells}
-            itemFlexWidth={itemFlexWidth}
-            soakSpacer={soakSpacer}
-            paneScrollPerf={staticPaneScrollPerf}
-            rowActivityKey={rowActivityKeyById.get(item.id) ?? ''}
-            highlighted={highlightedItemId === item.id}
-          />
-        ))}
-      </tbody>
-    );
-  }
-
-  const colCount = visibleColumns.length + (soakSpacer ? 1 : 0);
-  const virtualItems = rowVirtualizer.getVirtualItems();
-  const topSpacer = virtualItems.length > 0 ? virtualItems[0].start : 0;
-  const bottomSpacer =
-    virtualItems.length > 0
-      ? rowVirtualizer.getTotalSize() - virtualItems[virtualItems.length - 1].end
-      : 0;
-
   return (
-    <tbody
-      className={`divide-y divide-slate-50${rowVirtualizer.isScrolling ? ' inv-is-scrolling' : ''}`}
-    >
-      {topSpacer > 0 && (
-        <tr aria-hidden="true" className="pointer-events-none border-0">
-          <td colSpan={colCount} className="!p-0 !border-0" style={{ height: `${topSpacer}px` }} />
+    <tbody className="divide-y divide-slate-50">
+      {virtual.padTop > 0 && (
+        <tr aria-hidden className="pointer-events-none border-0">
+          <td colSpan={colCount} className="!p-0 !border-0" style={{ height: `${virtual.padTop}px` }} />
         </tr>
       )}
-      {virtualItems.map((virtualRow) => {
-        const item = sortedItems[virtualRow.index]!;
-        return (
-          <InventoryTableRow
-            key={item.id}
-            item={item}
-            isSelected={selectedIdSet.has(item.id)}
-            visibleColumns={visibleColumns}
-            renderRowCells={renderRowCells}
-            itemFlexWidth={itemFlexWidth}
-            soakSpacer={soakSpacer}
-            paneScrollPerf={staticPaneScrollPerf}
-            rowActivityKey={rowActivityKeyById.get(item.id) ?? ''}
-            highlighted={highlightedItemId === item.id}
-            virtualIndex={virtualRow.index}
-          />
-        );
-      })}
-      {bottomSpacer > 0 && (
-        <tr aria-hidden="true" className="pointer-events-none border-0">
-          <td colSpan={colCount} className="!p-0 !border-0" style={{ height: `${bottomSpacer}px` }} />
+      {visibleItems.map((item) => (
+        <InventoryTableRow
+          key={item.id}
+          item={item}
+          isSelected={selectedIdSet.has(item.id)}
+          visibleColumns={visibleColumns}
+          renderRowCells={renderRowCells}
+          itemFlexWidth={itemFlexWidth}
+          soakSpacer={soakSpacer}
+          paneScrollPerf={staticPaneScrollPerf}
+          rowActivityKey={getRowActivityKey(item)}
+          faultyMeta={getFaultyRowMetaForRow(item)}
+          highlighted={highlightedItemId === item.id}
+          rowMeasureRef={virtual.measureRef(item.id)}
+        />
+      ))}
+      {virtual.padBottom > 0 && (
+        <tr aria-hidden className="pointer-events-none border-0">
+          <td colSpan={colCount} className="!p-0 !border-0" style={{ height: `${virtual.padBottom}px` }} />
         </tr>
       )}
     </tbody>
@@ -7614,27 +7480,47 @@ type InventoryTableRowProps = {
   item: InventoryItem;
   isSelected: boolean;
   visibleColumns: ColumnId[];
-  renderRowCells: (item: InventoryItem, isSelected: boolean, itemFlexWidth?: number | null, paneScrollPerf?: boolean) => React.ReactNode;
+  renderRowCells: (
+    item: InventoryItem,
+    isSelected: boolean,
+    itemFlexWidth?: number | null,
+    paneScrollPerf?: boolean,
+    rowColumns?: ColumnId[],
+  ) => React.ReactNode;
   /** Bumps when inline edit / AI spinners / Flags + panel / collapse affect this row so memo does not skip updates. */
   rowActivityKey: string;
+  faultyMeta: FaultyRowMeta;
   highlighted?: boolean;
-  virtualIndex?: number;
+  rowMeasureRef?: (node: HTMLElement | null) => void;
   paneScrollPerf?: boolean;
   itemFlexWidth?: number | null;
   soakSpacer?: boolean;
 };
 
 const InventoryTableRow = React.memo(
-  function InventoryTableRow({ item, isSelected, renderRowCells, highlighted, virtualIndex, itemFlexWidth, soakSpacer, paneScrollPerf = false }: InventoryTableRowProps) {
+  function InventoryTableRow({
+    item,
+    isSelected,
+    visibleColumns,
+    renderRowCells,
+    faultyMeta,
+    highlighted,
+    rowMeasureRef,
+    itemFlexWidth,
+    soakSpacer,
+    paneScrollPerf = false,
+  }: InventoryTableRowProps) {
+    const childCount = item.componentIds?.length ?? 0;
     return (
       <tr
-        data-index={virtualIndex}
+        ref={rowMeasureRef}
         data-inventory-item-id={item.id}
         data-container={isInventoryContainer(item) ? (item.isPC ? 'pc' : 'bundle') : undefined}
-        className={containerRowClassName(item, isSelected, Boolean(highlighted))}
-        style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 88px' }}
+        data-faulty={faultyMeta.showRowIndicator ? '' : undefined}
+        data-selected={isSelected ? '' : undefined}
+        className={containerRowClassName(item, isSelected, Boolean(highlighted), faultyMeta, childCount)}
       >
-        {renderRowCells(item, isSelected, itemFlexWidth, paneScrollPerf)}
+        {renderRowCells(item, isSelected, itemFlexWidth, paneScrollPerf, visibleColumns)}
         {soakSpacer ? <td className="inv-col-soak" aria-hidden /> : null}
       </tr>
     );
@@ -7649,7 +7535,8 @@ const InventoryTableRow = React.memo(
     prev.itemFlexWidth === next.itemFlexWidth &&
     prev.soakSpacer === next.soakSpacer &&
     prev.paneScrollPerf === next.paneScrollPerf &&
-    prev.virtualIndex === next.virtualIndex
+    prev.faultyMeta === next.faultyMeta &&
+    prev.rowMeasureRef === next.rowMeasureRef
 );
 
 type InventoryListTablePaneProps = {
@@ -7675,8 +7562,15 @@ type InventoryListTablePaneProps = {
   onColumnDragEnd: () => void;
   onSelectAll: () => void;
   selectedIdSet: Set<string>;
-  renderRowCells: (item: InventoryItem, isSelected: boolean, itemFlexWidth?: number | null, paneScrollPerf?: boolean) => React.ReactNode;
+  renderRowCells: (
+    item: InventoryItem,
+    isSelected: boolean,
+    itemFlexWidth?: number | null,
+    paneScrollPerf?: boolean,
+    rowColumns?: ColumnId[],
+  ) => React.ReactNode;
   getRowActivityKey: (item: InventoryItem) => string;
+  getFaultyRowMetaForRow: (item: InventoryItem) => FaultyRowMeta;
   highlightedItemId: string | null;
   rowHeightEstimate: number;
   collapsedBundles: Set<string>;
@@ -7709,6 +7603,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
   selectedIdSet,
   renderRowCells,
   getRowActivityKey,
+  getFaultyRowMetaForRow,
   highlightedItemId,
   rowHeightEstimate,
   collapsedBundles,
@@ -7761,6 +7656,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
       )}
       <div
         ref={attachScrollRef}
+        data-inv-scroll
         className="flex-1 min-h-0 overflow-x-auto overflow-y-auto custom-scrollbar pb-[4.75rem]"
         style={{ overflowAnchor: 'none', overscrollBehavior: 'contain' }}
       >
@@ -7930,6 +7826,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
             visibleColumns={visibleColumns}
             renderRowCells={renderRowCells}
             getRowActivityKey={getRowActivityKey}
+            getFaultyRowMetaForRow={getFaultyRowMetaForRow}
             highlightedItemId={highlightedItemId}
             scrollElement={scrollElement}
             rowHeightEstimate={rowHeightEstimate}

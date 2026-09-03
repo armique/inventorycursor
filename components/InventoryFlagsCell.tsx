@@ -665,7 +665,7 @@ const InventoryFlagsCell = React.memo(function InventoryFlagsCell({
       data-flags-strip
       className={`inline-flex flex-nowrap items-start justify-start ${dense ? 'gap-0' : 'gap-px'} w-max`}
     >
-      {showSell && (
+      {showSell ? (
         <button
           type="button"
           onClick={(e) => {
@@ -678,9 +678,11 @@ const InventoryFlagsCell = React.memo(function InventoryFlagsCell({
         >
           <ShoppingBag size={13} strokeWidth={2.25} />
         </button>
+      ) : (
+        renderFlagGhost(ShoppingBag, iconBtn)
       )}
 
-      {showDelete && (
+      {showDelete ? (
         <button
           type="button"
           onClick={(e) => {
@@ -693,6 +695,8 @@ const InventoryFlagsCell = React.memo(function InventoryFlagsCell({
         >
           <Trash2 size={13} strokeWidth={2.25} />
         </button>
+      ) : (
+        renderFlagGhost(Trash2, iconBtn)
       )}
 
       <button
