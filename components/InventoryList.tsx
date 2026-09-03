@@ -123,7 +123,7 @@ import QuickBundleAddModal from './QuickBundleAddModal';
 import SplitPartsModal from './SplitPartsModal';
 import { canSplitItem, resolveIdenticalLotQty } from '../utils/splitParts';
 import EditItemModal from './EditItemModal';
-import ItemThumbnail from './ItemThumbnail';
+import ItemListPhotoChip from './ItemListPhotoChip';
 import InvoiceView from './InvoiceView';
 import InventoryAISpecsPanel from './InventoryAISpecsPanel';
 import AddPhotosModal, { type AddPhotosApplyOptions } from './AddPhotosModal';
@@ -3618,7 +3618,6 @@ const InventoryList: React.FC<Props> = ({
         : { width: `${width}px`, minWidth: `${width}px`, maxWidth: `${width}px` };
     const dense = listDensity === 'compact';
     const iconBtn = dense ? 'h-6 w-6' : 'h-7 w-7';
-    const thumbPx = dense ? 32 : 36;
     /** Missing flag actions render nothing — row packs tight instead of reserving empty slots. */
     const iconSlotReserve = null;
 
@@ -4105,8 +4104,6 @@ const InventoryList: React.FC<Props> = ({
         const showMembershipBadge = Boolean(parentKind && parentContainer && !item.isPC && !item.isBundle);
         const tradeReceived = resolveTradeReceivedItems(item, itemsById);
         const tradeSource = resolveTradeSourceItem(item, itemsById);
-        const userPhotoCount = getItemUserPhotoCount(item);
-        const hasUserPhotos = userPhotoCount > 0;
         const quickBundleOpenHere = quickBundleSeed?.id === item.id;
         return (
           <td
@@ -4120,42 +4117,14 @@ const InventoryList: React.FC<Props> = ({
             }}
           >
              <div className="flex items-start gap-2.5 cursor-pointer group/cell w-full h-full py-0.5">
-                <div
-                  className={`relative shrink-0 self-start inline-block ${dense ? 'w-8 h-8' : 'w-9 h-9'} rounded-md cursor-pointer hover:opacity-90 transition-opacity ${
-                    hasUserPhotos
-                      ? 'ring-2 ring-emerald-500/45'
-                      : 'ring-1 ring-dashed ring-amber-400/80 bg-amber-50/40'
-                  }`}
-                  title={
-                    hasUserPhotos
-                      ? `${userPhotoCount} photo${userPhotoCount === 1 ? '' : 's'} — click to add more`
-                      : 'Click to add photos'
-                  }
+                <ItemListPhotoChip
+                  item={item}
+                  dense={dense}
                   onClick={(e) => {
                     e.stopPropagation();
                     openAddPhotosModal([item.id]);
                   }}
-                >
-                  <ItemThumbnail item={item} className={`${dense ? 'w-8 h-8' : 'w-9 h-9'} rounded-md object-cover border border-slate-100 shrink-0`} size={thumbPx} />
-                  <span
-                    className={`absolute -bottom-0.5 -right-0.5 min-w-[14px] h-3.5 px-0.5 rounded-full flex items-center justify-center shadow-sm ${
-                      hasUserPhotos
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-amber-100 text-amber-700 border border-amber-300'
-                    }`}
-                    aria-hidden
-                  >
-                    {hasUserPhotos ? (
-                      userPhotoCount > 1 ? (
-                        <span className="text-[8px] font-black leading-none">{userPhotoCount}</span>
-                      ) : (
-                        <Camera size={8} strokeWidth={2.5} />
-                      )
-                    ) : (
-                      <ImageOff size={8} strokeWidth={2.5} />
-                    )}
-                  </span>
-                </div>
+                />
                 <div className="flex-1 min-w-0 flex flex-col h-full min-h-0">
                    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-1 items-center w-full min-w-0">
                       <div className="flex items-center gap-2 min-w-0">

@@ -5,6 +5,7 @@ import { Cloud, CheckCircle2, Loader2, WifiOff, RefreshCw, X } from 'lucide-reac
 
 import PanelLayout from './components/PanelLayout';
 import { publishPanelSearchData } from './services/panelSearchStore';
+import { preloadInventoryList } from './utils/preloadPanelRoutes';
 import { SettingsModalProvider } from './context/SettingsModalContext';
 import SettingsModalHost from './components/SettingsModalHost';
 import OpenSettingsFromRoute from './components/OpenSettingsFromRoute';
@@ -732,6 +733,10 @@ const App: React.FC = () => {
   /** Set when another tab/window has saved newer inventory data than this tab has — this
    *  tab has stopped autosaving to avoid overwriting it. Reload to pick up the latest. */
   const [tabDataStale, setTabDataStale] = useState(false);
+
+  useEffect(() => {
+    if (appState === 'READY') preloadInventoryList();
+  }, [appState]);
   const abrechnungHealDoneRef = useRef(false);
   const bulkImportCrossLinkDoneRef = useRef(false);
   const healthInsuranceLedgerDoneRef = useRef(false);

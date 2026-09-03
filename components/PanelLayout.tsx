@@ -1,4 +1,4 @@
-import React, { Suspense } from 'react';
+import React, { Suspense, useCallback, useRef, useState } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
   Package, Settings, RefreshCw, Trash2, CloudUpload, LayoutDashboard,
@@ -22,9 +22,10 @@ import {
   OWNER_ADMIN_EMAIL,
   isLocalOrDevEnvironment,
 } from '../services/supabaseService';
-import GlobalSearch from './GlobalSearch';
+import ConnectedGlobalSearch from './ConnectedGlobalSearch';
+import PanelRouteHost from './PanelRouteHost';
 import { panelSuspenseFallback } from './RouteSkeletons';
-import { InventoryItem, Expense, BusinessSettings } from '../types';
+import { preloadInventoryList } from '../utils/preloadPanelRoutes';
 import { cloudSyncBadgeLabel, cloudSyncBadgeTitle } from '../utils/cloudSyncStatus';
 import { useStaleDealCount } from '../hooks/useInboxAlerts';
 
@@ -46,13 +47,19 @@ interface PanelLayoutProps {
   backupBannerDismissed?: boolean;
   onDismissBackupBanner?: () => void;
   tabDataStale?: boolean;
-  items?: InventoryItem[];
-  expenses?: Expense[];
-  businessSettings?: BusinessSettings;
-  onUpdateItems?: (items: InventoryItem[], deleteIds?: string[]) => void;
+  /** Legacy — full-screen cloud block removed; always false. */
+  cloudSyncBlocked?: boolean;
+  /** Non-blocking banner while cloud sync runs after login. */
+  cloudSyncInProgress?: boolean;
+  /** True when cloud data is loaded but the device is offline — edits disabled. */
+  cloudEditsBlockedOffline?: boolean;
+  syncStepLabel?: string;
+  syncProgress?: number;
 }
 
-const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, authReady = false, isAdmin = false, syncState = { status: 'idle', lastSynced: null }, onForcePush, backupBannerDismissed = true, onDismissBackupBanner, tabDataStale = false, items = [], expenses = [], businessSettings = { companyName: '', ownerName: '', address: '', phone: '', taxId: '', iban: '', bic: '', bankName: '', taxMode: 'SmallBusiness' }, onUpdateItems }) => {
+const INVENTORY_NAV_PATH = '/panel/inventory';
+
+const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, authReady = false, isAdmin = false, syncState = { status: 'idle', lastSynced: null }, onForcePush, backupBannerDismissed = true, onDismissBackupBanner, tabDataStale = false, cloudSyncBlocked = false, cloudSyncInProgress = false, cloudEditsBlockedOffline = false, syncStepLabel = '', syncProgress = 0 }) => {
   const location = useLocation();
   const { locale, setLocale } = usePanelLocale();
   const { openSettings } = useSettingsModal();
@@ -82,6 +89,10 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   /** Deals unresolved for 3+ days — flagged on Inventory, since the Inbox lives there. */
   const staleDealCount = useStaleDealCount();
   const mobileRedirectSignIn = prefersRedirectSignIn();
+
+  React.useEffect(() => {
+    preloadInventoryList();
+  }, []);
 
   // Lock document scroll while the panel shell owns nested scroll regions (esp. inventory on mobile).
   React.useEffect(() => {
@@ -118,6 +129,16 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   React.useEffect(() => {
     if (requireAuth) prewarmGoogleSignIn();
   }, [requireAuth]);
+
+  const routeKey = `${location.pathname}${location.search}`;
+  const paintedRouteRef = useRef(routeKey);
+  const [, bumpRoutePaint] = useState(0);
+  const showRouteSkeleton = paintedRouteRef.current !== routeKey;
+  const onRoutePainted = useCallback((paintedKey: string) => {
+    if (paintedRouteRef.current === paintedKey) return;
+    paintedRouteRef.current = paintedKey;
+    bumpRoutePaint((n) => n + 1);
+  }, []);
 
   if (authReady && authUser && !isAdmin) {
     return (
@@ -426,7 +447,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             </button>
           </div>
           {!sidebarCollapsed && (
-            <GlobalSearch items={items} expenses={expenses} businessSettings={businessSettings} />
+            <ConnectedGlobalSearch />
           )}
         </div>
 
@@ -495,6 +516,9 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
                 to={to}
                 title={sidebarCollapsed ? label : undefined}
                 aria-label={sidebarCollapsed ? label : undefined}
+                onMouseEnter={navPath === INVENTORY_NAV_PATH ? preloadInventoryList : undefined}
+                onFocus={navPath === INVENTORY_NAV_PATH ? preloadInventoryList : undefined}
+                onTouchStart={navPath === INVENTORY_NAV_PATH ? preloadInventoryList : undefined}
                 className={`flex items-center rounded-xl font-bold text-sm transition-all relative ${
                   sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2.5'
                 } ${
@@ -573,6 +597,31 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             : 'p-4 pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:p-8 lg:p-8 xl:p-10 2xl:p-12 md:pb-8'
         }`}
       >
+        {cloudEditsBlockedOffline && (
+          <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-slate-50/95 backdrop-blur-sm px-6 text-center">
+            <Loader2 size={40} className="animate-spin text-blue-600 mb-4" />
+            <p className="text-lg font-black text-slate-900">You are offline</p>
+            <p className="text-sm text-slate-500 mt-2 max-w-sm">
+              Editing is disabled until you reconnect. Your last saved cloud data is shown read-only.
+            </p>
+          </div>
+        )}
+        {cloudSyncInProgress && !cloudEditsBlockedOffline && (
+          <div className="shrink-0 mb-2 flex items-center gap-3 px-3 py-2 rounded-xl bg-blue-50 border border-blue-100 text-sm text-blue-900">
+            <Loader2 size={16} className="animate-spin text-blue-600 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="font-bold truncate">{syncStepLabel || 'Syncing with Supabase…'}</p>
+              {syncProgress > 0 && syncProgress < 100 && (
+                <div className="h-1.5 bg-blue-100 rounded-full mt-1.5 overflow-hidden">
+                  <div
+                    className="h-full bg-blue-600 transition-all duration-300"
+                    style={{ width: `${Math.max(8, Math.min(100, syncProgress))}%` }}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        )}
         {/* Mobile global search — skip on Stock (has its own search) */}
         {!location.pathname.startsWith('/panel/inventory') &&
           !location.pathname.startsWith('/panel/edit') &&
@@ -580,7 +629,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
           !location.pathname.startsWith('/panel/3d-print') &&
           !location.pathname.startsWith('/panel/ebay-abrechnung') && (
           <div className="md:hidden mb-4">
-            <GlobalSearch items={items} expenses={expenses} businessSettings={businessSettings} />
+            <ConnectedGlobalSearch />
           </div>
         )}
         {tabDataStale && (
@@ -637,12 +686,20 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
           <div
             className={
               isDockedPanelPage
-                ? 'flex-1 min-h-0 flex flex-col overflow-hidden'
-                : 'flex flex-col min-w-0'
+                ? 'flex-1 min-h-0 flex flex-col overflow-hidden relative'
+                : 'flex flex-col min-w-0 relative'
             }
           >
-            <Suspense fallback={panelSuspenseFallback(location.pathname)}>
-              <Outlet />
+            {showRouteSkeleton && (
+              <div className="absolute inset-0 z-30 flex flex-col min-h-0 bg-slate-50 pointer-events-none">
+                {panelSuspenseFallback(location.pathname)}
+              </div>
+            )}
+            <Suspense
+              key={routeKey}
+              fallback={panelSuspenseFallback(location.pathname)}
+            >
+              <PanelRouteHost routeKey={routeKey} onPainted={onRoutePainted} />
             </Suspense>
           </div>
         </div>
@@ -701,6 +758,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
               <Link
                 key={to}
                 to={to}
+                onTouchStart={to === INVENTORY_NAV_PATH ? preloadInventoryList : undefined}
                 className={`flex flex-col items-center justify-center flex-1 py-1 text-[10px] font-bold active:scale-95 transition-all ${
                   isActive ? 'text-emerald-400' : 'text-slate-400 hover:text-slate-200'
                 }`}
@@ -779,4 +837,25 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   );
 };
 
-export default React.memo(PanelLayout);
+function panelLayoutPropsEqual(prev: PanelLayoutProps, next: PanelLayoutProps): boolean {
+  return (
+    prev.isCloudEnabled === next.isCloudEnabled &&
+    prev.authUser === next.authUser &&
+    prev.authReady === next.authReady &&
+    prev.isAdmin === next.isAdmin &&
+    prev.syncState?.status === next.syncState?.status &&
+    prev.syncState?.lastSynced === next.syncState?.lastSynced &&
+    prev.syncState?.message === next.syncState?.message &&
+    prev.onForcePush === next.onForcePush &&
+    prev.backupBannerDismissed === next.backupBannerDismissed &&
+    prev.onDismissBackupBanner === next.onDismissBackupBanner &&
+    prev.tabDataStale === next.tabDataStale &&
+    prev.cloudSyncBlocked === next.cloudSyncBlocked &&
+    prev.cloudSyncInProgress === next.cloudSyncInProgress &&
+    prev.cloudEditsBlockedOffline === next.cloudEditsBlockedOffline &&
+    prev.syncStepLabel === next.syncStepLabel &&
+    prev.syncProgress === next.syncProgress
+  );
+}
+
+export default React.memo(PanelLayout, panelLayoutPropsEqual);
