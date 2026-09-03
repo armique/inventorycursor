@@ -1,21 +1,40 @@
 -- =============================================================================
 -- Action history: Part B fields (diff snapshots, operation grouping, append-only)
 -- =============================================================================
--- ArmikTech already has inventory_items.buy_price, component_ids (~ child_item_ids),
--- parent_container_id (~ bundle_id), movement_history, price_history, is_defective.
--- Those are NOT recreated here - see comments at the bottom.
---
--- MANDATORY before the new audit/undo UI can persist operation groups + diffs
--- to Supabase (localStorage still works without this migration):
---   1) This entire file
---
--- OPTIONAL (already present elsewhere):
---   - item_audit_log (20260831020000_item_audit_log.sql)
---   - inventory_items.history / movement_history / price_history
---
--- NOTE: Live action_history.user_id may be TEXT (legacy) while auth.uid() is UUID.
--- RLS must compare via ::text on both sides to avoid: operator does not exist: uuid = text
+-- Safe to re-run. Drops existing RLS first so UPDATEs cannot hit
+-- `auth.uid() = user_id` (uuid = text) on a TEXT user_id column.
 -- =============================================================================
+
+CREATE OR REPLACE FUNCTION public.uid_eq(p_user_id text)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT auth.uid() IS NOT NULL AND auth.uid()::text = p_user_id;
+$$;
+
+-- Drop every existing policy before any DML (covers uuid vs text RLS).
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT policyname FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'action_history'
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.action_history', r.policyname);
+  END LOOP;
+
+  IF to_regclass('public.item_audit_log') IS NOT NULL THEN
+    FOR r IN
+      SELECT policyname FROM pg_policies
+      WHERE schemaname = 'public' AND tablename = 'item_audit_log'
+    LOOP
+      EXECUTE format('DROP POLICY IF EXISTS %I ON public.item_audit_log', r.policyname);
+    END LOOP;
+  END IF;
+END $$;
+
+ALTER TABLE public.action_history DISABLE ROW LEVEL SECURITY;
 
 -- --- action_history columns ---------------------------------------------------
 ALTER TABLE public.action_history
@@ -27,12 +46,11 @@ ALTER TABLE public.action_history
   ADD COLUMN IF NOT EXISTS operation_id TEXT,
   ADD COLUMN IF NOT EXISTS operation_label TEXT;
 
--- Friendly alias: Part B uses created_at; ArmikTech historically used timestamp.
 ALTER TABLE public.action_history
   ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;
 
 UPDATE public.action_history
-SET created_at = COALESCE(created_at, timestamp, NOW())
+SET created_at = COALESCE(created_at, "timestamp", NOW())
 WHERE created_at IS NULL;
 
 ALTER TABLE public.action_history
@@ -41,17 +59,16 @@ ALTER TABLE public.action_history
 ALTER TABLE public.action_history
   ALTER COLUMN created_at SET NOT NULL;
 
--- Keep timestamp in sync for older readers when only created_at is written.
 CREATE OR REPLACE FUNCTION public.action_history_sync_timestamps()
 RETURNS TRIGGER AS $$
 BEGIN
-  IF NEW.created_at IS NULL AND NEW.timestamp IS NOT NULL THEN
-    NEW.created_at := NEW.timestamp;
-  ELSIF NEW.timestamp IS NULL AND NEW.created_at IS NOT NULL THEN
-    NEW.timestamp := NEW.created_at;
-  ELSIF NEW.created_at IS NULL AND NEW.timestamp IS NULL THEN
+  IF NEW.created_at IS NULL AND NEW."timestamp" IS NOT NULL THEN
+    NEW.created_at := NEW."timestamp";
+  ELSIF NEW."timestamp" IS NULL AND NEW.created_at IS NOT NULL THEN
+    NEW."timestamp" := NEW.created_at;
+  ELSIF NEW.created_at IS NULL AND NEW."timestamp" IS NULL THEN
     NEW.created_at := NOW();
-    NEW.timestamp := NEW.created_at;
+    NEW."timestamp" := NEW.created_at;
   END IF;
   RETURN NEW;
 END;
@@ -63,7 +80,6 @@ CREATE TRIGGER trg_action_history_sync_timestamps
   FOR EACH ROW
   EXECUTE FUNCTION public.action_history_sync_timestamps();
 
--- Backfill action_type from free-string action when empty (ArmikTech verbs stay as `action`).
 UPDATE public.action_history
 SET action_type = CASE
   WHEN action ILIKE 'Item created%' THEN 'created'
@@ -89,27 +105,25 @@ CREATE INDEX IF NOT EXISTS idx_action_history_user_operation
   ON public.action_history (user_id, operation_id)
   WHERE operation_id IS NOT NULL;
 
--- Append-only: owners may SELECT + INSERT. No UPDATE / DELETE for normal roles.
--- Cast both sides to text so this works whether user_id is uuid or text.
-DROP POLICY IF EXISTS "Users can manage their own action history" ON public.action_history;
+ALTER TABLE public.action_history ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "Users can read their own action history" ON public.action_history;
 CREATE POLICY "Users can read their own action history"
   ON public.action_history FOR SELECT
-  USING (auth.uid()::text = user_id::text);
+  USING (public.uid_eq(user_id::text));
 
-DROP POLICY IF EXISTS "Users can append their own action history" ON public.action_history;
 CREATE POLICY "Users can append their own action history"
   ON public.action_history FOR INSERT
-  WITH CHECK (auth.uid()::text = user_id::text);
+  WITH CHECK (public.uid_eq(user_id::text));
 
--- --- item_audit_log: operation grouping + append-only hardening --------------
+-- --- item_audit_log -----------------------------------------------------------
 DO $$
 BEGIN
   IF to_regclass('public.item_audit_log') IS NULL THEN
     RAISE NOTICE 'item_audit_log missing — skipping audit-log hardening';
     RETURN;
   END IF;
+
+  ALTER TABLE public.item_audit_log DISABLE ROW LEVEL SECURITY;
 
   ALTER TABLE public.item_audit_log
     ADD COLUMN IF NOT EXISTS operation_id TEXT,
@@ -120,22 +134,20 @@ BEGIN
     ON public.item_audit_log (user_id, operation_id)
     WHERE operation_id IS NOT NULL;
 
-  DROP POLICY IF EXISTS "Owner can read and append their audit log" ON public.item_audit_log;
-  DROP POLICY IF EXISTS "Owner can read their audit log" ON public.item_audit_log;
-  DROP POLICY IF EXISTS "Owner can append their audit log" ON public.item_audit_log;
+  ALTER TABLE public.item_audit_log ENABLE ROW LEVEL SECURITY;
 
-  CREATE POLICY "Owner can read their audit log"
-    ON public.item_audit_log FOR SELECT
-    USING (auth.uid()::text = user_id::text);
-
-  CREATE POLICY "Owner can append their audit log"
-    ON public.item_audit_log FOR INSERT
-    WITH CHECK (auth.uid()::text = user_id::text);
+  EXECUTE $p$
+    CREATE POLICY "Owner can read their audit log"
+      ON public.item_audit_log FOR SELECT
+      USING (public.uid_eq(user_id::text))
+  $p$;
+  EXECUTE $p$
+    CREATE POLICY "Owner can append their audit log"
+      ON public.item_audit_log FOR INSERT
+      WITH CHECK (public.uid_eq(user_id::text))
+  $p$;
 END $$;
 
--- =============================================================================
--- Naming map (no duplicate columns - ArmikTech names are canonical)
--- =============================================================================
 COMMENT ON COLUMN public.inventory_items.component_ids IS
   'Canonical child list (Part A child_item_ids). Always keep in sync with reverse links.';
 COMMENT ON COLUMN public.inventory_items.parent_container_id IS
