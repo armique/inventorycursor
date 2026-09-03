@@ -1,9 +1,9 @@
 -- =============================================================================
 -- Action history: Part B fields (diff snapshots, operation grouping, append-only)
 -- =============================================================================
--- ArmikTech already has inventory_items.buy_price, component_ids (≈ child_item_ids),
--- parent_container_id (≈ bundle_id), movement_history, price_history, is_defective.
--- Those are NOT recreated here — see comments at the bottom.
+-- ArmikTech already has inventory_items.buy_price, component_ids (~ child_item_ids),
+-- parent_container_id (~ bundle_id), movement_history, price_history, is_defective.
+-- Those are NOT recreated here - see comments at the bottom.
 --
 -- MANDATORY before the new audit/undo UI can persist operation groups + diffs
 -- to Supabase (localStorage still works without this migration):
@@ -12,6 +12,9 @@
 -- OPTIONAL (already present elsewhere):
 --   - item_audit_log (20260831020000_item_audit_log.sql)
 --   - inventory_items.history / movement_history / price_history
+--
+-- NOTE: Live action_history.user_id may be TEXT (legacy) while auth.uid() is UUID.
+-- RLS must compare via ::text on both sides to avoid: operator does not exist: uuid = text
 -- =============================================================================
 
 -- --- action_history columns ---------------------------------------------------
@@ -87,42 +90,51 @@ CREATE INDEX IF NOT EXISTS idx_action_history_user_operation
   WHERE operation_id IS NOT NULL;
 
 -- Append-only: owners may SELECT + INSERT. No UPDATE / DELETE for normal roles.
+-- Cast both sides to text so this works whether user_id is uuid or text.
 DROP POLICY IF EXISTS "Users can manage their own action history" ON public.action_history;
 
 DROP POLICY IF EXISTS "Users can read their own action history" ON public.action_history;
 CREATE POLICY "Users can read their own action history"
   ON public.action_history FOR SELECT
-  USING (auth.uid() = user_id);
+  USING (auth.uid()::text = user_id::text);
 
 DROP POLICY IF EXISTS "Users can append their own action history" ON public.action_history;
 CREATE POLICY "Users can append their own action history"
   ON public.action_history FOR INSERT
-  WITH CHECK (auth.uid() = user_id);
+  WITH CHECK (auth.uid()::text = user_id::text);
 
 -- --- item_audit_log: operation grouping + append-only hardening --------------
-ALTER TABLE public.item_audit_log
-  ADD COLUMN IF NOT EXISTS operation_id TEXT,
-  ADD COLUMN IF NOT EXISTS operation_label TEXT,
-  ADD COLUMN IF NOT EXISTS related_item_ids JSONB NOT NULL DEFAULT '[]'::jsonb;
+DO $$
+BEGIN
+  IF to_regclass('public.item_audit_log') IS NULL THEN
+    RAISE NOTICE 'item_audit_log missing — skipping audit-log hardening';
+    RETURN;
+  END IF;
 
-CREATE INDEX IF NOT EXISTS idx_item_audit_user_operation
-  ON public.item_audit_log (user_id, operation_id)
-  WHERE operation_id IS NOT NULL;
+  ALTER TABLE public.item_audit_log
+    ADD COLUMN IF NOT EXISTS operation_id TEXT,
+    ADD COLUMN IF NOT EXISTS operation_label TEXT,
+    ADD COLUMN IF NOT EXISTS related_item_ids JSONB NOT NULL DEFAULT '[]'::jsonb;
 
-DROP POLICY IF EXISTS "Owner can read and append their audit log" ON public.item_audit_log;
+  CREATE INDEX IF NOT EXISTS idx_item_audit_user_operation
+    ON public.item_audit_log (user_id, operation_id)
+    WHERE operation_id IS NOT NULL;
 
-DROP POLICY IF EXISTS "Owner can read their audit log" ON public.item_audit_log;
-CREATE POLICY "Owner can read their audit log"
-  ON public.item_audit_log FOR SELECT
-  USING (auth.uid() = user_id);
+  DROP POLICY IF EXISTS "Owner can read and append their audit log" ON public.item_audit_log;
+  DROP POLICY IF EXISTS "Owner can read their audit log" ON public.item_audit_log;
+  DROP POLICY IF EXISTS "Owner can append their audit log" ON public.item_audit_log;
 
-DROP POLICY IF EXISTS "Owner can append their audit log" ON public.item_audit_log;
-CREATE POLICY "Owner can append their audit log"
-  ON public.item_audit_log FOR INSERT
-  WITH CHECK (auth.uid() = user_id);
+  CREATE POLICY "Owner can read their audit log"
+    ON public.item_audit_log FOR SELECT
+    USING (auth.uid()::text = user_id::text);
+
+  CREATE POLICY "Owner can append their audit log"
+    ON public.item_audit_log FOR INSERT
+    WITH CHECK (auth.uid()::text = user_id::text);
+END $$;
 
 -- =============================================================================
--- Naming map (no duplicate columns — ArmikTech names are canonical)
+-- Naming map (no duplicate columns - ArmikTech names are canonical)
 -- =============================================================================
 COMMENT ON COLUMN public.inventory_items.component_ids IS
   'Canonical child list (Part A child_item_ids). Always keep in sync with reverse links.';
