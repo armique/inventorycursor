@@ -43,57 +43,78 @@ tbody.inv-is-scrolling [data-scroll-defer-heavy] {
   pointer-events: none;
 }
 
-/* Inventory table — ArmikTech system font stack, +1 Tailwind type step. */
+/*
+ * Inventory — ArmikTech system font (not Outfit) + ~+1 Tailwind type step.
+ * Scoped to the inventory UI so the rest of the panel stays on brand fonts.
+ */
+.inventory-ui,
+.inventory-ui [data-inventory-table],
 [data-inventory-table] {
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-    'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+    'Helvetica Neue', Arial, 'Noto Sans', sans-serif !important;
 }
 
+.inventory-ui .font-mono,
 [data-inventory-table] .font-mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
-    monospace;
+    monospace !important;
 }
 
 [data-inventory-table] .text-\[8px\] {
-  font-size: 0.75rem; /* 12px */
-  line-height: 1.2;
+  font-size: 0.75rem !important; /* 12px */
+  line-height: 1.2 !important;
 }
 [data-inventory-table] .text-\[9px\] {
-  font-size: 0.8125rem; /* 13px */
-  line-height: 1.25;
+  font-size: 0.8125rem !important; /* 13px */
+  line-height: 1.25 !important;
 }
 [data-inventory-table] .text-\[9\.5px\] {
-  font-size: 0.8125rem;
-  line-height: 1.25;
+  font-size: 0.8125rem !important;
+  line-height: 1.25 !important;
 }
 [data-inventory-table] .text-\[10px\] {
-  font-size: 0.875rem; /* 14px */
-  line-height: 1.25;
+  font-size: 0.875rem !important; /* 14px */
+  line-height: 1.25 !important;
 }
 [data-inventory-table] .text-\[11px\] {
-  font-size: 0.875rem; /* 14px */
-  line-height: 1.3;
+  font-size: 0.875rem !important; /* 14px */
+  line-height: 1.3 !important;
 }
 [data-inventory-table] .text-\[0\.8125rem\] {
-  font-size: 0.9375rem;
-  line-height: 1.35;
+  font-size: 0.9375rem !important;
+  line-height: 1.35 !important;
 }
 [data-inventory-table] .text-xs {
   font-size: 0.875rem !important; /* 14px */
-  line-height: 1.3;
+  line-height: 1.3 !important;
 }
 [data-inventory-table] .text-sm {
   font-size: 1rem !important; /* 16px */
-  line-height: 1.35;
+  line-height: 1.35 !important;
 }
 [data-inventory-table] .text-base {
   font-size: 1.125rem !important;
-  line-height: 1.4;
+  line-height: 1.4 !important;
 }
 
 [data-inventory-table] thead th {
-  font-size: 0.8125rem; /* ~13px */
+  font-size: 0.8125rem !important; /* ~13px */
   letter-spacing: 0.05em;
+}
+
+/* Row end — hairline divider (paint-only). */
+[data-inventory-table] tbody > tr.group\/row {
+  box-shadow: inset 0 -1px 0 rgb(226 232 240 / 0.95);
+}
+
+/* Zebra striping by list index — plain rows only; bundle/faulty/selected keep their tint. */
+[data-inventory-table] tbody > tr.group\/row[data-stripe='even']:not([data-selected]):not([data-faulty]):not([data-container]) {
+  background-color: rgb(248 250 252 / 0.72);
+}
+
+/* Soften zebra while hovering so the hairline + hover still read clearly. */
+[data-inventory-table] tbody > tr.group\/row[data-stripe='even']:not([data-selected]):not([data-faulty]):not([data-container]):hover {
+  background-color: rgb(241 245 249 / 0.9);
 }
 
 /* Home-indicator / notch padding — used by bottom nav, sheets, sale modal, etc. */

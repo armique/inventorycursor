@@ -361,7 +361,8 @@ function containerRowClassName(
   faulty?: FaultyRowMeta,
   containerChildCount = 0,
 ): string {
-  const parts = ['group/row align-top border-b border-slate-200/80'];
+  /* Hairline + zebra come from CSS (box-shadow / data-stripe) — avoid double border. */
+  const parts = ['group/row align-top'];
   if (highlighted) {
     parts.push('ring-2 ring-amber-400 ring-inset bg-amber-50/40 animate-pulse');
     return parts.join(' ');
@@ -7432,7 +7433,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
 
   if (sortedItems.length === 0) {
     return (
-      <tbody className="divide-y divide-slate-50">
+      <tbody>
         <tr>
           <td colSpan={visibleColumns.length} className="p-20 text-center opacity-40">
             <Package size={48} className="mx-auto mb-4 text-slate-300" />
@@ -7445,16 +7446,17 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
   }
 
   return (
-    <tbody className="divide-y divide-slate-50">
+    <tbody>
       {virtual.padTop > 0 && (
         <tr aria-hidden className="pointer-events-none border-0">
           <td colSpan={colCount} className="!p-0 !border-0" style={{ height: `${virtual.padTop}px` }} />
         </tr>
       )}
-      {visibleItems.map((item) => (
+      {visibleItems.map((item, i) => (
         <InventoryTableRow
           key={item.id}
           item={item}
+          rowIndex={virtual.start + i}
           isSelected={selectedIdSet.has(item.id)}
           visibleColumns={visibleColumns}
           renderRowCells={renderRowCells}
@@ -7478,6 +7480,8 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
 
 type InventoryTableRowProps = {
   item: InventoryItem;
+  /** Absolute index in the sorted list — drives zebra `data-stripe`. */
+  rowIndex: number;
   isSelected: boolean;
   visibleColumns: ColumnId[];
   renderRowCells: (
@@ -7500,6 +7504,7 @@ type InventoryTableRowProps = {
 const InventoryTableRow = React.memo(
   function InventoryTableRow({
     item,
+    rowIndex,
     isSelected,
     visibleColumns,
     renderRowCells,
@@ -7511,11 +7516,14 @@ const InventoryTableRow = React.memo(
     paneScrollPerf = false,
   }: InventoryTableRowProps) {
     const childCount = item.componentIds?.length ?? 0;
+    const stripe = rowIndex % 2 === 0 ? 'even' : 'odd';
+    const isContainerWithParts = childCount > 0 && (item.isPC || item.isBundle);
     return (
       <tr
         ref={rowMeasureRef}
         data-inventory-item-id={item.id}
-        data-container={isInventoryContainer(item) ? (item.isPC ? 'pc' : 'bundle') : undefined}
+        data-stripe={stripe}
+        data-container={isContainerWithParts ? (item.isPC ? 'pc' : 'bundle') : undefined}
         data-faulty={faultyMeta.showRowIndicator ? '' : undefined}
         data-selected={isSelected ? '' : undefined}
         className={containerRowClassName(item, isSelected, Boolean(highlighted), faultyMeta, childCount)}
@@ -7527,6 +7535,7 @@ const InventoryTableRow = React.memo(
   },
   (prev, next) =>
     prev.item === next.item &&
+    prev.rowIndex === next.rowIndex &&
     prev.isSelected === next.isSelected &&
     prev.visibleColumns === next.visibleColumns &&
     prev.rowActivityKey === next.rowActivityKey &&
