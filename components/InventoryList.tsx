@@ -7,7 +7,7 @@ import { getTimeGaugeRow, resolveContainerChildItems, stressToRgb, timeGaugeSort
 import { createPortal } from 'react-dom';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { 
-  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Camera, Gift, User, Images, Scissors, GripVertical, RefreshCw, Calculator, Inbox, MessageSquare, ExternalLink, Bookmark, Link2, CheckCircle2
+  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Camera, Gift, User, Images, Scissors, GripVertical, RefreshCw, Calculator, Inbox, MessageSquare, ExternalLink, Bookmark, Link2, CheckCircle2, Gauge
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo, BulkImportRecord } from '../types';
 import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
@@ -75,10 +75,6 @@ import {
 import { loadFlipFees } from '../utils/flipCoach';
 import {
   computePriceAnalyzer,
-  hasPriceChangeHintFast,
-  isMaybeSoldCandidate,
-  isSaleReadyUnlisted,
-  isSaleReadyWatch,
   type PriceAnalyzerAction,
 } from '../utils/listingWatch';
 import {
@@ -882,10 +878,6 @@ type SmartPreset =
   | 'no_specs'
   | 'defective'
   | 'aging'
-  | 'sale_ready'
-  | 'sale_ready_unlisted'
-  | 'price_change'
-  | 'maybe_sold'
   | null;
 
 type InventoryListFilterParams = {
@@ -986,10 +978,6 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
     if (smartPreset === 'presence_unknown' && getItemPresenceCycleState(item) !== 'unknown') return false;
     if (smartPreset === 'no_specs' && item.specs && Object.keys(item.specs).length > 0) return false;
     if (smartPreset === 'defective' && !item.isDefective) return false;
-    if (smartPreset === 'sale_ready' && !isSaleReadyWatch(item)) return false;
-    if (smartPreset === 'sale_ready_unlisted' && !isSaleReadyUnlisted(item)) return false;
-    if (smartPreset === 'price_change' && !hasPriceChangeHintFast(item)) return false;
-    if (smartPreset === 'maybe_sold' && !isMaybeSoldCandidate(item)) return false;
     if (smartPreset === 'aging') {
       const key = item.buyDate || '';
       if (!key) return false;
@@ -1417,6 +1405,18 @@ const InventoryList: React.FC<Props> = ({
     localStorage.setItem(`${persistenceKey}_list_density`, JSON.stringify(listDensity));
     localStorage.setItem('panel_list_density', listDensity);
   }, [listDensity, persistenceKey]);
+
+  type ScrollPerfMode = 'off' | 'auto' | 'on';
+  const [scrollPerfMode, setScrollPerfMode] = useState<ScrollPerfMode>(() =>
+    loadState<ScrollPerfMode>('scroll_perf_mode', 'auto')
+  );
+  useEffect(() => {
+    localStorage.setItem(`${persistenceKey}_scroll_perf_mode`, JSON.stringify(scrollPerfMode));
+  }, [scrollPerfMode, persistenceKey]);
+  const cycleScrollPerfMode = useCallback(() => {
+    setScrollPerfMode((m) => (m === 'off' ? 'auto' : m === 'auto' ? 'on' : 'off'));
+  }, []);
+
   const [smartPreset, setSmartPreset] = useState<SmartPreset>(null);
   const [showAISpecsModal, setShowAISpecsModal] = useState(false);
 
@@ -3607,14 +3607,14 @@ const InventoryList: React.FC<Props> = ({
      setSelectedIds([]);
   };
 
-  const renderCell = (item: InventoryItem, id: ColumnId, isSelected: boolean, _itemFlexWidth?: number | null) => {
+  const renderCell = (item: InventoryItem, id: ColumnId, isSelected: boolean, _itemFlexWidth?: number | null, paneScrollPerf = false) => {
     const width = effectiveColumnWidths[id] || columnWidths[id] || DEFAULT_WIDTHS[id];
     const itemLocked = id === 'item' && manualWidthColumns.has('item');
     const style =
       id === 'item' && !itemLocked
         ? { minWidth: `${width}px`, width: 'auto' as const, maxWidth: 'none' as const }
         : { width: `${width}px`, minWidth: `${width}px`, maxWidth: `${width}px` };
-    const dense = listDensity === 'compact';
+    const dense = paneScrollPerf || listDensity === 'compact';
     switch (id) {
       case 'select':
         return (
@@ -3785,6 +3785,7 @@ const InventoryList: React.FC<Props> = ({
                    {(() => {
                      const showContainerKinds = isContainerRow;
                      const showAnalyzer =
+                       !paneScrollPerf &&
                        (item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED) &&
                        !item.parentContainerId;
                      if (!showContainerKinds && !showAnalyzer) return null;
@@ -3854,6 +3855,7 @@ const InventoryList: React.FC<Props> = ({
                      {showContainerKinds ? (
                    <div
                      className="flex items-center gap-1 flex-wrap mt-0.5"
+                     data-perf-hide=""
                      onClick={(e) => e.stopPropagation()}
                    >
                      {(['pc', 'bundle', 'mixed'] as const).map((kind) => {
@@ -3886,7 +3888,7 @@ const InventoryList: React.FC<Props> = ({
                      {analyzerChips ? (
                    <div
                      className="flex items-center gap-1 flex-wrap mt-0.5"
-                     data-scroll-defer=""
+                     data-scroll-defer-heavy=""
                      onClick={(e) => e.stopPropagation()}
                    >
                      {analyzerChips}
@@ -3895,12 +3897,12 @@ const InventoryList: React.FC<Props> = ({
                    </>
                      );
                    })()}
-                   <div data-scroll-defer="" className="mt-0.5 flex flex-wrap items-center gap-1 min-w-0 max-w-full">
+                   <div data-scroll-defer-heavy="" className="mt-0.5 flex flex-wrap items-center gap-1 min-w-0 max-w-full">
                      <SaleCycleHistory item={item} compact />
                      <BuyPriceHistory item={item} compact />
                    </div>
                    {showMembershipBadge && parentKind && parentContainer && (
-                      <div className="mt-1.5">
+                      <div className="mt-1.5" data-perf-hide="">
                         <ContainerMembershipBadge
                           kind={parentKind}
                           parentName={parentContainer.name}
@@ -3915,7 +3917,7 @@ const InventoryList: React.FC<Props> = ({
                       </div>
                    )}
                    {(tradeReceived.length > 0 || tradeSource) && (
-                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      <div className="mt-1.5 flex flex-wrap gap-1.5" data-perf-hide="">
                         {tradeReceived.length > 0 && (
                           <TradeLinkBadge
                             variant="outgoing"
@@ -4657,12 +4659,12 @@ const InventoryList: React.FC<Props> = ({
   const renderCellRef = useRef(renderCell);
   renderCellRef.current = renderCell;
   const renderRowCells = useCallback(
-    (item: InventoryItem, isSelected: boolean, itemFlexWidth?: number | null) =>
-      visibleColumns.map((colId) => renderCellRef.current(item, colId, isSelected, itemFlexWidth)),
+    (item: InventoryItem, isSelected: boolean, itemFlexWidth?: number | null, paneScrollPerf = false) =>
+      visibleColumns.map((colId) => renderCellRef.current(item, colId, isSelected, itemFlexWidth, paneScrollPerf)),
     // InventoryTableRow is React.memo'd and only re-renders when this function's identity
     // changes (see its comparator) — every toggle that changes what a cell renders, even
     // via the renderCellRef indirection, has to be listed here or rows go stale until reload.
-    [visibleColumns, effectiveColumnWidths, showPriceBreakdown, hideSellDeductions]
+    [visibleColumns, effectiveColumnWidths, showPriceBreakdown, hideSellDeductions, listDensity, scrollPerfMode]
   );
 
   const handleDeleteItem = (item: InventoryItem) => {
@@ -4965,37 +4967,6 @@ const InventoryList: React.FC<Props> = ({
         label: 'eBay photos',
         icon: <ShoppingBag size={16} />,
         onClick: () => openAddPhotosModal(deferredSelectedIds, { ebay: true }),
-        variant: 'primary',
-      },
-      {
-        id: 'sale_ready',
-        label: 'List Ready',
-        icon: <ListChecks size={16} />,
-        onClick: () => {
-          const selected = deferredSelectedIds
-            .map((id) => itemsById.get(id))
-            .filter((i): i is InventoryItem => Boolean(i))
-            .filter(isMarkReadyEligible)
-            .filter((i) => !i.saleReady);
-          const updated = selected.filter(canMarkSaleReady).map((i) => ({ ...i, saleReady: true }));
-          const skipped = selected.length - updated.length;
-          if (!updated.length) {
-            setToast(
-              skipped
-                ? `${skipped} need title · description · photos before List Ready`
-                : 'Select in-stock items with checklist complete',
-            );
-            setTimeout(() => setToast(null), 2600);
-            return;
-          }
-          onUpdate(updated, undefined, { skipActionLog: true });
-          setToast(
-            skipped
-              ? `List Ready ${updated.length} · skipped ${skipped} (checklist incomplete)`
-              : `List Ready ${updated.length}`,
-          );
-          setTimeout(() => setToast(null), 2600);
-        },
         variant: 'primary',
       },
       { id: 'compose', label: 'Compose', icon: <Monitor size={16} />, onClick: openComposeChooser, variant: 'primary' },
@@ -6076,13 +6047,23 @@ const InventoryList: React.FC<Props> = ({
                </button>
                <button
                  type="button"
-                 onClick={() => setListDensity((d) => (d === 'compact' ? 'comfortable' : 'compact'))}
-                 className={`p-1.5 rounded-lg border flex items-center gap-1 ${listDensity === 'compact' ? 'bg-slate-900 text-white border-slate-900' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
-                 title={listDensity === 'compact' ? 'Comfortable: more spacing' : 'Compact: denser list'}
+                 onClick={cycleScrollPerfMode}
+                 className={`p-1.5 rounded-lg border flex items-center gap-1 ${
+                   scrollPerfMode !== 'off'
+                     ? 'bg-emerald-700 text-white border-emerald-700'
+                     : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                 }`}
+                 title={
+                   scrollPerfMode === 'off'
+                     ? 'Scroll perf: off — click for lighter rows on Active + Sold'
+                     : scrollPerfMode === 'auto'
+                       ? 'Scroll perf: on Active + Sold — click for always on'
+                       : 'Scroll perf: always on — click to turn off'
+                 }
                >
-                 <List size={14} />{' '}
+                 <Gauge size={14} />
                  <span className="text-[10px] font-bold uppercase">
-                   {listDensity === 'compact' ? 'Compact' : 'Comfort'}
+                   {scrollPerfMode === 'off' ? 'Perf off' : scrollPerfMode === 'auto' ? 'Perf auto' : 'Perf on'}
                  </span>
                </button>
                <button
@@ -6669,6 +6650,7 @@ const InventoryList: React.FC<Props> = ({
             columnWidths={effectiveColumnWidths}
             manualWidthColumns={manualWidthColumns}
             listDensity={listDensity}
+            scrollPerfMode={scrollPerfMode}
             sortConfig={sortConfig}
             handleHeaderSort={handleHeaderSort}
             handleColumnResizeStart={handleColumnResizeStart}
@@ -6699,6 +6681,7 @@ const InventoryList: React.FC<Props> = ({
             columnWidths={effectiveColumnWidths}
             manualWidthColumns={manualWidthColumns}
             listDensity={listDensity}
+            scrollPerfMode={scrollPerfMode}
             sortConfig={sortConfig}
             handleHeaderSort={handleHeaderSort}
             handleColumnResizeStart={handleColumnResizeStart}
@@ -6745,6 +6728,7 @@ const InventoryList: React.FC<Props> = ({
           columnWidths={effectiveColumnWidths}
           manualWidthColumns={manualWidthColumns}
           listDensity={listDensity}
+          scrollPerfMode={scrollPerfMode}
           sortConfig={sortConfig}
           handleHeaderSort={handleHeaderSort}
           handleColumnResizeStart={handleColumnResizeStart}
@@ -7453,7 +7437,7 @@ type InventoryTableBodyProps = {
   sortedItems: InventoryItem[];
   selectedIdSet: Set<string>;
   visibleColumns: ColumnId[];
-  renderRowCells: (item: InventoryItem, isSelected: boolean, itemFlexWidth?: number | null) => React.ReactNode;
+  renderRowCells: (item: InventoryItem, isSelected: boolean, itemFlexWidth?: number | null, paneScrollPerf?: boolean) => React.ReactNode;
   getRowActivityKey: (item: InventoryItem) => string;
   highlightedItemId: string | null;
   scrollElement: HTMLDivElement | null;
@@ -7461,6 +7445,7 @@ type InventoryTableBodyProps = {
   collapsedBundles: Set<string>;
   itemFlexWidth?: number | null;
   soakSpacer?: boolean;
+  scrollPerfMode: 'off' | 'auto' | 'on';
 };
 
 const InventoryTableBody = React.memo(function InventoryTableBody({
@@ -7475,8 +7460,10 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
   collapsedBundles,
   itemFlexWidth,
   soakSpacer = false,
+  scrollPerfMode,
 }: InventoryTableBodyProps) {
   const useVirtual = sortedItems.length > INVENTORY_VIRTUAL_THRESHOLD;
+  const staticPaneScrollPerf = scrollPerfMode === 'on';
 
   // Precompute once per data/edit change — not on every virtualizer scroll frame.
   const rowActivityKeyById = useMemo(() => {
@@ -7495,6 +7482,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
       // Extra under-name rows only (OVP/IO live on the title row now — do not pad every row).
       if (item.isPC || item.isBundle) h += 16;
       if (
+        !staticPaneScrollPerf &&
         (item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED) &&
         !item.parentContainerId
       ) {
@@ -7516,7 +7504,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
       }
       return h;
     },
-    [sortedItems, rowHeightEstimate, collapsedBundles]
+    [sortedItems, rowHeightEstimate, collapsedBundles, staticPaneScrollPerf]
   );
 
   const rowVirtualizer = useVirtualizer({
@@ -7569,6 +7557,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
             renderRowCells={renderRowCells}
             itemFlexWidth={itemFlexWidth}
             soakSpacer={soakSpacer}
+            paneScrollPerf={staticPaneScrollPerf}
             rowActivityKey={rowActivityKeyById.get(item.id) ?? ''}
             highlighted={highlightedItemId === item.id}
           />
@@ -7605,6 +7594,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
             renderRowCells={renderRowCells}
             itemFlexWidth={itemFlexWidth}
             soakSpacer={soakSpacer}
+            paneScrollPerf={staticPaneScrollPerf}
             rowActivityKey={rowActivityKeyById.get(item.id) ?? ''}
             highlighted={highlightedItemId === item.id}
             virtualIndex={virtualRow.index}
@@ -7624,17 +7614,18 @@ type InventoryTableRowProps = {
   item: InventoryItem;
   isSelected: boolean;
   visibleColumns: ColumnId[];
-  renderRowCells: (item: InventoryItem, isSelected: boolean, itemFlexWidth?: number | null) => React.ReactNode;
+  renderRowCells: (item: InventoryItem, isSelected: boolean, itemFlexWidth?: number | null, paneScrollPerf?: boolean) => React.ReactNode;
   /** Bumps when inline edit / AI spinners / Flags + panel / collapse affect this row so memo does not skip updates. */
   rowActivityKey: string;
   highlighted?: boolean;
   virtualIndex?: number;
+  paneScrollPerf?: boolean;
   itemFlexWidth?: number | null;
   soakSpacer?: boolean;
 };
 
 const InventoryTableRow = React.memo(
-  function InventoryTableRow({ item, isSelected, renderRowCells, highlighted, virtualIndex, itemFlexWidth, soakSpacer }: InventoryTableRowProps) {
+  function InventoryTableRow({ item, isSelected, renderRowCells, highlighted, virtualIndex, itemFlexWidth, soakSpacer, paneScrollPerf = false }: InventoryTableRowProps) {
     return (
       <tr
         data-index={virtualIndex}
@@ -7643,7 +7634,7 @@ const InventoryTableRow = React.memo(
         className={containerRowClassName(item, isSelected, Boolean(highlighted))}
         style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 88px' }}
       >
-        {renderRowCells(item, isSelected, itemFlexWidth)}
+        {renderRowCells(item, isSelected, itemFlexWidth, paneScrollPerf)}
         {soakSpacer ? <td className="inv-col-soak" aria-hidden /> : null}
       </tr>
     );
@@ -7657,6 +7648,7 @@ const InventoryTableRow = React.memo(
     prev.renderRowCells === next.renderRowCells &&
     prev.itemFlexWidth === next.itemFlexWidth &&
     prev.soakSpacer === next.soakSpacer &&
+    prev.paneScrollPerf === next.paneScrollPerf &&
     prev.virtualIndex === next.virtualIndex
 );
 
@@ -7670,6 +7662,7 @@ type InventoryListTablePaneProps = {
   columnWidths: Record<string, number>;
   manualWidthColumns: Set<ColumnId>;
   listDensity: 'comfortable' | 'compact';
+  scrollPerfMode: 'off' | 'auto' | 'on';
   sortConfig: SortConfig;
   handleHeaderSort: (columnId: ColumnId) => void;
   handleColumnResizeStart: (e: React.MouseEvent, colId: ColumnId) => void;
@@ -7682,7 +7675,7 @@ type InventoryListTablePaneProps = {
   onColumnDragEnd: () => void;
   onSelectAll: () => void;
   selectedIdSet: Set<string>;
-  renderRowCells: (item: InventoryItem, isSelected: boolean, itemFlexWidth?: number | null) => React.ReactNode;
+  renderRowCells: (item: InventoryItem, isSelected: boolean, itemFlexWidth?: number | null, paneScrollPerf?: boolean) => React.ReactNode;
   getRowActivityKey: (item: InventoryItem) => string;
   highlightedItemId: string | null;
   rowHeightEstimate: number;
@@ -7701,6 +7694,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
   columnWidths,
   manualWidthColumns,
   listDensity,
+  scrollPerfMode,
   sortConfig,
   handleHeaderSort,
   handleColumnResizeStart,
@@ -7722,6 +7716,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
   bulkBatchActive = false,
 }) => {
   const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
+  const paneDensity = scrollPerfMode === 'on' ? 'compact' : listDensity;
 
   const attachScrollRef = useCallback(
     (node: HTMLDivElement | null) => {
@@ -7773,7 +7768,8 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
           className="w-full text-left border-collapse table-fixed"
           style={{ minWidth: tableMinWidth, width: '100%' }}
           data-inventory-table
-          data-density={listDensity}
+          data-density={paneDensity}
+          {...(scrollPerfMode === 'on' ? { 'data-inv-perf': 'true' } : {})}
           {...(bulkBatchActive ? { 'data-bulk-batch': '' } : {})}
         >
           <colgroup>
@@ -7836,7 +7832,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
                             }
                           : undefined
                       }
-                      className={`flex items-center ${colId === 'item' ? 'justify-start' : 'justify-center'} gap-1 w-full ${listDensity === 'compact' ? 'min-h-[1.35rem]' : 'min-h-[1.65rem]'} ${sortable ? 'cursor-pointer hover:bg-slate-100/90' : ''}`}
+                      className={`flex items-center ${colId === 'item' ? 'justify-start' : 'justify-center'} gap-1 w-full ${paneDensity === 'compact' ? 'min-h-[1.35rem]' : 'min-h-[1.65rem]'} ${sortable ? 'cursor-pointer hover:bg-slate-100/90' : ''}`}
                     >
                       {canDrag && (
                         <span
@@ -7939,6 +7935,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
             rowHeightEstimate={rowHeightEstimate}
             collapsedBundles={collapsedBundles}
             soakSpacer={itemLocked}
+            scrollPerfMode={scrollPerfMode}
           />
         </table>
       </div>

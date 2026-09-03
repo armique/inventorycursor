@@ -6,7 +6,7 @@ import {
   getEbayConfig,
   hasEbayRefreshToken,
 } from '../services/ebayService';
-import { loadKaProfileUrl, saveKaProfileUrl } from './listingPresence';
+import { loadKaProfileUrl, saveKaProfileUrl } from './kaListingMatch';
 import { getCurrentUser, getSupabase, isCloudEnabled } from '../services/supabaseService';
 
 function readLocalEbayConfig(): {

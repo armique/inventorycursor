@@ -33,7 +33,7 @@ import {
   type KaMyListing,
 } from '../services/kleinanzeigenListingService';
 import { ensureKaListings, upsertKaListings } from '../services/kleinanzeigenListingIndex';
-import { loadKaProfileUrl, matchKaListingsForItem } from '../utils/listingPresence';
+import { loadKaProfileUrl, matchKaListingsForItem } from '../utils/kaListingMatch';
 
 export type AddPhotosApplyOptions = {
   ebayMatch?: EbayListingPriceMatch;

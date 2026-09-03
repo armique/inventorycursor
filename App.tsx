@@ -79,7 +79,6 @@ import { ensureEbayListings, pullListingIndexFromCloud } from './services/ebayLi
 import { ensureEbayCloudDataLoaded } from './services/ebayTransactionReportSync';
 import { syncNewEbayOrdersOnAppVisit } from './services/ebayApiOrderSync';
 import { runEbayTxDailyCsvExport } from './services/ebayTxDailyExport';
-import { ensureKaListings } from './services/kleinanzeigenListingIndex';
 import { DEFAULT_CATEGORIES } from './services/constants';
 import { migrateCategoriesRecord, migrateContainerItem } from './utils/containerTaxonomy';
 import { todayLocalDateKey } from './utils/calendarDate';
@@ -300,8 +299,6 @@ const ACCESSORY_EXPLICIT_CLEAR_KEYS: (keyof InventoryItem)[] = [
   'hasReceipt',
 ];
 const EBAY_LISTINGS_DAILY_BOOT_REFRESH_KEY = 'ebay_listings_daily_boot_refresh_v1';
-const KA_LISTINGS_DAILY_BOOT_REFRESH_KEY = 'ka_listings_daily_boot_refresh_v1';
-
 /**
  * Re-apply fields the caller left out (forms often submit a partial item).
  * Shared so AI diffing sees exactly the item that will be stored.
@@ -802,7 +799,6 @@ const App: React.FC = () => {
   const ebayCloudHydrateTriedRef = useRef(false);
   const ebayApiOrderSyncTriedRef = useRef(false);
   const ebayListingDailyRefreshTriedRef = useRef(false);
-  const kaListingDailyRefreshTriedRef = useRef(false);
   const storeCatalogPublishDoneRef = useRef(false);
   const catalogPublishDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cloudSyncInFlightRef = useRef(false);
@@ -1656,7 +1652,6 @@ const App: React.FC = () => {
         setCloudHydrated(!isCloudEnabled());
         ebayCloudHydrateTriedRef.current = false;
         ebayListingDailyRefreshTriedRef.current = false;
-        kaListingDailyRefreshTriedRef.current = false;
         setSyncState(prev => ({ ...prev, status: 'idle', message: undefined }));
         return;
       }
@@ -1991,28 +1986,6 @@ const App: React.FC = () => {
       .catch((e) => {
         // Non-blocking: user can still work, and retry happens on next launch/day.
         console.warn('eBay daily listing refresh failed:', e);
-      });
-  }, [appState]);
-
-  // Keep Kleinanzeigen profile listing cache fresh for photo import:
-  // once per local calendar day on app boot, run one forced refresh.
-  useEffect(() => {
-    if (appState !== 'READY' || kaListingDailyRefreshTriedRef.current) return;
-    kaListingDailyRefreshTriedRef.current = true;
-    const now = new Date();
-    const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
-      now.getDate()
-    ).padStart(2, '0')}`;
-    const lastRunKey = localStorage.getItem(KA_LISTINGS_DAILY_BOOT_REFRESH_KEY) || '';
-    if (lastRunKey === todayKey) return;
-    void ensureKaListings({ force: true })
-      .then((result) => {
-        if (!result.fromCache || result.listings.length > 0) {
-          localStorage.setItem(KA_LISTINGS_DAILY_BOOT_REFRESH_KEY, todayKey);
-        }
-      })
-      .catch((e) => {
-        console.warn('Kleinanzeigen daily listing refresh failed:', e);
       });
   }, [appState]);
 

@@ -23,9 +23,16 @@ body,
  * PC / Bundle / Mixed type badges stay visible — they must not flicker mid-scroll.
  * Only defer heavy under-name widgets — do not block the whole tbody (that made scroll feel dead).
  */
-tbody.inv-is-scrolling [data-scroll-defer] {
+/* Only hide heavy history strips while scrolling — bundle parts and row content stay visible. */
+tbody.inv-is-scrolling [data-scroll-defer-heavy] {
   visibility: hidden;
   pointer-events: none;
+}
+
+/* Performance scroll mode — hide heavy under-name widgets even when not scrolling. */
+[data-inv-perf='true'] [data-scroll-defer-heavy],
+[data-inv-perf='true'] [data-perf-hide] {
+  display: none !important;
 }
 
 /* Home-indicator / notch padding — used by bottom nav, sheets, sale modal, etc. */
@@ -45,9 +52,9 @@ tbody.inv-is-scrolling [data-scroll-defer] {
     zoom: 1.2;
   }
 
-  /* Inventory list — +15% scale (matches ~115% browser zoom on this page only). */
+  /* Inventory list — native 100% scale for smoother scroll (was 115% zoom). */
   .inventory-ui {
-    zoom: 1.15;
+    zoom: 1;
   }
 }
 

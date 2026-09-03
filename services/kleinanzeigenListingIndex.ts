@@ -8,7 +8,7 @@ import {
   loadKaProfileUrl,
   saveKaListingTitles,
   type ListingTitleHit,
-} from '../utils/listingPresence';
+} from '../utils/kaListingMatch';
 import {
   extractKaListingId,
   fetchKaListingsFromProfile,

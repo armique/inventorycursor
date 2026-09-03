@@ -1,7 +1,7 @@
-/**
+﻿/**
  * Listing watchlist helpers: Ready / already-linked items get delisting + price hints.
  * Presence matching runs against all eligible in-stock items.
- * Price analyzer: age + buy → suggest; live ask → drop / raise.
+ * Price analyzer: age + buy ÔåÆ suggest; live ask ÔåÆ drop / raise.
  */
 
 import type { InventoryItem } from '../types';
@@ -16,12 +16,11 @@ import {
 import { listPricesForPocket, loadFlipFees, totalEbayFeePct } from './flipCoach';
 import { roundMoney } from '../services/financialAggregation';
 
-/** Absolute € or % gap before we nudge “change price”. */
+/** Absolute Ôé¼ or % gap before we nudge ÔÇ£change priceÔÇØ. */
 export const PRICE_HINT_MIN_EUR = 5;
 export const PRICE_HINT_MIN_PCT = 0.05;
 
-/** Eligible for listing match (in stock, sellable) — broader than the Ready watchlist. */
-export function isListingPresenceEligible(item: InventoryItem): boolean {
+function isPriceAnalyzerEligible(item: InventoryItem): boolean {
   if (item.isDraft || item.isDefective) return false;
   if (
     item.status !== ItemStatus.IN_STOCK &&
@@ -35,27 +34,6 @@ export function isListingPresenceEligible(item: InventoryItem): boolean {
   return true;
 }
 
-export function isListingWatchCandidate(item: InventoryItem): boolean {
-  if (!isListingPresenceEligible(item)) return false;
-
-  if (item.saleReady) return true;
-  if (item.workflowStage === 'Ready' || item.workflowStage === 'Listed') return true;
-  if (item.listedOnEbay || item.listedOnKleinanzeigen) return true;
-  if (item.ebayListingId || item.kleinanzeigenListingUrl) return true;
-  if (item.liveEbayListPrice != null || item.liveKleinListPrice != null) return true;
-  return false;
-}
-
-export type PriceChangeHint = {
-  channel: 'KA' | 'EB' | 'both';
-  live: number;
-  suggest: number;
-  /** Positive = live is higher than suggest (usually: lower the listing). */
-  deltaEur: number;
-  deltaPct: number;
-  label: string;
-};
-
 export type PriceAnalyzerAction = 'drop' | 'raise' | 'ok' | 'list';
 
 export type PriceAnalyzerChannel = {
@@ -64,7 +42,7 @@ export type PriceAnalyzerChannel = {
   live?: number;
   action: PriceAnalyzerAction;
   deltaEur: number;
-  /** Short chip text, e.g. "DROP €130 → €80" */
+  /** Short chip text, e.g. "DROP Ôé¼130 ÔåÆ Ôé¼80" */
   label: string;
 };
 
@@ -72,7 +50,7 @@ export type PriceAnalyzer = {
   daysHeld: number;
   targetMarginPct: number;
   buy: number;
-  /** "Day 6 · 45% target" */
+  /** "Day 6 ┬À 45% target" */
   ageLabel: string;
   kleinSuggest: number;
   ebaySuggest: number;
@@ -80,7 +58,7 @@ export type PriceAnalyzer = {
   minMarginPct: number;
   minKlein: number;
   minEbay: number;
-  /** "Min 30% · KA €63 · EB €84" */
+  /** "Min 30% ┬À KA Ôé¼63 ┬À EB Ôé¼84" */
   minLabel: string;
   maxMarginPct: number;
   marginReason?: string;
@@ -172,7 +150,7 @@ function channelFromLive(
       suggest,
       action: 'list',
       deltaEur: 0,
-      label: `List ${channel} €${Math.round(suggest)}`,
+      label: `List ${channel} Ôé¼${Math.round(suggest)}`,
     };
   }
   if (!gapSignificant(live, suggest)) {
@@ -182,7 +160,7 @@ function channelFromLive(
       live,
       action: 'ok',
       deltaEur: 0,
-      label: `OK ${channel} €${Math.round(live)}`,
+      label: `OK ${channel} Ôé¼${Math.round(live)}`,
     };
   }
   const deltaEur = roundMoney(live - suggest);
@@ -193,7 +171,7 @@ function channelFromLive(
       live,
       action: 'drop',
       deltaEur,
-      label: `DROP ${channel} €${Math.round(live)} → €${Math.round(suggest)}`,
+      label: `DROP ${channel} Ôé¼${Math.round(live)} ÔåÆ Ôé¼${Math.round(suggest)}`,
     };
   }
   return {
@@ -202,7 +180,7 @@ function channelFromLive(
     live,
     action: 'raise',
     deltaEur,
-    label: `RAISE ${channel} €${Math.round(live)} → €${Math.round(suggest)}`,
+    label: `RAISE ${channel} Ôé¼${Math.round(live)} ÔåÆ Ôé¼${Math.round(suggest)}`,
   };
 }
 
@@ -214,7 +192,7 @@ function actionRank(a: PriceAnalyzerAction): number {
 }
 
 /**
- * Age + buy → suggested KA/EB; compare to live asks when listed.
+ * Age + buy ÔåÆ suggested KA/EB; compare to live asks when listed.
  * Cheap enough for every inventory row (no comps scan).
  */
 export function computePriceAnalyzer(
@@ -222,7 +200,7 @@ export function computePriceAnalyzer(
   suggestion?: SuggestedEbayPrice | null,
   allItems?: InventoryItem[]
 ): PriceAnalyzer | null {
-  if (!isListingPresenceEligible(item)) return null;
+  if (!isPriceAnalyzerEligible(item)) return null;
 
   let klein: number;
   let ebay: number;
@@ -276,8 +254,8 @@ export function computePriceAnalyzer(
 
   const ageLabel =
     maxMarginPct > targetMarginPct
-      ? `Day ${daysHeld} · ${targetMarginPct}% target (cap ${maxMarginPct}%)`
-      : `Day ${daysHeld} · ${targetMarginPct}% target`;
+      ? `Day ${daysHeld} ┬À ${targetMarginPct}% target (cap ${maxMarginPct}%)`
+      : `Day ${daysHeld} ┬À ${targetMarginPct}% target`;
 
   return {
     daysHeld,
@@ -291,82 +269,11 @@ export function computePriceAnalyzer(
     minEbay,
     minLabel:
       minKlein > 0 && minEbay > 0
-        ? `Min ${minMarginPct}% · KA €${Math.round(minKlein)} · EB €${Math.round(minEbay)}`
+        ? `Min ${minMarginPct}% ┬À KA Ôé¼${Math.round(minKlein)} ┬À EB Ôé¼${Math.round(minEbay)}`
         : `Min ${minMarginPct}%`,
     maxMarginPct,
     marginReason,
     channels,
     primary,
   };
-}
-
-/**
- * Compare live marketplace ask vs suggest.
- * Pass `suggestion` from the inventory chip map when available; never runs full comps.
- */
-export function computePriceChangeHint(
-  item: InventoryItem,
-  suggestion?: SuggestedEbayPrice | null
-): PriceChangeHint | null {
-  if (!isListingWatchCandidate(item)) return null;
-  const analyzer = computePriceAnalyzer(item, suggestion);
-  if (!analyzer) return null;
-  const moves = analyzer.channels.filter(
-    (c) => c.action === 'drop' || c.action === 'raise'
-  );
-  if (!moves.length) return null;
-
-  const over = moves.filter((h) => h.action === 'drop');
-  const pick = (over.length ? over : moves).sort(
-    (a, b) => Math.abs(b.deltaEur) - Math.abs(a.deltaEur)
-  )[0];
-
-  const deltaEur = pick.deltaEur;
-  const deltaPct =
-    pick.suggest > 0
-      ? Math.round((deltaEur / pick.suggest) * 1000) / 10
-      : 0;
-
-  return {
-    channel: moves.length > 1 ? 'both' : pick.channel,
-    live: pick.live || 0,
-    suggest: pick.suggest,
-    deltaEur,
-    deltaPct,
-    label: `${pick.label} · ${analyzer.targetMarginPct}% target`,
-  };
-}
-
-/** Filter-friendly: true if live vs stored/age suggest looks off — no comps. */
-export function hasPriceChangeHintFast(item: InventoryItem): boolean {
-  return computePriceChangeHint(item) != null;
-}
-
-export function isSaleReadyUnlisted(item: InventoryItem): boolean {
-  if (!item.saleReady && item.workflowStage !== 'Ready') return false;
-  if (item.isDefective || item.isDraft) return false;
-  if (item.status !== ItemStatus.IN_STOCK && item.status !== ItemStatus.ORDERED) return false;
-  if (item.parentContainerId) return false;
-  return !item.listedOnEbay && !item.listedOnKleinanzeigen;
-}
-
-export function isMaybeSoldCandidate(item: InventoryItem): boolean {
-  if (item.isDefective || item.isDraft) return false;
-  if (item.status !== ItemStatus.IN_STOCK && item.status !== ItemStatus.ORDERED) return false;
-  if (item.maybeSoldDismissedAt) return false;
-  return Boolean(item.maybeSoldHint);
-}
-
-export function isSaleReadyWatch(item: InventoryItem): boolean {
-  if (item.isDefective || item.isDraft) return false;
-  if (item.status !== ItemStatus.IN_STOCK && item.status !== ItemStatus.ORDERED) return false;
-  if (item.parentContainerId) return false;
-  return Boolean(item.saleReady || item.workflowStage === 'Ready' || item.workflowStage === 'Listed');
-}
-
-export function maybeSoldLabel(hint?: InventoryItem['maybeSoldHint']): string {
-  if (hint === 'ebay') return 'Gone from eBay — mark sold?';
-  if (hint === 'kleinanzeigen') return 'Gone from KA — mark sold?';
-  if (hint === 'both') return 'Gone from KA + eBay — mark sold?';
-  return '';
 }

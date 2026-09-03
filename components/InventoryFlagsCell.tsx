@@ -71,7 +71,7 @@ function SoldEbayOrderLinkButton({
         target="_blank"
         rel="noopener noreferrer"
         onClick={(e) => e.stopPropagation()}
-        className={`${iconClassName} shrink-0 flex items-center justify-center rounded-lg border border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors`}
+        className={`${iconClassName} shrink-0 flex items-center justify-center rounded-lg border border-sky-200 bg-sky-50/80 text-sky-700 hover:bg-sky-100 transition-colors`}
         title={`Open eBay order ${orderId} ↗`}
         aria-label={`Open eBay order ${orderId}`}
       >
@@ -139,7 +139,7 @@ function renderFlagGhost(Icon: LucideIcon, iconBtn: string) {
   return (
     <span
       data-flag-ghost
-      className={`${iconBtn} shrink-0 inline-flex items-center justify-center rounded-lg border border-slate-100 bg-slate-50/70 text-slate-300/80 pointer-events-none select-none`}
+      className={`${iconBtn} shrink-0 inline-flex items-center justify-center rounded-lg border border-slate-200/80 bg-transparent text-slate-300 pointer-events-none select-none`}
       aria-hidden="true"
     >
       <Icon size={13} strokeWidth={2.25} className="opacity-45" />
@@ -191,7 +191,7 @@ const InventoryFlagsCell = React.memo(function InventoryFlagsCell({
   const [menuOpen, setMenuOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  const iconBtn = dense ? 'h-6 w-6' : 'h-7 w-7';
+  const iconBtn = 'h-7 w-7';
   const childItems = item.isPC || item.isBundle ? getChildren(item, items, inventoryLookup) : [];
   const childCount = childItems.length;
 
@@ -341,7 +341,7 @@ const InventoryFlagsCell = React.memo(function InventoryFlagsCell({
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
-            className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors`}
+            className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-sky-200 bg-sky-50/80 text-sky-700 hover:bg-sky-100 transition-colors`}
             title="Live on eBay — click to open the listing"
           >
             <Link2 size={13} strokeWidth={2.25} />
@@ -356,7 +356,7 @@ const InventoryFlagsCell = React.memo(function InventoryFlagsCell({
               e.stopPropagation();
               actions.onEditForEbayPublish(item);
             }}
-            className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors`}
+            className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50/80 text-emerald-700 hover:bg-emerald-100 transition-colors`}
             title="Ready to publish to eBay"
           >
             <CheckCircle2 size={13} strokeWidth={2.25} />
@@ -375,11 +375,11 @@ const InventoryFlagsCell = React.memo(function InventoryFlagsCell({
         }}
         className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border transition-colors ${
           !qc.ok && qc.issues.some((i) => i.level === 'error')
-            ? 'border-rose-300 bg-rose-50 text-rose-600 hover:bg-rose-100'
+            ? 'border-rose-200 bg-rose-50/80 text-rose-600 hover:bg-rose-100'
             : !qc.ok
-              ? 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
+              ? 'border-amber-200 bg-amber-50/80 text-amber-700 hover:bg-amber-100'
               : getItemUserPhotoCount(item) > 0
-                ? 'border-blue-300 bg-blue-50 text-blue-600 hover:bg-blue-100'
+                ? 'border-blue-200 bg-blue-50/80 text-blue-600 hover:bg-blue-100'
                 : 'border-slate-200 bg-white text-slate-500 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50/50'
         }`}
         title={qc.ok ? 'Photos OK — click to add more' : `Photo QC: ${qc.label}`}
@@ -419,11 +419,11 @@ const InventoryFlagsCell = React.memo(function InventoryFlagsCell({
           disabled={bgBusy}
           className={`${iconBtn} relative shrink-0 flex items-center justify-center rounded-lg border transition-colors disabled:opacity-70 ${
             bgBusy
-              ? 'border-violet-300 bg-violet-50 text-violet-700'
+              ? 'border-violet-200 bg-violet-50/80 text-violet-700'
               : confirming
                 ? 'border-amber-400 bg-amber-50 text-amber-800 ring-1 ring-amber-200'
                 : hasCards
-                  ? 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                  ? 'border-emerald-200 bg-emerald-50/80 text-emerald-800 hover:bg-emerald-100'
                   : 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100'
           }`}
           title={
@@ -642,7 +642,7 @@ const InventoryFlagsCell = React.memo(function InventoryFlagsCell({
           target="_blank"
           rel="noopener noreferrer"
           onClick={(e) => e.stopPropagation()}
-          className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors`}
+          className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-sky-200 bg-sky-50/80 text-sky-700 hover:bg-sky-100 transition-colors`}
           title={`${primaryLink.title} ↗`}
         >
           {primaryLink.kind === 'chat' ? (
@@ -703,11 +703,11 @@ const InventoryFlagsCell = React.memo(function InventoryFlagsCell({
         }}
         className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border transition-colors ${
           cycleState === 'present'
-            ? 'border-emerald-300 bg-emerald-50'
+            ? 'border-emerald-200 bg-emerald-50/80'
             : cycleState === 'lost'
-              ? 'border-red-300 bg-red-50'
+              ? 'border-red-200 bg-red-50/80'
               : cycleState === 'defective'
-                ? 'border-amber-300 bg-amber-50'
+                ? 'border-amber-200 bg-amber-50/80'
                 : 'border-slate-200 bg-white hover:bg-slate-50'
         }`}
         title={

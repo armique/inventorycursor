@@ -59,7 +59,7 @@ import {
   resolveFinanzamtDateBounds,
 } from '../utils/exportDateRange';
 import { withDealwatchplaceCredentials } from '../utils/marketplaceCredentialsSync';
-import { saveKaProfileUrl } from '../utils/listingPresence';
+import { saveKaProfileUrl } from '../utils/kaListingMatch';
 import { buildFullBackupPayload, downloadFullBackupJson, type BackupData } from '../utils/fullBackupExport';
 import { loadEbayOrderIndex } from '../services/ebayOrderIndex';
 import { loadEbayTransactionLibrary, loadEbayTxLabelOverrides } from '../services/ebayTransactionReportStore';
@@ -362,9 +362,6 @@ const SettingsPage: React.FC<Props> = ({
       setIsSavingBusiness(false);
     }
   };
-  const [kaTitlesPaste, setKaTitlesPaste] = useState('');
-  const [listingPresenceBusy, setListingPresenceBusy] = useState(false);
-  const [listingPresenceMsg, setListingPresenceMsg] = useState<string | null>(null);
 
   useEffect(() => {
     const tab = searchParams.get('tab')?.toUpperCase();
@@ -1186,24 +1183,15 @@ const SettingsPage: React.FC<Props> = ({
           {activeTab === 'EBAY' && (
              <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
                 <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-5 space-y-2">
-                   <h3 className="text-lg font-black text-indigo-950">Where to paste your seller profiles</h3>
+                   <h3 className="text-lg font-black text-indigo-950">eBay seller setup</h3>
                    <ol className="text-sm text-indigo-900/90 space-y-1.5 list-decimal list-inside font-medium">
                       <li>
                          <strong>eBay</strong> — enter your seller username below (public store). Optional OAuth token for private listings / orders.
                       </li>
                       <li>
-                         <strong>Kleinanzeigen</strong> — paste your public profile / Bestandsliste URL in “Listing presence”, then Refresh.
-                      </li>
-                      <li>
-                         Sync matches listings to <strong>all in-stock</strong> items by name (auto-marks matches Ready). Use Ready for delisting / maybe-sold watch.
-                      </li>
-                      <li>
-                         After sync: missing listings show KA/EB muted; vanished ads get a <strong>mark sold?</strong> nudge; price gaps show Lower → hints.
+                         <strong>Kleinanzeigen</strong> — optional profile URL for importing listing photos in Add photos.
                       </li>
                    </ol>
-                   <p className="text-xs text-indigo-800/80">
-                      Tip: open Inventory → filter “Ready · not listed” or “Maybe sold”. Use time filters (This week / Month / …) with “Sale ready” to watch items you added in a period.
-                   </p>
                 </div>
 
                 <h3 className="text-xl font-black text-slate-900 flex items-center gap-2"><ShoppingBag size={24}/> eBay sync</h3>
@@ -1546,87 +1534,27 @@ const SettingsPage: React.FC<Props> = ({
                 </div>
                 </details>
 
-                <div className="border-t border-slate-100 pt-6 space-y-4">
-                   <h4 className="text-sm font-black uppercase tracking-widest text-slate-500">Listing presence (KA + eBay)</h4>
-                   <p className="text-sm text-slate-500">
-                      Paste your <strong>Kleinanzeigen Bestandsliste / profile link</strong> here. eBay uses the username above.
-                      Sync fuzzy-matches titles to inventory (names need not be identical) and remembers manual KA links for next time. If a <strong>Ready</strong> listing later disappears, we flag <strong>Maybe sold</strong>. Profile URL is cloud-synced with your inventory backup.
+                <div className="border-t border-slate-100 pt-6 space-y-2">
+                   <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Kleinanzeigen profile URL (photo import)</label>
+                   <input
+                      type="url"
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm outline-none focus:border-slate-900"
+                      placeholder="https://www.kleinanzeigen.de/s-bestandsliste.html?userId=…"
+                      value={kaProfileUrl}
+                      onChange={(e) => setKaProfileUrl(e.target.value)}
+                      onBlur={() => {
+                         saveKaProfileUrl(kaProfileUrl);
+                         onBusinessSettingsChange(
+                           withDealwatchplaceCredentials(businessSettings, {
+                             kleinanzeigenProfileUrl: kaProfileUrl,
+                             ebaySellerUsername: ebayUsernameInput,
+                           })
+                         );
+                      }}
+                   />
+                   <p className="text-[11px] text-slate-500">
+                      Used by Add photos to fetch your KA listing thumbnails. Syncs with your cloud backup.
                    </p>
-                   <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Kleinanzeigen profile URL</label>
-                      <input
-                         type="url"
-                         className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm outline-none focus:border-slate-900"
-                         placeholder="https://www.kleinanzeigen.de/s-bestandsliste.html?userId=…"
-                         value={kaProfileUrl}
-                         onChange={(e) => setKaProfileUrl(e.target.value)}
-                      />
-                      <p className="text-[11px] text-slate-500">
-                         Open your KA profile → copy the browser URL (often contains <code className="bg-slate-100 px-1 rounded">s-bestandsliste</code>).
-                      </p>
-                   </div>
-                   <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase text-slate-400 ml-1">
-                         Paste KA titles + prices (fallback if profile fetch is blocked)
-                      </label>
-                      <textarea
-                         className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs outline-none focus:border-slate-900 min-h-[88px]"
-                         placeholder={'One per line\nTitle | 49\nTitle | 49 | https://www.kleinanzeigen.de/s-anzeige/…'}
-                         value={kaTitlesPaste}
-                         onChange={(e) => setKaTitlesPaste(e.target.value)}
-                      />
-                   </div>
-                   <div className="flex flex-wrap items-center gap-3">
-                      <button
-                         type="button"
-                         disabled={listingPresenceBusy}
-                         onClick={async () => {
-                            setListingPresenceBusy(true);
-                            setListingPresenceMsg(null);
-                            try {
-                               const { saveKaProfileUrl: saveKaLocal, parseKaTitlesPaste, saveKaListingTitles } = await import('../utils/listingPresence');
-                               const { syncListingPresence } = await import('../utils/syncListingPresence');
-                               saveKaLocal(kaProfileUrl);
-                               saveKaProfileUrl(kaProfileUrl);
-                               onBusinessSettingsChange(
-                                 withDealwatchplaceCredentials(businessSettings, {
-                                   kleinanzeigenProfileUrl: kaProfileUrl,
-                                   ebaySellerUsername: ebayUsernameInput,
-                                 })
-                               );
-                               const pasted = parseKaTitlesPaste(kaTitlesPaste);
-                               if (pasted.length) saveKaListingTitles(pasted);
-                               const result = await syncListingPresence(items, {
-                                  kaTitlesOverride: pasted.length ? pasted : undefined,
-                               });
-                               onRestoreItems(result.items);
-                               const hint =
-                                 result.kaTitleCount > 0 && result.kaMatched === 0
-                                   ? ' · No KA title matched inventory names — check names or paste titles with prices'
-                                   : result.eligibleCount === 0
-                                     ? ' · No eligible in-stock items to match'
-                                     : '';
-                               setListingPresenceMsg(
-                                  `Eligible ${result.eligibleCount} · Ready ${result.watchCount} · eBay ${result.ebayMatched}/${result.ebayTitleCount} · KA ${result.kaMatched}/${result.kaTitleCount} · ${result.priceHints} price hints · ${result.maybeSoldCount} maybe sold` +
-                                    hint +
-                                    (result.ebayError ? ` · eBay: ${result.ebayError}` : '') +
-                                    (result.kaError ? ` · KA: ${result.kaError}` : '')
-                               );
-                            } catch (e) {
-                               setListingPresenceMsg((e as Error)?.message || 'Sync failed');
-                            } finally {
-                               setListingPresenceBusy(false);
-                            }
-                         }}
-                         className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-bold text-xs uppercase hover:bg-indigo-700 flex items-center gap-2 disabled:opacity-50"
-                      >
-                         {listingPresenceBusy ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-                         Refresh listing presence
-                      </button>
-                      {listingPresenceMsg && (
-                         <span className="text-xs font-bold text-slate-600">{listingPresenceMsg}</span>
-                      )}
-                   </div>
                 </div>
              </div>
           )}
