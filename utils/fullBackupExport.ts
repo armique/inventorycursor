@@ -69,12 +69,21 @@ export function buildFullBackupPayload(snapshot: {
   };
 }
 
-export function downloadFullBackupJson(backup: BackupData): void {
+/** Safe filename timestamp: `2026-09-02T134530` */
+export function backupFileTimestamp(d = new Date()): string {
+  return d.toISOString().replace(/[:.]/g, '').slice(0, 15);
+}
+
+export function defaultBackupFileName(d = new Date()): string {
+  return `deinventory-backup-${backupFileTimestamp(d)}.json`;
+}
+
+export function downloadFullBackupJson(backup: BackupData, options?: { fileName?: string }): void {
   const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `deinventory-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = options?.fileName || defaultBackupFileName();
   a.click();
   URL.revokeObjectURL(url);
 }

@@ -99,6 +99,7 @@ import {
   countProductCardsByItemId,
 } from '../services/productCardGallery';
 import ItemAccessoryToggles from './ItemAccessoryToggles';
+import InventoryFlagsCell, { type InventoryFlagsCellActions } from './InventoryFlagsCell';
 import {
   canMarkSaleReady,
 } from '../utils/listingPrepChecklist';
@@ -3617,10 +3618,6 @@ const InventoryList: React.FC<Props> = ({
         ? { minWidth: `${width}px`, width: 'auto' as const, maxWidth: 'none' as const }
         : { width: `${width}px`, minWidth: `${width}px`, maxWidth: `${width}px` };
     const dense = listDensity === 'compact';
-    const iconBtn = dense ? 'h-6 w-6' : 'h-7 w-7';
-    /** Missing flag actions render nothing — row packs tight instead of reserving empty slots. */
-    const iconSlotReserve = null;
-
     switch (id) {
       case 'select':
         return (
@@ -3643,438 +3640,18 @@ const InventoryList: React.FC<Props> = ({
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div
-              data-flags-strip
-              className={`inline-flex flex-nowrap items-center justify-start ${dense ? 'gap-0' : 'gap-px'} w-max`}
-            >
-              {/* 1–2: Mark sold, Delete (same order as former title-row actions) */}
-              {!item.parentContainerId &&
-              (item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED) ? (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    addRecentItemId(item.id);
-                    setItemToSell(item);
-                  }}
-                  className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-900 transition-colors`}
-                  title="Mark Sold"
-                  aria-label={`Mark ${item.name} sold`}
-                >
-                  <ShoppingBag size={13} strokeWidth={2.25} />
-                </button>
-              ) : (
-                iconSlotReserve
-              )}
-              {!item.parentContainerId ? (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setItemToDelete(item);
-                  }}
-                  className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 hover:border-red-300 hover:bg-red-50 hover:text-red-600 transition-colors`}
-                  title="Delete"
-                  aria-label={`Delete ${item.name}`}
-                >
-                  <Trash2 size={13} strokeWidth={2.25} />
-                </button>
-              ) : (
-                iconSlotReserve
-              )}
-
-              {/* Listed on eBay (link to live listing) — or, if not listed yet, ready-to-publish badge */}
-              {!item.parentContainerId &&
-              (item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED) ? (
-                item.listedOnEbay && item.ebayListingId ? (
-                  <a
-                    href={buildEbayItemUrl(item.ebayListingId)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
-                    className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors`}
-                    title="Live on eBay — click to open the listing"
-                    aria-label={`Open eBay listing for ${item.name}`}
-                  >
-                    <Link2 size={13} strokeWidth={2.25} />
-                  </a>
-                ) : getEbayPublishReadiness(item).ok ? (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleEditClick(item);
-                    }}
-                    className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors`}
-                    title="Ready to publish to eBay — click to open and publish"
-                    aria-label={`${item.name} is ready to publish to eBay`}
-                  >
-                    <CheckCircle2 size={13} strokeWidth={2.25} />
-                  </button>
-                ) : (
-                  iconSlotReserve
-                )
-              ) : (
-                iconSlotReserve
-              )}
-
-              {/* Physical presence: present → lost → defective → unknown */}
-              {(() => {
-                const cycleState = getItemPresenceCycleState(item);
-                return (
-              <button
-                type="button"
-                onClick={() => togglePresence(item)}
-                className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border transition-colors ${
-                  cycleState === 'present'
-                    ? 'border-emerald-300 bg-emerald-50'
-                  : cycleState === 'lost'
-                    ? 'border-red-300 bg-red-50'
-                  : cycleState === 'defective'
-                    ? 'border-amber-300 bg-amber-50'
-                    : 'border-slate-200 bg-white hover:bg-slate-50'
-                }`}
-                title={
-                  cycleState === 'present'
-                    ? 'Present (click → lost)'
-                    : cycleState === 'lost'
-                    ? 'Lost (click → defective)'
-                    : cycleState === 'defective'
-                    ? 'Defective (click → clear)'
-                    : '? Presence not set — click to mark present / lost / defective'
-                }
-              >
-                {cycleState === 'defective' ? (
-                  <AlertCircle size={13} className="text-amber-600" />
-                ) : cycleState === 'unknown' ? (
-                  <span className="text-[11px] font-black leading-none text-slate-500">?</span>
-                ) : (
-                <span
-                  className={`w-2.5 h-2.5 rounded-full ${
-                    cycleState === 'present'
-                      ? 'bg-emerald-500'
-                      : 'bg-red-500'
-                  }`}
-                />
-                )}
-              </button>
-                );
-              })()}
-
-              {/* Add photos (replaces former defective quick button slot) */}
-              {(() => {
-                const qc = photoQcSummary(item);
-                return (
-              <button
-                type="button"
-                onClick={() => openAddPhotosModal([item.id])}
-                className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border transition-colors ${
-                  !qc.ok && qc.issues.some((i) => i.level === 'error')
-                    ? 'border-rose-300 bg-rose-50 text-rose-600 hover:bg-rose-100'
-                    : !qc.ok
-                    ? 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
-                    : getItemUserPhotoCount(item) > 0
-                    ? 'border-blue-300 bg-blue-50 text-blue-600 hover:bg-blue-100'
-                    : 'border-slate-200 bg-white text-slate-500 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50/50'
-                }`}
-                title={qc.ok ? 'Photos OK — click to add more' : `Photo QC: ${qc.label}`}
-              >
-                <Camera size={13} strokeWidth={2.25} />
-              </button>
-                );
-              })()}
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  openAddPhotosModal([item.id], { ebay: true });
-                }}
-                className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 hover:border-sky-300 transition-colors`}
-                title="Parse photos from my eBay listings into this item"
-              >
-                <ShoppingBag size={13} strokeWidth={2.25} />
-              </button>
-
-              {(() => {
-                const bgBusy = activeBgCardItemIds.has(item.id);
-                const bgJob = bgCardJobs.find(
-                  (j) => j.itemId === item.id && (j.status === 'queued' || j.status === 'running')
-                );
-                const cardCount = itemAiCardCounts[item.id] || 0;
-                const hasCards = cardCount > 0;
-                const confirming = aiCardRegenConfirmId === item.id;
-                return (
-              <div className="relative shrink-0">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (bgBusy) return;
-                  if (hasCards && !confirming) {
-                    setAiCardRegenConfirmId(item.id);
-                    return;
-                  }
-                  queueBackgroundAiCards(item);
-                }}
-                disabled={bgBusy}
-                className={`${iconBtn} relative shrink-0 flex items-center justify-center rounded-lg border transition-colors disabled:opacity-70 ${
-                  bgBusy
-                    ? 'border-violet-300 bg-violet-50 text-violet-700'
-                    : confirming
-                      ? 'border-amber-400 bg-amber-50 text-amber-800 ring-1 ring-amber-200'
-                      : hasCards
-                        ? 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
-                        : 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100'
-                }`}
-                title={
-                  bgBusy
-                    ? `Generating in background… ${bgJob?.progress || ''}`.trim()
-                    : confirming
-                      ? `Already has ${cardCount} AI card${cardCount === 1 ? '' : 's'} — confirm to generate more`
-                      : hasCards
-                        ? `Already has ${cardCount} AI card${cardCount === 1 ? '' : 's'} in gallery — click to confirm another run`
-                        : 'Generate AI cards in background — saved to card gallery (come back later to pick)'
-                }
-              >
-                {bgBusy ? (
-                  <Loader2 size={13} strokeWidth={2.25} className="animate-spin" />
-                ) : (
-                  <Images size={13} strokeWidth={2.25} />
-                )}
-                {hasCards && !bgBusy && (
-                  <span
-                    className="absolute -top-1 -right-1 min-w-[14px] h-3.5 px-0.5 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-sm"
-                    aria-hidden
-                  >
-                    {cardCount > 9 ? (
-                      <Check size={8} strokeWidth={3} />
-                    ) : (
-                      <span className="text-[8px] font-black leading-none">{cardCount}</span>
-                    )}
-                  </span>
-                )}
-              </button>
-              {confirming && (
-                <div
-                  className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-[70] flex items-center gap-0.5 rounded-lg border border-slate-200 bg-white p-0.5 shadow-lg"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      queueBackgroundAiCards(item);
-                    }}
-                    className="p-1 rounded-md bg-emerald-600 text-white hover:bg-emerald-700"
-                    title="Yes — generate more cards"
-                  >
-                    <Check size={12} strokeWidth={2.75} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setAiCardRegenConfirmId(null);
-                    }}
-                    className="p-1 rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-rose-600"
-                    title="No — keep existing cards"
-                  >
-                    <X size={12} strokeWidth={2.75} />
-                  </button>
-                </div>
-              )}
-              </div>
-                );
-              })()}
-
-              {/* Quick Bundle / Mixed Bundle / add-to-PC from Flags — any category */}
-              {(() => {
-                const parentOfItem = resolveParentContainer(item, containersById, containerByChildId);
-                const soldLike =
-                  isRealizedDisposal(item) || item.status === ItemStatus.GIFTED;
-                // Sold/traded/gifted PC/bundle containers can still take more parts — the new
-                // part is stamped Sold (matching the container) instead of In Composition, so
-                // it shows correctly in the Sold tab. Use the Calculator icon afterward to
-                // redistribute the (unchanged) sale total across the now-larger part set.
-                const isSoldContainer = (item.isPC || item.isBundle) && soldLike;
-                const canQuickBundle = !soldLike || isSoldContainer;
-                if (!canQuickBundle) {
-                  return iconSlotReserve;
-                }
-                return (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      // Parts already inside a container → add more to that parent
-                      const seed =
-                        parentOfItem && !item.isPC && !item.isBundle ? parentOfItem : item;
-                      openQuickBundlePanel(seed);
-                    }}
-                    className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border transition-colors border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 hover:border-violet-300`}
-                    title={
-                      parentOfItem && !item.isPC && !item.isBundle
-                        ? `Add parts to ${parentOfItem.isPC ? 'PC' : 'bundle'}: ${parentOfItem.name}`
-                        : item.isPC
-                          ? isSoldContainer
-                            ? 'Add parts to this sold PC — use Recalculate after to resplit the sale total'
-                            : 'Add parts to this PC'
-                          : item.isBundle
-                            ? isSoldContainer
-                              ? 'Add parts to this sold bundle — use Recalculate after to resplit the sale total'
-                              : 'Add parts to this bundle'
-                            : 'Turn into Bundle / Mixed Bundle — search any category'
-                    }
-                  >
-                    <Plus size={13} strokeWidth={2.5} />
-                  </button>
-                );
-              })()}
-
-              {/* Bulk import batch — open dedicated status-agnostic view */}
-              {(() => {
-                const itemBulkId = resolveItemBulkImportId(item);
-                if (!itemBulkId) return iconSlotReserve;
-                return (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openBulkImportBatch(itemBulkId);
-                    }}
-                    className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border transition-colors ${
-                      bulkImportFilterId === itemBulkId
-                        ? 'border-violet-400 bg-violet-100 text-violet-800'
-                        : 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 hover:border-violet-300'
-                    }`}
-                    title="Bulk import — show all from this batch (including sold)"
-                  >
-                    <Layers size={13} strokeWidth={2.25} />
-                  </button>
-                );
-              })()}
-
-              {/* Rebuild PC / Bundle title from parts */}
-              {getContainerKind(item) ? (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleRebuildContainerTitle(item);
-                  }}
-                  className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border transition-colors border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 hover:border-sky-300`}
-                  title="Rebuild title from parts (RAM kits, CPU, mobo…)"
-                >
-                  <RotateCw size={13} strokeWidth={2.25} />
-                </button>
-              ) : (
-                iconSlotReserve
-              )}
-
-              {(item.isPC || item.isBundle) ? (
-                <button type="button" onClick={(e) => { e.stopPropagation(); setBundleToDismantle(item); }} className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100`} title="Unbundle / Dismantle"><Unlink size={13} strokeWidth={2.25} /></button>
-              ) : (
-                iconSlotReserve
-              )}
-              {canSplitItem(item, (item.isPC || item.isBundle) ? getChildren(item, items).length : 0) ? (() => {
-                const lotQty = resolveIdenticalLotQty(item);
-                return (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSplitPartsSeed(item);
-                  }}
-                  className={`${iconBtn} shrink-0 inline-flex items-center justify-center gap-0.5 rounded-lg border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 px-1`}
-                  title={
-                    lotQty != null
-                      ? `Split lot ×${lotQty} into identical items`
-                      : 'Split into parts or identical copies'
-                  }
-                >
-                  <Scissors size={13} strokeWidth={2.25} />
-                  {lotQty != null && (
-                    <span className="text-[9px] font-black tabular-nums leading-none pr-0.5">
-                      ×{lotQty}
-                    </span>
-                  )}
-                </button>
-                );
-              })() : (
-                iconSlotReserve
-              )}
-              {(item.isPC || item.isBundle) && isRealizedDisposal(item) && getChildren(item, items).length > 0 ? (
-                <button type="button" onClick={(e) => { e.stopPropagation(); setRecalcTarget(item); }} className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100`} title="Recalculate component sell prices"><Calculator size={13} strokeWidth={2.25} /></button>
-              ) : (item.isPC || item.isBundle) && !isRealizedDisposal(item) && getChildren(item, items).length > 0 ? (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleResplitContainerBuy(item);
-                  }}
-                  className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100`}
-                  title="Resplit buy prices across parts (proportional lot cost)"
-                >
-                  <Calculator size={13} strokeWidth={2.25} />
-                </button>
-              ) : (
-                iconSlotReserve
-              )}
-              {item.status === ItemStatus.IN_STOCK ? (
-                <button type="button" onClick={(e) => { e.stopPropagation(); addRecentItemId(item.id); setItemToTrade(item); }} className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100`} title="Trade"><ArrowRightLeft size={13} strokeWidth={2.25} /></button>
-              ) : (
-                iconSlotReserve
-              )}
-              {item.status === ItemStatus.IN_STOCK ? (
-                <button type="button" onClick={(e) => { e.stopPropagation(); addRecentItemId(item.id); setItemToGift(item); }} className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100`} title="Gift / Privatentnahme"><Gift size={13} strokeWidth={2.25} /></button>
-              ) : (
-                iconSlotReserve
-              )}
-              {isSoldOrTradedOnly(item) ? (
-                <button type="button" onClick={(e) => { e.stopPropagation(); addRecentItemId(item.id); setInvoiceViewItem(item); }} className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100`} title="Generate Invoice"><FileText size={13} strokeWidth={2.25} /></button>
-              ) : (
-                iconSlotReserve
-              )}
-              {item.status === ItemStatus.SOLD ? (
-                <button type="button" onClick={(e) => { e.stopPropagation(); addRecentItemId(item.id); setItemToEditBuyer(item); }} className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100`} title="Buyer & eBay order"><User size={13} strokeWidth={2.25} /></button>
-              ) : (
-                iconSlotReserve
-              )}
-              {item.status === ItemStatus.SOLD || item.status === ItemStatus.GIFTED ? (
-                <button type="button" onClick={(e) => { e.stopPropagation(); setItemToReturn(item); }} className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100`} title={item.status === ItemStatus.GIFTED ? 'Undo gift' : 'Mark Unsold / Return'}><RotateCcw size={13} strokeWidth={2.25} /></button>
-              ) : (
-                iconSlotReserve
-              )}
-              {shouldShowEbayOrderLinkInFlags(item) ? (
-                <SoldEbayOrderLinkButton
-                  item={item}
-                  onMatchOrder={openOrderLookupModal}
-                  iconClassName={iconBtn}
-                />
-              ) : (() => {
-                const links = resolveItemSourceLinks(item);
-                const primary = links.chat || links.order || links.profile;
-                if (!primary) return iconSlotReserve;
-                return (
-                  <a
-                    href={primary.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
-                    className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors`}
-                    title={`${primary.title} ↗`}
-                  >
-                    {primary.kind === 'chat' ? (
-                      <MessageSquare size={13} strokeWidth={2.25} />
-                    ) : primary.kind === 'order' ? (
-                      <ExternalLink size={13} strokeWidth={2.25} />
-                    ) : (
-                      <User size={13} strokeWidth={2.25} />
-                    )}
-                  </a>
-                );
-              })()}
-            </div>
+            <InventoryFlagsCell
+              item={item}
+              dense={dense}
+              items={items}
+              inventoryLookup={inventoryLookup}
+              bulkImportFilterId={bulkImportFilterId}
+              activeBgCardItemIds={activeBgCardItemIds}
+              bgCardJobs={bgCardJobs}
+              itemAiCardCounts={itemAiCardCounts}
+              aiCardRegenConfirmId={aiCardRegenConfirmId}
+              actions={flagsCellActions}
+            />
           </td>
         );
       case 'item':
@@ -5240,6 +4817,70 @@ const InventoryList: React.FC<Props> = ({
     setAddPhotosAutoEbay(Boolean(opts?.ebay));
     setShowBulkAddPhotosModal(true);
   }, []);
+
+  const flagsCellActions = useMemo<InventoryFlagsCellActions>(
+    () => ({
+      onMarkSold: (it) => {
+        addRecentItemId(it.id);
+        setItemToSell(it);
+      },
+      onDelete: (it) => setItemToDelete(it),
+      onTogglePresence: (it) => togglePresence(it),
+      onPatchAccessory: (it, patch) =>
+        onUpdate([{ ...it, ...patch }], undefined, { skipActionLog: true }),
+      onOpenAddPhotos: (itemId) => openAddPhotosModal([itemId]),
+      onOpenEbayPhotos: (itemId) => openAddPhotosModal([itemId], { ebay: true }),
+      onRequestAiCardsConfirm: (it) => setAiCardRegenConfirmId(it.id),
+      onQueueAiCards: (it) => queueBackgroundAiCards(it),
+      onCancelAiCardsConfirm: () => setAiCardRegenConfirmId(null),
+      onOpenQuickBundle: (it) => {
+        const parentOfItem = resolveParentContainer(it, containersById, containerByChildId);
+        const soldLike = isRealizedDisposal(it) || it.status === ItemStatus.GIFTED;
+        const isSoldContainer = (it.isPC || it.isBundle) && soldLike;
+        if (soldLike && !isSoldContainer) return;
+        const seed = parentOfItem && !it.isPC && !it.isBundle ? parentOfItem : it;
+        openQuickBundlePanel(seed);
+      },
+      onOpenBulkImport: (bulkId) => openBulkImportBatch(bulkId),
+      onRebuildTitle: (it) => handleRebuildContainerTitle(it),
+      onUnbundle: (it) => setBundleToDismantle(it),
+      onSplitParts: (it) => setSplitPartsSeed(it),
+      onRecalcSoldContainer: (it) => setRecalcTarget(it),
+      onResplitBuyPrices: (it) => handleResplitContainerBuy(it),
+      onTrade: (it) => {
+        addRecentItemId(it.id);
+        setItemToTrade(it);
+      },
+      onGift: (it) => {
+        addRecentItemId(it.id);
+        setItemToGift(it);
+      },
+      onInvoice: (it) => {
+        addRecentItemId(it.id);
+        setInvoiceViewItem(it);
+      },
+      onEditBuyer: (it) => {
+        addRecentItemId(it.id);
+        setItemToEditBuyer(it);
+      },
+      onReturnOrUndoGift: (it) => setItemToReturn(it),
+      onMatchEbayOrder: (it) => openOrderLookupModal(it),
+      onEditForEbayPublish: (it) => handleEditClick(it),
+      resolveBulkImportId: (it) => resolveItemBulkImportId(it),
+    }),
+    [
+      containersById,
+      containerByChildId,
+      onUpdate,
+      openAddPhotosModal,
+      queueBackgroundAiCards,
+      openQuickBundlePanel,
+      openBulkImportBatch,
+      handleRebuildContainerTitle,
+      handleResplitContainerBuy,
+      resolveItemBulkImportId,
+    ]
+  );
 
   const closeAddPhotosModal = useCallback(() => {
     setShowBulkAddPhotosModal(false);

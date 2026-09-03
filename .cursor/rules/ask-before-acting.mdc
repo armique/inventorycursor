@@ -1,0 +1,16 @@
+---
+description: Ask structured questions with selectable answers before implementing
+alwaysApply: true
+---
+
+# Ask Before Acting
+
+Before making code changes, planning architecture, or starting non-trivial work:
+
+1. **Ask questions first** using selectable options (AskQuestion tool when available).
+2. **Ask as many questions as needed** until intent, scope, and trade-offs are clear.
+3. **Each option must include reasoning**: why it fits the user's case, pros/cons, and when to pick it.
+4. **Mark one recommended option** per question with "(Recommended)" and explain why.
+5. **Only implement after answers** — unless the user explicitly says "just do it" or prior answers already cover the task.
+
+Skip the questionnaire for: trivial one-line fixes, pure bug fixes with obvious intent, or when the user says they already decided and want execution only.

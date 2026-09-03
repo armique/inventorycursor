@@ -80,8 +80,9 @@ import SourceLinkIcons from './SourceLinkIcons';
 import ProofAttachmentsPanel from './ProofAttachmentsPanel';
 import CostOriginPanel from './CostOriginPanel';
 import SaleCycleHistory from './SaleCycleHistory';
-import BuyPriceHistory from './BuyPriceHistory';
 import MovementHistoryList from './MovementHistoryList';
+import TitleHistoryPicker from './TitleHistoryPicker';
+import UnifiedPriceHistory from './UnifiedPriceHistory';
 import { resolveItemSourceLinks } from '../utils/sourceLinks';
 import { ADD_FLOW_INPUT, ADD_FLOW_LABEL, ADD_FLOW_PANEL } from './addFlowShared';
 import { searchProductPhotos, type ImageSearchResult } from '../services/imageSearchService';
@@ -1409,6 +1410,15 @@ const ListingStudioModal: React.FC<Props> = ({
                   }
                 }}
               />
+              <TitleHistoryPicker
+                entries={item.titleHistory || []}
+                field="name"
+                current={name}
+                onRestore={(restored) => {
+                  setName(restored);
+                  void persistPatch({ name: restored });
+                }}
+              />
               <div className="flex items-center gap-1.5">
                 <ItemAccessoryToggles
                   item={workingItem}
@@ -2052,7 +2062,7 @@ const ListingStudioModal: React.FC<Props> = ({
                 <div className="pt-1 border-t border-slate-200/80 space-y-1.5">
                   <p className="text-[9px] font-black uppercase text-slate-400">Sale / buyer</p>
                   <SaleCycleHistory item={item} />
-                  <BuyPriceHistory item={item} />
+                  <UnifiedPriceHistory item={item} />
                   <MovementHistoryList item={item} />
                   <div className="grid grid-cols-2 gap-1.5">
                     <label className="block space-y-0.5">
@@ -2708,6 +2718,17 @@ const ListingStudioModal: React.FC<Props> = ({
                 onChange={(e) => setTitle(e.target.value)}
                 className="w-full px-2.5 py-2 text-sm font-semibold outline-none"
               />
+              <div className="px-2.5 pb-2">
+                <TitleHistoryPicker
+                  entries={item.titleHistory || []}
+                  field="marketTitle"
+                  current={title}
+                  onRestore={(restored) => {
+                    setTitle(restored.slice(0, 80));
+                    void persistPatch({ marketTitle: restored.slice(0, 80) });
+                  }}
+                />
+              </div>
             </div>
 
             <div className="rounded-xl border border-slate-200 bg-white overflow-hidden min-h-[140px] flex flex-col">

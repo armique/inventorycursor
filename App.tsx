@@ -84,6 +84,7 @@ import { DEFAULT_CATEGORIES } from './services/constants';
 import { migrateCategoriesRecord, migrateContainerItem } from './utils/containerTaxonomy';
 import { todayLocalDateKey } from './utils/calendarDate';
 import { buildFullBackupPayload, downloadFullBackupJson } from './utils/fullBackupExport';
+import { runCloseSessionBackup } from './utils/closeSessionBackup';
 import { loadEbayOrderIndex, upsertEbayOrders, type EbayOrderRecord } from './services/ebayOrderIndex';
 import {
   loadEbayTransactionLibrary,
@@ -121,8 +122,9 @@ import {
   renameSubcategoryInCatalog,
 } from './utils/categoryRename';
 import { appendPriceHistoryIfChanged, mergeItemAuditFields } from './services/priceHistory';
+import { appendTitleHistoryIfChanged } from './utils/titleHistory';
 import { withSyncedRealizedProfit, healRealizedProfitsFromSaleProceeds } from './services/financialAggregation';
-import { syncContainerBuyTotalsFromComponents } from './services/containerAggregates';
+import { syncContainerBuyTotalsFromComponents, syncContainerBuyDatesFromComponents } from './services/containerAggregates';
 import { syncContainerSaleMetaToChildren } from './utils/containerSaleCascade';
 import { planAbrechnungMistakenLinkHeals } from './utils/itemSaleCycle';
 import { enforceContainerMembershipInvariants, findEmptyContainerShellIds } from './utils/containerMembershipInvariants';
@@ -165,6 +167,7 @@ import {
   countBlankContainerBuyDates,
   preferFilledContainerBuyDate,
 } from './utils/backfillContainerBuyDates';
+import { repairImpossibleBuyDates } from './utils/repairImpossibleBuyDates';
 import { canonicalizeInventoryItems } from './utils/canonicalItemOrders';
 import { localInventoryAheadOfRemote, inventoryLooksUnchanged, inventoryItemsNeedingCloudPush, expenseListLooksUnchanged, mergeItemsPreservingReferences, collectItemsForIncrementalCloudPush, collectDeletedInventoryIds } from './utils/inventoryCloudPush';
 import { addRecentItemId } from './services/recentItemsService';
@@ -695,6 +698,7 @@ const App: React.FC = () => {
   const dailyBackupRanRef = useRef(false);
   const dailyGitHubBackupRanRef = useRef(false);
   const githubBackupInFlightRef = useRef(false);
+  const closeBackupInFlightRef = useRef(false);
   const ebayTxDailyExportRanRef = useRef(false);
   const dashboardPrefsRef = useRef(dashboardPrefs);
   const threeDPrintCloudRef = useRef(threeDPrintCloud);
@@ -1798,6 +1802,35 @@ const App: React.FC = () => {
   // never calls setItems() outside the normal boot path — e.g. a lightweight banner
   // ("newer data available — click to reload") — rather than merging into live state.
 
+  // Repair impossible buyDate > sellDate (sold bundles), then align active container dates.
+  useEffect(() => {
+    if (appState !== 'READY' || items.length === 0) return;
+    let next = itemsRef.current;
+    let changed = false;
+
+    const repaired = repairImpossibleBuyDates(next);
+    if (repaired.repairedCount > 0) {
+      next = repaired.items;
+      changed = true;
+      console.info(
+        `[repair] Fixed ${repaired.repairedCount} row(s) with Acquired after Sold` +
+          (repaired.samples[0]
+            ? ` · e.g. ${repaired.samples[0].name}: ${repaired.samples[0].buyDateBefore} → ${repaired.samples[0].buyDateAfter}`
+            : '')
+      );
+    }
+
+    const backfilled = backfillContainerBuyDates(next);
+    if (backfilled.updatedCount > 0) {
+      next = backfilled.items;
+      changed = true;
+    }
+
+    if (!changed) return;
+    setItems(next);
+    hasUnsavedChanges.current = true;
+  }, [appState, items.length]);
+
   // One-time backfill: stamp bulkImportId on legacy bulk-{ts}-{n} items and seed history.
   useEffect(() => {
     if (appState !== 'READY' || items.length === 0) return;
@@ -2126,6 +2159,51 @@ const App: React.FC = () => {
     }, 30000);
     return () => clearTimeout(t);
   }, [appState, items.length, runGithubBackupIfDue]);
+
+  const runCloseBackupIfDue = useCallback(async () => {
+    if (closeBackupInFlightRef.current || items.length === 0) return;
+    closeBackupInFlightRef.current = true;
+    try {
+      await runSilentCloudSyncRef.current?.();
+      const snap = getSyncSnapshot();
+      const [txLibrary, txLabelOverrides] = await Promise.all([
+        loadEbayTransactionLibrary(),
+        loadEbayTxLabelOverrides(),
+      ]);
+      const backup = buildFullBackupPayload({
+        items: snap.items,
+        trash: snap.trash,
+        expenses: snap.expenses,
+        businessSettings: snap.businessSettings,
+        monthlyGoal: snap.monthlyGoal,
+        categories: snap.categories,
+        categoryFields: snap.categoryFields,
+        dashboardPreferences: snap.dashboardPrefs,
+        actionHistory: snap.actionHistory,
+        bulkImports: snap.bulkImports,
+        ebayOrders: loadEbayOrderIndex().orders,
+        ebayTxReports: txLibrary.reports,
+        ebayTxLabelOverrides: txLabelOverrides,
+      });
+      const result = await runCloseSessionBackup(backup);
+      if (result === 'ok') {
+        console.info('[backup] Saved close-session JSON backup.');
+      }
+    } catch (e) {
+      console.warn('[backup] Close-session backup failed:', e);
+    } finally {
+      closeBackupInFlightRef.current = false;
+    }
+  }, [getSyncSnapshot, items.length]);
+
+  useEffect(() => {
+    if (appState !== 'READY') return;
+    const onPageHide = () => {
+      void runCloseBackupIfDue();
+    };
+    window.addEventListener('pagehide', onPageHide);
+    return () => window.removeEventListener('pagehide', onPageHide);
+  }, [appState, runCloseBackupIfDue]);
 
   // Same GitHub snapshot, triggered by leaving the app instead of opening it — covers the
   // common case of never keeping the tab open for 30s straight. `visibilitychange` (tab
@@ -2812,9 +2890,10 @@ const App: React.FC = () => {
           const merged = options?.skipPriceHistory
             ? u
             : appendPriceHistoryIfChanged(oldItem, u);
+          const mergedWithTitle = appendTitleHistoryIfChanged(oldItem, merged);
           // Preserve store and other fields from old item when update doesn't provide them (e.g. rename in inventory form)
           const final0 =
-            oldItem && idx >= 0 && preserveMissingFields ? applyPreservedFields(oldItem, merged) : merged;
+            oldItem && idx >= 0 && preserveMissingFields ? applyPreservedFields(oldItem, mergedWithTitle) : mergedWithTitle;
           let final = final0;
           if (oldItem?.costOrigin) {
             final = { ...final, costOrigin: oldItem.costOrigin };
@@ -2942,9 +3021,14 @@ const App: React.FC = () => {
         ];
         if (!options?.skipContainerSync) {
           nextItems = syncContainerBuyTotalsFromComponents(nextItems, touchedIds);
+          nextItems = syncContainerBuyDatesFromComponents(nextItems, touchedIds);
         }
         if (!options?.skipContainerSaleMetaSync) {
           nextItems = syncContainerSaleMetaToChildren(nextItems, touchedIds);
+        }
+        const timelineRepair = repairImpossibleBuyDates(nextItems);
+        if (timelineRepair.repairedCount > 0) {
+          nextItems = timelineRepair.items;
         }
         if (nextTrash !== trashBefore) {
           trashRef.current = nextTrash;

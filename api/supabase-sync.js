@@ -95,6 +95,23 @@ export default async function handler(req, res) {
   // Only reachable on localhost (isLocalDev above).
   if (req.method === 'POST') {
     const action = req.body?.action;
+    if (action === 'session-backup') {
+      try {
+        const { mkdirSync, writeFileSync } = await import('fs');
+        const { join } = await import('path');
+        const fileName = String(req.body?.fileName || `deinventory-backup-${Date.now()}.json`);
+        const backup = req.body?.backup;
+        if (!backup) return res.status(400).json({ error: 'Missing backup payload' });
+        const dir = join(process.cwd(), 'data', 'session-backups');
+        mkdirSync(dir, { recursive: true });
+        const path = join(dir, fileName);
+        writeFileSync(path, JSON.stringify(backup, null, 2), 'utf8');
+        return res.status(200).json({ ok: true, path: `data/session-backups/${fileName}` });
+      } catch (err) {
+        console.error('[api/supabase-sync] session-backup error:', err);
+        return res.status(500).json({ ok: false, error: err.message || 'Write failed' });
+      }
+    }
     if (action !== 'dev-session') {
       return res.status(400).json({ error: 'Unsupported action' });
     }

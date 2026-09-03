@@ -116,6 +116,14 @@ export interface PriceHistoryEntry {
   orderId?: string;
 }
 
+/** Prior inventory names / listing titles — see utils/titleHistory.ts */
+export interface TitleHistoryEntry {
+  date: string;
+  field: 'name' | 'marketTitle';
+  title: string;
+  previousTitle?: string;
+}
+
 export type ItemHistoryActionType =
   | 'created'
   | 'buy_price_changed'
@@ -565,6 +573,9 @@ export interface InventoryItem extends AiAttribution, SourceLinks {
   // AI Dealwatch Data
   marketTitle?: string;
   marketDescription?: string;
+
+  /** Prior inventory names / listing titles — see utils/titleHistory.ts */
+  titleHistory?: TitleHistoryEntry[];
 
   // Workflow Pipeline
   workflowStage?: WorkflowStage;

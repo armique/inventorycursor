@@ -6,6 +6,7 @@
  */
 
 import { createClient, type SupabaseClient, type User, type Session } from '@supabase/supabase-js';
+import { resolveOAuthRedirectUrl } from '../utils/devOAuthOrigin';
 import type {
   BusinessSettings,
   DashboardPreferences,
@@ -240,7 +241,7 @@ export async function signInWithGoogleOAuth(redirectTo?: string): Promise<{ erro
 
   const targetUrl = (typeof redirectTo === 'string' && redirectTo.trim())
     ? redirectTo.trim()
-    : (typeof window !== 'undefined' ? `${window.location.origin}/panel/dashboard` : '');
+    : resolveOAuthRedirectUrl('/panel/dashboard');
   const { error } = await sb.auth.signInWithOAuth({
     provider: 'google',
     options: {
@@ -490,6 +491,7 @@ export function mapItemToRow(item: InventoryItem, userId: string, isTrash: boole
     ebay_sale_adjustments: item.ebaySaleAdjustments ?? [],
     ebay_sale_cycles: item.ebaySaleCycles ?? [],
     price_history: item.priceHistory ?? [],
+    title_history: item.titleHistory ?? [],
     history: item.history ?? [],
     proof_attachments: item.proofAttachments ?? [],
     is_trash: isTrash,
@@ -603,6 +605,7 @@ export function mapRowToItem(row: Record<string, unknown>): InventoryItem {
     ebaySaleAdjustments: Array.isArray(row.ebay_sale_adjustments) ? (row.ebay_sale_adjustments as InventoryItem['ebaySaleAdjustments']) : [],
     ebaySaleCycles: Array.isArray(row.ebay_sale_cycles) ? (row.ebay_sale_cycles as InventoryItem['ebaySaleCycles']) : [],
     priceHistory: Array.isArray(row.price_history) ? (row.price_history as InventoryItem['priceHistory']) : [],
+    titleHistory: Array.isArray(row.title_history) ? (row.title_history as InventoryItem['titleHistory']) : [],
     history: Array.isArray(row.history) ? (row.history as InventoryItem['history']) : [],
     proofAttachments: Array.isArray(row.proof_attachments) ? (row.proof_attachments as InventoryItem['proofAttachments']) : [],
   };
@@ -1678,11 +1681,11 @@ export async function getCurrentUser(): Promise<User | null> {
 }
 
 export async function signInWithGoogle(optsOrRedirectTo?: string | { returnPath?: string }): Promise<{ error: Error | null }> {
-  let targetUrl = typeof window !== 'undefined' ? `${window.location.origin}/panel/dashboard` : '';
+  let targetUrl = resolveOAuthRedirectUrl('/panel/dashboard');
   if (typeof optsOrRedirectTo === 'string' && optsOrRedirectTo.trim()) {
     targetUrl = optsOrRedirectTo.trim();
   } else if (optsOrRedirectTo && typeof optsOrRedirectTo === 'object' && optsOrRedirectTo.returnPath) {
-    targetUrl = `${window.location.origin}${optsOrRedirectTo.returnPath}`;
+    targetUrl = resolveOAuthRedirectUrl(optsOrRedirectTo.returnPath);
   }
   return signInWithGoogleOAuth(targetUrl);
 }

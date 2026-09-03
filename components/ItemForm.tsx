@@ -16,7 +16,7 @@ import { SALE_PLATFORM_OPTIONS } from '../utils/salePlatform';
 import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
 import { SaleProceedsTrigger } from './SaleProceedsPopover';
 import BuyPriceHistory, { BuyPriceBumpBadge } from './BuyPriceHistory';
-import ItemHistoryTimeline from './ItemHistoryTimeline';
+import ItemCardHistoryTab from './ItemCardHistoryTab';
 import { buildCostOrigin } from '../utils/costOrigin';
 import { CATEGORY_IMAGES, getSpecOptions } from '../services/hardwareDB';
 import { generateItemSpecs, getSpecsAIProvider, suggestPriceFromSoldListings, type SoldPriceSuggestion } from '../services/specsAI';
@@ -2431,7 +2431,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
 
               {/* Item Audit Trail & Change History */}
               <div className="mt-4">
-                <ItemHistoryTimeline item={formData as InventoryItem} compact />
+                <ItemCardHistoryTab item={formData as InventoryItem} />
               </div>
 
               {/* Sticky action bar — always visible, no scrolling needed to Save/Cancel */}
